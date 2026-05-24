@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
+    "start": "node -e \"import('./src/config/db.js').then(m=>m.default.migrate.latest()).then(()=>import('./src/app.js'))\"",
     "dev": "node --watch src/app.js",
     "migrate": "knex migrate:latest",
     "migrate:rollback": "knex migrate:rollback",
