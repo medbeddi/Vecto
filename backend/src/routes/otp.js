@@ -11,11 +11,39 @@ function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-async function sendOtpWhatsApp(phoneHash, code) {
-  // En production : envoyer via WhatsApp API
-  // Pour l'instant on log le code (visible dans Railway logs)
-  console.info(`[OTP] code pour hash=${phoneHash.slice(0, 8)}... : ${code}`);
-  // TODO: appeler l'API WhatsApp pour envoyer le code
+async function sendOtpWhatsApp(phone, phoneHash, code) {
+  // Log en dev pour tester sans WhatsApp
+  if (env.NODE_ENV !== 'production') {
+    console.info(`[OTP] code pour hash=${phoneHash.slice(0, 8)}... : ${code}`);
+    return;
+  }
+
+  // Numéro en format E.164 sans le +
+  const to = phone.replace(/\D/g, '');
+
+  const res = await fetch(
+    `https://graph.facebook.com/v19.0/${env.WA_PHONE_ID}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.WA_TOKEN}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: {
+          body: `🛵 *Vecto* — Votre code de vérification est :\n\n*${code}*\n\nValable 10 minutes. Ne le partagez jamais.`,
+        },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('[OTP] échec envoi WhatsApp:', err?.error?.message ?? res.status);
+  }
 }
 
 // ── Envoyer OTP ───────────────────────────────────────────────────────────────
@@ -35,7 +63,7 @@ router.post('/otp/send', loginLimiter, async (req, res) => {
 
     await db('otps').insert({ phone_hash: phoneHash, code, expires_at: expiresAt });
 
-    await sendOtpWhatsApp(phoneHash, code);
+    await sendOtpWhatsApp(phone.trim(), phoneHash, code);
 
     // En dev : retourner le code directement
     const isDev = env.NODE_ENV !== 'production';
