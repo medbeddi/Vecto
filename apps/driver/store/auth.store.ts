@@ -4,15 +4,17 @@ import { storage } from '../lib/storage';
 import { socketService } from '../lib/socket';
 import type { Driver } from '../types';
 
+const API_BASE = process.env.EXPO_PUBLIC_API_URL!;
+
 type AuthState = {
   driver: Driver | null;
-  isReady: boolean;   // true quand l'init async est terminée
+  isReady: boolean;
   isLoading: boolean;
   error: string | null;
 
   initialize: () => Promise<void>;
-  login: (phone: string, password: string) => Promise<void>;
-  register: (name: string, phone: string, password: string) => Promise<void>;
+  sendOtp: (phone: string) => Promise<void>;
+  verifyOtp: (phone: string, code: string, name?: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
 };
@@ -40,55 +42,51 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  login: async (phone, password) => {
+  sendOtp: async (phone) => {
     set({ isLoading: true, error: null });
     try {
-      const data = await api<{
-        accessToken: string;
-        refreshToken: string;
-        driver: Driver;
-      }>('/api/auth/login', {
+      const res = await fetch(`${API_BASE}/api/otp/send`, {
         method: 'POST',
-        body: { phone, password },
-        token: null,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone }),
       });
-
-      await storage.setTokens(data.accessToken, data.refreshToken);
-      await storage.setDriver(data.driver);
-
-      await socketService.connect();
-      set({ driver: data.driver, isLoading: false });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new ApiError(data.error ?? 'SEND_FAILED', res.status);
+      }
+      set({ isLoading: false });
     } catch (err) {
-      const msg =
-        err instanceof ApiError && err.code === 'INVALID_CREDENTIALS'
-          ? 'Numéro ou mot de passe incorrect'
-          : 'Erreur de connexion. Vérifiez votre réseau.';
+      const msg = err instanceof ApiError && err.code === 'INVALID_PHONE'
+        ? 'Numéro de téléphone invalide'
+        : 'Impossible d\'envoyer le code. Vérifiez votre réseau.';
       set({ error: msg, isLoading: false });
+      throw err;
     }
   },
 
-  register: async (name, phone, password) => {
+  verifyOtp: async (phone, code, name) => {
     set({ isLoading: true, error: null });
     try {
-      const data = await api<{
-        accessToken: string;
-        refreshToken: string;
-        driver: Driver;
-      }>('/api/auth/register', {
+      const res = await fetch(`${API_BASE}/api/otp/verify/driver`, {
         method: 'POST',
-        body: { name, phone, password },
-        token: null,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code, name }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new ApiError(data.error ?? 'VERIFY_FAILED', res.status);
+
       await storage.setTokens(data.accessToken, data.refreshToken);
       await storage.setDriver(data.driver);
       await socketService.connect();
       set({ driver: data.driver, isLoading: false });
     } catch (err) {
-      const msg =
-        err instanceof ApiError && err.code === 'PHONE_ALREADY_USED'
-          ? 'Ce numéro est déjà utilisé'
-          : 'Erreur lors de la création du compte';
+      let msg = 'Erreur de vérification. Réessayez.';
+      if (err instanceof ApiError) {
+        if (err.code === 'INVALID_OR_EXPIRED_CODE') msg = 'Code incorrect ou expiré.';
+        else if (err.code === 'NAME_REQUIRED') msg = 'Nom requis pour créer un compte.';
+      }
       set({ error: msg, isLoading: false });
+      throw err;
     }
   },
 

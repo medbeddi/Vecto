@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from './store/auth.store';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import OTPScreen from './screens/OTPScreen';
 import DeliveriesScreen from './screens/DeliveriesScreen';
 import ChatScreen from './screens/ChatScreen';
 import type { RootStackParamList } from './types';
@@ -69,6 +70,11 @@ export default function App() {
             <Stack.Screen
               name="Register"
               component={RegisterScreen}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="OTP"
+              component={OTPScreen}
               options={{ headerShown: false }}
             />
           </>

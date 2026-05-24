@@ -2,10 +2,12 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import PhoneScreen from './screens/PhoneScreen';
+import OTPScreen from './screens/OTPScreen';
 import ChatScreen from './screens/ChatScreen';
 
 export type RootStackParamList = {
   Phone: undefined;
+  OTP: { phone: string };
   Chat: { phone: string };
 };
 
@@ -24,6 +26,7 @@ export default function App() {
         }}
       >
         <Stack.Screen name="Phone" component={PhoneScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="OTP" component={OTPScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Vecto — Ma commande' }} />
       </Stack.Navigator>
     </NavigationContainer>

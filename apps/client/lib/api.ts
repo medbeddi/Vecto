@@ -1,6 +1,36 @@
 const BASE = process.env.EXPO_PUBLIC_API_URL!;
 const WA_PHONE_ID = process.env.EXPO_PUBLIC_WA_PHONE_ID!;
 
+let _clientToken: string | null = null;
+export function setClientToken(t: string) { _clientToken = t; }
+export function getClientToken() { return _clientToken; }
+
+export async function sendOtp(phone: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/otp/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone }),
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error ?? 'SEND_FAILED');
+  }
+}
+
+export async function verifyOtpClient(
+  phone: string,
+  code: string
+): Promise<{ token: string; client: { id: string; alias: string } }> {
+  const res = await fetch(`${BASE}/api/otp/verify/client`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, code }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? 'VERIFY_FAILED');
+  return data;
+}
+
 export type Message = {
   id: string;
   sender_role: 'client' | 'driver';

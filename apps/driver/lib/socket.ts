@@ -21,7 +21,7 @@ class SocketService {
 
     this._socket = io(API_BASE, {
       auth: { token: `Bearer ${token}` },
-      transports: ['websocket'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: 15,
       reconnectionDelay: 2000,
