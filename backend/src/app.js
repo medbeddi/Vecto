@@ -64,10 +64,8 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// ─── Simulateur client (dev uniquement) ───────────────────────────────────────
-if (process.env.NODE_ENV !== 'production') {
-  app.use('/sim', simRouter);
-}
+// ─── Simulateur client (aussi en prod pour l'app client mobile) ──────────────
+app.use('/sim', simRouter);
 
 // ─── Admin web app ────────────────────────────────────────────────────────────
 app.use('/admin', express.static(path.join(__dirname, '../../apps/admin')));
