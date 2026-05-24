@@ -19,7 +19,19 @@ const httpServer = createServer(app);
 app.set('trust proxy', 1);
 
 // ─── Sécurité & CORS ──────────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "cdn.socket.io"],
+      scriptSrcAttr: ["'unsafe-inline'"],
+      connectSrc: ["'self'", "wss:", "ws:", "https:"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      mediaSrc: ["'self'", "https:", "blob:"],
+    },
+  },
+}));
 app.use(cors({
   origin: env.ALLOWED_ORIGINS,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
