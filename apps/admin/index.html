@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vecto Admin</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --brand: #ff6b35;
+      --bg: #0d0d0d;
+      --card: #1a1a1a;
+      --card2: #222;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --muted: #888;
+      --green: #4caf50;
+      --red: #f44336;
+    }
+    body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; min-height: 100vh; }
+
+    /* ── LOGIN ─────────────────────────────────────────────────── */
+    #login-screen {
+      display: flex; align-items: center; justify-content: center; min-height: 100vh;
+    }
+    .login-box {
+      background: var(--card); border-radius: 16px; padding: 40px; width: 360px;
+      border: 1px solid var(--border);
+    }
+    .login-box h1 { font-size: 24px; margin-bottom: 6px; }
+    .login-box p { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+    label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
+    input {
+      width: 100%; background: var(--card2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 15px; margin-bottom: 16px;
+    }
+    input:focus { outline: none; border-color: var(--brand); }
+    .btn {
+      width: 100%; background: var(--brand); color: #fff; border: none;
+      border-radius: 10px; padding: 12px; font-size: 15px; font-weight: 700;
+      cursor: pointer; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .9; }
+    .btn:disabled { opacity: .5; cursor: default; }
+    .btn-outline {
+      background: transparent; border: 1px solid var(--brand); color: var(--brand);
+    }
+    .btn-sm {
+      width: auto; padding: 7px 14px; font-size: 13px; border-radius: 8px;
+    }
+    .btn-danger { background: var(--red); }
+    #login-error { color: var(--red); font-size: 13px; margin-top: 10px; display: none; }
+
+    /* ── APP ───────────────────────────────────────────────────── */
+    #app-screen { display: none; flex-direction: column; min-height: 100vh; }
+    header {
+      background: var(--card); border-bottom: 1px solid var(--border);
+      padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .logo { font-size: 20px; font-weight: 800; color: var(--brand); }
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); display: inline-block; }
+    .conn-dot.on { background: var(--green); }
+    .conn-label { font-size: 13px; color: var(--muted); }
+
+    nav {
+      background: var(--card); border-bottom: 1px solid var(--border);
+      display: flex; gap: 4px; padding: 0 20px;
+    }
+    .tab {
+      padding: 12px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+      border-bottom: 2px solid transparent; color: var(--muted); background: none; border-top: none;
+      border-left: none; border-right: none;
+    }
+    .tab.active { color: var(--brand); border-bottom-color: var(--brand); }
+
+    .page { display: none; padding: 24px; max-width: 1100px; margin: 0 auto; width: 100%; }
+    .page.active { display: block; }
+
+    /* ── CALL ALERT ────────────────────────────────────────────── */
+    #call-alert {
+      display: none; background: #1a0d00; border: 1px solid var(--brand);
+      border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
+      flex-direction: row; align-items: center; gap: 16px;
+    }
+    #call-alert.visible { display: flex; }
+    .call-icon { font-size: 32px; animation: ring .6s infinite alternate; }
+    @keyframes ring { from { transform: rotate(-10deg); } to { transform: rotate(10deg); } }
+    .call-info { flex: 1; }
+    .call-info h3 { font-size: 16px; margin-bottom: 4px; }
+    .call-info p { color: var(--muted); font-size: 13px; }
+    .call-actions { display: flex; gap: 8px; }
+
+    /* ── ORDERS ────────────────────────────────────────────────── */
+    .section-title {
+      font-size: 16px; font-weight: 700; margin-bottom: 16px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .badge {
+      background: var(--brand); color: #fff; border-radius: 20px;
+      font-size: 12px; font-weight: 700; padding: 2px 8px;
+    }
+    .orders-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;
+    }
+    .order-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+    }
+    .order-card.new { border-color: var(--brand); animation: pulse-border .8s 3; }
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,53,0); }
+      50% { box-shadow: 0 0 0 6px rgba(255,107,53,0.3); }
+    }
+    .order-alias { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+    .order-time { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .order-status {
+      display: inline-block; font-size: 11px; font-weight: 700;
+      padding: 3px 8px; border-radius: 6px; margin-bottom: 10px;
+    }
+    .status-pending { background: #2a1a00; color: #ff9800; }
+    .status-assigned { background: #0a1f0a; color: var(--green); }
+    .order-msg { font-size: 13px; color: #bbb; }
+    .order-audio {
+      background: #1a1a2e; border: 1px solid var(--brand); border-radius: 8px;
+      padding: 10px 14px; font-size: 13px; color: var(--brand); cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px; margin-top: 4px;
+    }
+    .order-audio:hover { background: #22224a; }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+
+    /* ── BROADCAST MODAL ───────────────────────────────────────── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.7); z-index: 200; align-items: center; justify-content: center;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal-box {
+      background: var(--card); border-radius: 16px; padding: 28px; width: 440px;
+      border: 1px solid var(--border);
+    }
+    .modal-box h2 { font-size: 18px; margin-bottom: 18px; }
+    textarea {
+      width: 100%; background: var(--card2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 14px;
+      resize: vertical; min-height: 100px; margin-bottom: 14px;
+    }
+    textarea:focus { outline: none; border-color: var(--brand); }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* ── ARCHIVES ──────────────────────────────────────────────── */
+    .archives-list { display: flex; flex-direction: column; gap: 8px; }
+    .archive-row {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; transition: border-color .15s;
+    }
+    .archive-row:hover { border-color: var(--brand); }
+    .archive-meta { display: flex; flex-direction: column; gap: 3px; }
+    .archive-alias { font-weight: 700; font-size: 14px; }
+    .archive-sub { font-size: 12px; color: var(--muted); }
+    .pagination { display: flex; gap: 8px; margin-top: 20px; justify-content: center; }
+
+    /* ── MESSAGES VIEWER ───────────────────────────────────────── */
+    #messages-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.8);
+      z-index: 300; align-items: center; justify-content: center;
+    }
+    #messages-overlay.visible { display: flex; }
+    .messages-box {
+      background: var(--card); border-radius: 16px; width: 500px; max-height: 80vh;
+      display: flex; flex-direction: column; border: 1px solid var(--border);
+    }
+    .messages-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .messages-header h3 { font-size: 16px; font-weight: 700; }
+    .close-btn {
+      background: none; border: none; color: var(--muted); font-size: 22px;
+      cursor: pointer; line-height: 1;
+    }
+    .close-btn:hover { color: var(--text); }
+    .messages-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .msg-bubble {
+      max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5;
+    }
+    .msg-client { background: #1a2a1a; align-self: flex-start; border-radius: 4px 12px 12px 12px; }
+    .msg-driver { background: #1a1a2e; align-self: flex-end; border-radius: 12px 4px 12px 12px; }
+    .msg-role { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .msg-time { font-size: 11px; color: var(--muted); margin-top: 4px; text-align: right; }
+    .msg-audio-btn {
+      background: transparent; border: 1px solid var(--brand); border-radius: 8px;
+      padding: 6px 12px; color: var(--brand); font-size: 13px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN ─────────────────────────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-box">
+    <h1>🛵 Vecto Admin</h1>
+    <p>Tableau de bord opérateur</p>
+    <label>Email</label>
+    <input type="email" id="login-email" value="admin@vecto.app" />
+    <label>Mot de passe</label>
+    <input type="password" id="login-password" value="admin123" />
+    <button class="btn" id="login-btn" onclick="doLogin()">Se connecter</button>
+    <p id="login-error">Identifiants incorrects</p>
+  </div>
+</div>
+
+<!-- ── APP ───────────────────────────────────────────────────────── -->
+<div id="app-screen">
+  <header>
+    <span class="logo">🛵 Vecto</span>
+    <div class="header-right">
+      <span class="conn-dot" id="conn-dot"></span>
+      <span class="conn-label" id="conn-label">Déconnecté</span>
+      <button class="btn btn-sm btn-outline" onclick="doLogout()">Déconnexion</button>
+    </div>
+  </header>
+
+  <nav>
+    <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
+    <button class="tab" onclick="showTab('archives')">Archives</button>
+  </nav>
+
+  <!-- ── DASHBOARD ────────────────────────────────────────────── -->
+  <div class="page active" id="page-dashboard">
+    <!-- Call alert -->
+    <div id="call-alert">
+      <span class="call-icon">📞</span>
+      <div class="call-info">
+        <h3>Appel entrant</h3>
+        <p id="call-from">Numéro masqué</p>
+      </div>
+      <div class="call-actions">
+        <button class="btn btn-sm" onclick="openBroadcastModal()">Diffuser une course</button>
+        <button class="btn btn-sm btn-danger" onclick="dismissCall()">✕</button>
+      </div>
+    </div>
+
+    <div class="section-title">
+      Courses actives <span class="badge" id="active-count">0</span>
+      <button class="btn btn-sm btn-outline" onclick="loadActiveOrders()">Actualiser</button>
+    </div>
+    <div class="orders-grid" id="orders-grid">
+      <div class="empty-state"><div class="icon">📋</div><p>Aucune course active</p></div>
+    </div>
+  </div>
+
+  <!-- ── ARCHIVES ─────────────────────────────────────────────── -->
+  <div class="page" id="page-archives">
+    <div class="section-title">Archives</div>
+    <div class="archives-list" id="archives-list">
+      <div class="empty-state"><div class="icon">📁</div><p>Chargement…</p></div>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<!-- ── BROADCAST MODAL ───────────────────────────────────────────── -->
+<div class="modal-overlay" id="broadcast-modal">
+  <div class="modal-box">
+    <h2>📢 Diffuser une course</h2>
+    <label>Description de la course</label>
+    <textarea id="broadcast-desc" placeholder="Ex : Livraison urgente Bab El Bhar → Lac 2…"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-sm btn-outline" onclick="closeBroadcastModal()">Annuler</button>
+      <button class="btn btn-sm" id="broadcast-btn" onclick="doBroadcast()">Diffuser</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MESSAGES OVERLAY ──────────────────────────────────────────── -->
+<div id="messages-overlay">
+  <div class="messages-box">
+    <div class="messages-header">
+      <h3 id="messages-title">Conversation</h3>
+      <button class="close-btn" onclick="closeMessages()">×</button>
+    </div>
+    <div class="messages-body" id="messages-body"></div>
+  </div>
+</div>
+
+<script>
+  const API = window.location.origin.replace(/:\d+$/, ':3000');
+  let token = localStorage.getItem('vecto_admin_token');
+  let socket = null;
+  let archivePage = 1;
+  let activeOrders = {};
+
+  // ── AUTH ─────────────────────────────────────────────────────────
+  async function doLogin() {
+    const btn = document.getElementById('login-btn');
+    const err = document.getElementById('login-error');
+    btn.disabled = true;
+    err.style.display = 'none';
+    try {
+      const res = await fetch(`${API}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('login-email').value,
+          password: document.getElementById('login-password').value,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      token = data.token;
+      localStorage.setItem('vecto_admin_token', token);
+      showApp();
+    } catch {
+      err.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function doLogout() {
+    token = null;
+    localStorage.removeItem('vecto_admin_token');
+    if (socket) { socket.disconnect(); socket = null; }
+    document.getElementById('app-screen').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+  }
+
+  // ── APP INIT ─────────────────────────────────────────────────────
+  function showApp() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display = 'flex';
+    initSocket();
+    loadActiveOrders();
+  }
+
+  if (token) {
+    // Verify token still valid
+    fetch(`${API}/api/admin/orders/active`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? showApp() : doLogout())
+      .catch(() => {});
+  }
+
+  // ── SOCKET ───────────────────────────────────────────────────────
+  function initSocket() {
+    socket = io(API, { auth: { token } });
+
+    socket.on('connect', () => {
+      document.getElementById('conn-dot').classList.add('on');
+      document.getElementById('conn-label').textContent = 'Connecté';
+    });
+
+    socket.on('disconnect', () => {
+      document.getElementById('conn-dot').classList.remove('on');
+      document.getElementById('conn-label').textContent = 'Déconnecté';
+    });
+
+    socket.on('new_order', (order) => {
+      activeOrders[order.deliveryId] = order;
+      renderOrders();
+      // Flash the new card
+      setTimeout(() => {
+        const el = document.querySelector(`[data-id="${order.deliveryId}"]`);
+        if (el) el.classList.add('new');
+      }, 50);
+    });
+
+    socket.on('order_taken', ({ deliveryId }) => {
+      if (activeOrders[deliveryId]) {
+        activeOrders[deliveryId]._status = 'assigned';
+        renderOrders();
+      }
+    });
+
+    socket.on('incoming_call', (call) => {
+      document.getElementById('call-from').textContent =
+        `Numéro : ${call.from ?? '***'}`;
+      document.getElementById('call-alert').classList.add('visible');
+    });
+  }
+
+  // ── ACTIVE ORDERS ────────────────────────────────────────────────
+  async function loadActiveOrders() {
+    try {
+      const res = await fetch(`${API}/api/admin/orders/active`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const { orders } = await res.json();
+      activeOrders = {};
+      for (const o of orders) {
+        activeOrders[o.id] = {
+          deliveryId: o.id,
+          clientAlias: o.clientAlias,
+          createdAt: o.createdAt,
+          _status: o.status,
+          message: {
+            type: o.initialMediaType ?? 'text',
+            content: o.initialMediaUrl ?? null,
+          },
+        };
+      }
+      renderOrders();
+    } catch {}
+  }
+
+  function renderOrders() {
+    const grid = document.getElementById('orders-grid');
+    const list = Object.values(activeOrders);
+    document.getElementById('active-count').textContent = list.length;
+
+    if (!list.length) {
+      grid.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Aucune course active</p></div>';
+      return;
+    }
+
+    grid.innerHTML = list.map(o => {
+      const status = o._status || 'pending';
+      const statusLabel = status === 'assigned' ? 'En cours' : 'En attente';
+      const statusClass = status === 'assigned' ? 'status-assigned' : 'status-pending';
+      const time = new Date(o.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+      const msgHtml = o.message?.type === 'audio' && o.message?.content
+        ? `<div class="order-audio" onclick="playAudio('${escHtml(o.message.content)}')">▶ Message vocal</div>`
+        : `<div class="order-msg">${escHtml(o.message?.content ?? '')}</div>`;
+
+      return `
+        <div class="order-card" data-id="${o.deliveryId}">
+          <div class="order-alias">${escHtml(o.clientAlias)}</div>
+          <div class="order-time">${time}</div>
+          <span class="order-status ${statusClass}">${statusLabel}</span>
+          ${msgHtml}
+        </div>`;
+    }).join('');
+  }
+
+  // ── CALL ALERT ───────────────────────────────────────────────────
+  function dismissCall() {
+    document.getElementById('call-alert').classList.remove('visible');
+  }
+
+  // ── BROADCAST ────────────────────────────────────────────────────
+  function openBroadcastModal() {
+    document.getElementById('broadcast-modal').classList.add('visible');
+    document.getElementById('broadcast-desc').focus();
+  }
+  function closeBroadcastModal() {
+    document.getElementById('broadcast-modal').classList.remove('visible');
+    document.getElementById('broadcast-desc').value = '';
+  }
+
+  async function doBroadcast() {
+    const desc = document.getElementById('broadcast-desc').value.trim();
+    if (!desc) return;
+    const btn = document.getElementById('broadcast-btn');
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${API}/api/admin/broadcast`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ description: desc, mediaType: 'text' }),
+      });
+      if (!res.ok) throw new Error();
+      closeBroadcastModal();
+      dismissCall();
+    } catch {
+      alert('Erreur lors de la diffusion');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ── ARCHIVES ─────────────────────────────────────────────────────
+  async function loadArchives(page = 1) {
+    archivePage = page;
+    const list = document.getElementById('archives-list');
+    list.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Chargement…</p></div>';
+    try {
+      const res = await fetch(`${API}/api/admin/archives?page=${page}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const { archives } = await res.json();
+
+      if (!archives.length) {
+        list.innerHTML = '<div class="empty-state"><div class="icon">📁</div><p>Aucune archive</p></div>';
+        document.getElementById('pagination').innerHTML = '';
+        return;
+      }
+
+      list.innerHTML = archives.map(a => {
+        const date = new Date(a.archivedAt).toLocaleString('fr-FR', {
+          day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+        });
+        return `
+          <div class="archive-row" onclick="openMessages('${a.id}', '${escHtml(a.clientAlias)}')">
+            <div class="archive-meta">
+              <span class="archive-alias">${escHtml(a.clientAlias)}</span>
+              <span class="archive-sub">Archivé le ${date}${a.driverName ? ` · ${escHtml(a.driverName)}` : ''}</span>
+            </div>
+            <span style="color:var(--muted);font-size:20px">›</span>
+          </div>`;
+      }).join('');
+
+      const pages = document.getElementById('pagination');
+      pages.innerHTML = '';
+      if (page > 1) {
+        const prev = document.createElement('button');
+        prev.className = 'btn btn-sm btn-outline';
+        prev.textContent = '← Précédent';
+        prev.onclick = () => loadArchives(page - 1);
+        pages.appendChild(prev);
+      }
+      if (archives.length === 20) {
+        const next = document.createElement('button');
+        next.className = 'btn btn-sm btn-outline';
+        next.textContent = 'Suivant →';
+        next.onclick = () => loadArchives(page + 1);
+        pages.appendChild(next);
+      }
+    } catch {}
+  }
+
+  async function openMessages(deliveryId, alias) {
+    document.getElementById('messages-title').textContent = alias;
+    document.getElementById('messages-body').innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px">Chargement…</div>';
+    document.getElementById('messages-overlay').classList.add('visible');
+
+    try {
+      const res = await fetch(`${API}/api/admin/archives/${deliveryId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const { messages } = await res.json();
+      const body = document.getElementById('messages-body');
+
+      if (!messages.length) {
+        body.innerHTML = '<div style="text-align:center;color:var(--muted)">Aucun message</div>';
+        return;
+      }
+
+      body.innerHTML = messages.map(m => {
+        const isClient = m.sender_role === 'client';
+        const cls = isClient ? 'msg-client' : 'msg-driver';
+        const role = isClient ? '👤 Client' : '🛵 Livreur';
+        const time = new Date(m.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+        let content = '';
+        if (m.type === 'text') {
+          content = `<div>${escHtml(m.content ?? '')}</div>`;
+        } else if (m.type === 'audio') {
+          content = `<button class="msg-audio-btn" onclick="playAudio('${escHtml(m.content)}')">▶ Écouter</button>`;
+        } else if (m.type === 'image') {
+          content = `<img src="${escHtml(m.content)}" style="max-width:200px;border-radius:8px" />`;
+        } else if (m.type === 'location') {
+          const meta = m.meta ?? {};
+          content = `<div>📍 ${escHtml(meta.label ?? `${meta.lat}, ${meta.lng}`)}</div>`;
+        } else {
+          content = `<div style="color:var(--muted)">[${m.type}]</div>`;
+        }
+
+        return `
+          <div class="msg-bubble ${cls}">
+            <div class="msg-role">${role}</div>
+            ${content}
+            <div class="msg-time">${time}</div>
+          </div>`;
+      }).join('');
+
+      body.scrollTop = body.scrollHeight;
+    } catch {}
+  }
+
+  function closeMessages() {
+    document.getElementById('messages-overlay').classList.remove('visible');
+  }
+
+  // ── TABS ─────────────────────────────────────────────────────────
+  function showTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      t.classList.toggle('active', ['dashboard', 'archives'][i] === name);
+    });
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById(`page-${name}`).classList.add('active');
+    if (name === 'archives') loadArchives(1);
+  }
+
+  // ── AUDIO ─────────────────────────────────────────────────────────
+  let currentAudio = null;
+  function playAudio(url) {
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    currentAudio = new Audio(url);
+    currentAudio.play().catch(() => {});
+  }
+
+  // ── UTILS ─────────────────────────────────────────────────────────
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Enter to login
+  document.getElementById('login-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+</script>
+</body>
+</html>

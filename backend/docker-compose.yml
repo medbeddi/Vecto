@@ -1,0 +1,42 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: delivery_db
+      POSTGRES_USER: delivery
+      POSTGRES_PASSWORD: delivery_pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U delivery -d delivery_db']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://delivery:delivery_pass@db:5432/delivery_db
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    # Lance les migrations puis démarre le serveur
+    command: >
+      sh -c "node -e \"
+        import('./knexfile.js').then(m =>
+          (await import('knex')).default(m.default).migrate.latest()
+        ).then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); })
+      \" && node src/app.js"
+
+volumes:
+  pgdata:

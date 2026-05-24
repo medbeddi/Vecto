@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Vecto Client",
+    "slug": "vecto-client",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#111111"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Pour envoyer votre position au livreur.",
+        "NSMicrophoneUsageDescription": "Pour envoyer des messages audio.",
+        "NSPhotoLibraryUsageDescription": "Pour envoyer des photos."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#111111"
+      },
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-av",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Pour envoyer votre position au livreur."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pour envoyer des photos."
+        }
+      ]
+    ],
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
