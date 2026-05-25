@@ -51,7 +51,7 @@ export default function OTPScreen({ route, navigation }: Props) {
     try {
       const data = await verifyOtpClient(phone, code);
       setClientToken(data.token);
-      navigation.replace('Chat', { phone });
+      navigation.replace('Home');
     } catch (err: any) {
       const msg = err?.message === 'INVALID_OR_EXPIRED_CODE'
         ? 'Code incorrect ou expiré. Réessayez.'

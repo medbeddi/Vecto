@@ -40,7 +40,7 @@ export default function ChatScreen() {
   const route = useRoute<Route>();
   const { delivery: initDelivery } = route.params;
 
-  const { activeDelivery, messages, loadingMessages, loadMessages, appendMessage, setActiveDelivery, updateActiveStatus } =
+  const { activeDelivery, messages, loadingMessages, loadMessages, appendMessage, setActiveDelivery, updateActiveStatus, removeActiveCourse } =
     useDeliveriesStore();
 
   const [text, setText] = useState('');
@@ -236,6 +236,7 @@ export default function ChatScreen() {
               });
               updateActiveStatus(status);
               if (status === 'done' || status === 'cancelled') {
+                removeActiveCourse(delivery.id);
                 setTimeout(() => navigation.goBack(), 1500);
               }
             } catch {

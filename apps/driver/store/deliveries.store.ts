@@ -4,6 +4,7 @@ import type { Delivery, Message } from '../types';
 
 type DeliveriesState = {
   available: Delivery[];
+  activeCourses: Delivery[];
   activeDelivery: Delivery | null;
   messages: Message[];
   loadingDeliveries: boolean;
@@ -12,6 +13,9 @@ type DeliveriesState = {
   loadAvailable: () => Promise<void>;
   upsertAvailable: (d: Delivery) => void;
   removeAvailable: (id: string) => void;
+
+  addActiveCourse: (d: Delivery) => void;
+  removeActiveCourse: (id: string) => void;
 
   setActiveDelivery: (d: Delivery | null) => void;
   updateActiveStatus: (status: Delivery['status']) => void;
@@ -22,6 +26,7 @@ type DeliveriesState = {
 
 export const useDeliveriesStore = create<DeliveriesState>((set) => ({
   available: [],
+  activeCourses: [],
   activeDelivery: null,
   messages: [],
   loadingDeliveries: false,
@@ -47,6 +52,15 @@ export const useDeliveriesStore = create<DeliveriesState>((set) => ({
 
   removeAvailable: (id) =>
     set((s) => ({ available: s.available.filter((d) => d.id !== id) })),
+
+  addActiveCourse: (d) =>
+    set((s) => {
+      const exists = s.activeCourses.some((x) => x.id === d.id);
+      return { activeCourses: exists ? s.activeCourses.map((x) => x.id === d.id ? d : x) : [d, ...s.activeCourses] };
+    }),
+
+  removeActiveCourse: (id) =>
+    set((s) => ({ activeCourses: s.activeCourses.filter((d) => d.id !== id) })),
 
   setActiveDelivery: (d) => set({ activeDelivery: d, messages: [] }),
 

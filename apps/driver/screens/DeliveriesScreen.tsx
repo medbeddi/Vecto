@@ -43,9 +43,8 @@ Notifications.setNotificationHandler({
 export default function DeliveriesScreen() {
   const navigation = useNavigation<Nav>();
   const { driver, logout } = useAuthStore();
-  const { available, loadingDeliveries, loadAvailable, upsertAvailable, removeAvailable } =
+  const { available, loadingDeliveries, loadAvailable, upsertAvailable, removeAvailable, activeCourses, addActiveCourse } =
     useDeliveriesStore();
-
   const [accepting, setAccepting] = useState<string | null>(null);
   const [connected, setConnected] = useState(socketService.connected);
   const [incomingOrder, setIncomingOrder] = useState<IncomingOrder | null>(null);
@@ -71,7 +70,9 @@ export default function DeliveriesScreen() {
         createdAt: order.createdAt,
         status: 'pending',
         description: order.message.content ?? '',
-      } as Delivery);
+        initialMediaType: order.message.type,
+        initialMediaUrl: order.message.type === 'audio' ? order.message.content : null,
+      });
       // Jouer le message audio si disponible
       if (order.message.type === 'audio' && order.message.content) {
         playAudio(order.message.content);
@@ -119,10 +120,10 @@ export default function DeliveriesScreen() {
           `/api/deliveries/${delivery.id}/accept`,
           { method: 'POST' }
         );
+        const accepted = { ...delivery, ...updated };
         removeAvailable(delivery.id);
-        navigation.navigate('Chat', {
-          delivery: { ...delivery, ...updated },
-        });
+        addActiveCourse(accepted);
+        navigation.navigate('Chat', { delivery: accepted });
       } catch (err: any) {
         const msg =
           err.code === 'ALREADY_TAKEN'
@@ -133,7 +134,7 @@ export default function DeliveriesScreen() {
         setAccepting(null);
       }
     },
-    [navigation, removeAvailable]
+    [navigation, removeAvailable, addActiveCourse]
   );
 
   const handleLogout = () => {
@@ -212,6 +213,30 @@ export default function DeliveriesScreen() {
             onRefresh={loadAvailable}
             tintColor={BRAND}
           />
+        }
+        ListHeaderComponent={
+          activeCourses.length > 0 ? (
+            <View style={styles.activeSection}>
+              <Text style={styles.activeSectionTitle}>Mes courses actives ({activeCourses.length})</Text>
+              {activeCourses.map((d) => (
+                <TouchableOpacity
+                  key={d.id}
+                  style={styles.activeCourseCard}
+                  onPress={() => navigation.navigate('Chat', { delivery: d })}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.activeCourseLeft}>
+                    <View style={styles.activeDot} />
+                    <Text style={styles.activeCourseAlias}>{d.clientAlias}</Text>
+                  </View>
+                  <Text style={styles.activeCourseArrow}>→ Ouvrir</Text>
+                </TouchableOpacity>
+              ))}
+              {available.length > 0 && (
+                <Text style={styles.availableSectionTitle}>Courses disponibles</Text>
+              )}
+            </View>
+          ) : null
         }
         ListEmptyComponent={
           loadingDeliveries ? (
@@ -325,4 +350,16 @@ const styles = StyleSheet.create({
   },
   acceptModalBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   btnOff: { opacity: 0.5 },
+  activeSection: { marginBottom: 12 },
+  activeSectionTitle: { color: BRAND, fontSize: 13, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  activeCourseCard: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: CARD, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+    marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#4caf50',
+  },
+  activeCourseLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50' },
+  activeCourseAlias: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  activeCourseArrow: { color: BRAND, fontSize: 13, fontWeight: '600' },
+  availableSectionTitle: { color: '#888', fontSize: 13, fontWeight: '700', marginTop: 8, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
 });

@@ -13,7 +13,6 @@ export function initSocket(httpServer) {
     pingTimeout: 60000,
   });
 
-  // ── Namespace livreurs (/) ─────────────────────────────────────────────────
   io.use((socket, next) => {
     const raw = socket.handshake.auth?.token ?? socket.handshake.headers?.authorization;
     const token = raw?.replace(/^Bearer\s+/i, '');
@@ -22,6 +21,8 @@ export function initSocket(httpServer) {
       const decoded = jwt.verify(token, env.JWT_SECRET);
       if (decoded.role === 'admin') {
         socket.data.admin = decoded;
+      } else if (decoded.role === 'client') {
+        socket.data.client = decoded;
       } else {
         socket.data.driver = decoded;
       }
@@ -35,24 +36,26 @@ export function initSocket(httpServer) {
     // ── Admin ────────────────────────────────────────────────────────────────
     if (socket.data.admin) {
       socket.join(ADMINS_ROOM);
-      console.info(`[socket] admin connecté id=${socket.data.admin.id} sid=${socket.id}`);
-      socket.on('disconnect', () =>
-        console.info(`[socket] admin déconnecté id=${socket.data.admin.id}`)
-      );
+      socket.on('disconnect', () => {});
+      return;
+    }
+
+    // ── Client ───────────────────────────────────────────────────────────────
+    if (socket.data.client) {
+      socket.on('join_delivery', ({ deliveryId }) => {
+        if (deliveryId) socket.join(`course_${deliveryId}`);
+      });
+      socket.on('disconnect', () => {});
       return;
     }
 
     // ── Livreur ──────────────────────────────────────────────────────────────
     const driverId = socket.data.driver?.id;
-    console.info(`[socket] livreur connecté driverId=${driverId} sid=${socket.id}`);
-
-    // Rejoindre la room broadcast de tous les livreurs
     socket.join(DRIVERS_ROOM);
 
     socket.on('join_room', ({ deliveryId }) => {
       if (!deliveryId) return;
       socket.join(`course_${deliveryId}`);
-      console.info(`[socket] driverId=${driverId} a rejoint course_${deliveryId}`);
     });
 
     socket.on('driver_message', async ({ deliveryId, type, content, meta }) => {
@@ -64,9 +67,7 @@ export function initSocket(httpServer) {
       }
     });
 
-    socket.on('disconnect', () =>
-      console.info(`[socket] livreur déconnecté driverId=${driverId}`)
-    );
+    socket.on('disconnect', () => {});
   });
 
   return io;
@@ -77,13 +78,13 @@ export function getIO() {
   return io;
 }
 
-// ── Nouvel ordre → broadcast à TOUS les livreurs actifs + admin ──────────────
+// ── Nouvel ordre → broadcast livreurs + admins ────────────────────────────────
 export function emitNewOrder(delivery, initialMessage) {
   if (!io) return;
   const payload = {
-    deliveryId:     delivery.id,
-    clientAlias:    delivery.alias,
-    createdAt:      delivery.created_at,
+    deliveryId:  delivery.id,
+    clientAlias: delivery.alias,
+    createdAt:   delivery.created_at,
     message: {
       type:    initialMessage.type,
       content: initialMessage.content,
@@ -94,19 +95,42 @@ export function emitNewOrder(delivery, initialMessage) {
   io.to(ADMINS_ROOM).emit('new_order', payload);
 }
 
-// ── Ordre pris → retirer de la file des autres livreurs ──────────────────────
+// ── Ordre pris → retirer de la file + notifier client ────────────────────────
 export function emitOrderTaken(deliveryId) {
   if (!io) return;
   io.to(DRIVERS_ROOM).emit('order_taken', { deliveryId });
   io.to(ADMINS_ROOM).emit('order_taken', { deliveryId });
 }
 
-// ── Message client → livreur assigné ────────────────────────────────────────
+// ── Course acceptée → notifier le client ─────────────────────────────────────
+export function emitOrderAssigned(deliveryId) {
+  if (!io) return;
+  io.to(`course_${deliveryId}`).emit('order_assigned', { deliveryId });
+}
+
+// ── Message client → livreur (socket) ────────────────────────────────────────
 export function emitClientMessage(deliveryId, message) {
   if (!io) return;
   io.to(`course_${deliveryId}`).emit('client_message', {
-    type: message.type, content: message.content,
-    meta: message.meta, createdAt: message.created_at,
+    id:         message.id,
+    senderRole: 'client',
+    type:       message.type,
+    content:    message.content,
+    meta:       message.meta,
+    createdAt:  message.created_at,
+  });
+}
+
+// ── Message driver → client (socket) ─────────────────────────────────────────
+export function emitDriverMessage(deliveryId, message) {
+  if (!io) return;
+  io.to(`course_${deliveryId}`).emit('driver_message', {
+    id:         message.id,
+    senderRole: 'driver',
+    type:       message.type,
+    content:    message.content,
+    meta:       message.meta,
+    createdAt:  message.created_at,
   });
 }
 
@@ -116,11 +140,12 @@ export function emitDeliveryCancelled(deliveryId) {
   io.to(`course_${deliveryId}`).emit('delivery_cancelled', { deliveryId });
 }
 
-// ── Appel WhatsApp entrant → admin uniquement ─────────────────────────────────
+// ── Appel entrant → admin ─────────────────────────────────────────────────────
 export function emitIncomingCall(callInfo) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('incoming_call', callInfo);
 }
 
-// Compatibilité ancienne API
-export function emitNewDelivery(delivery) { emitNewOrder(delivery, { type: 'text', content: delivery.description, meta: null }); }
+export function emitNewDelivery(delivery) {
+  emitNewOrder(delivery, { type: 'text', content: delivery.description, meta: null });
+}

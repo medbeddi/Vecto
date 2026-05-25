@@ -1,101 +1,86 @@
 const BASE = process.env.EXPO_PUBLIC_API_URL!;
-const WA_PHONE_ID = process.env.EXPO_PUBLIC_WA_PHONE_ID!;
 
-let _clientToken: string | null = null;
-export function setClientToken(t: string) { _clientToken = t; }
-export function getClientToken() { return _clientToken; }
+let _token: string | null = null;
+export function setClientToken(t: string) { _token = t; }
+export function getClientToken() { return _token; }
 
-export async function sendOtp(phone: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/otp/send`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone }),
-  });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error ?? 'SEND_FAILED');
-  }
-}
-
-export async function verifyOtpClient(
-  phone: string,
-  code: string
-): Promise<{ token: string; client: { id: string; alias: string } }> {
-  const res = await fetch(`${BASE}/api/otp/verify/client`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, code }),
+async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(_token ? { Authorization: `Bearer ${_token}` } : {}),
+      ...(opts.headers as Record<string, string> ?? {}),
+    },
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? 'VERIFY_FAILED');
-  return data;
+  if (!res.ok) throw Object.assign(new Error(data.error ?? 'ERROR'), { code: data.error });
+  return data as T;
 }
+
+// ── OTP ───────────────────────────────────────────────────────────────────────
+
+export async function sendOtp(phone: string) {
+  await req('/api/otp/send', { method: 'POST', body: JSON.stringify({ phone }) });
+}
+
+export async function verifyOtpClient(phone: string, code: string) {
+  return req<{ token: string; client: { id: string; alias: string } }>(
+    '/api/otp/verify/client',
+    { method: 'POST', body: JSON.stringify({ phone, code }) }
+  );
+}
+
+// ── Delivery ──────────────────────────────────────────────────────────────────
+
+export type DeliveryStatus = 'pending' | 'assigned' | 'in_progress' | 'done' | 'cancelled';
 
 export type Message = {
   id: string;
-  sender_role: 'client' | 'driver';
-  type: 'text' | 'location' | 'audio' | 'image';
+  senderRole: 'client' | 'driver';
+  type: 'text' | 'audio' | 'image' | 'location';
   content: string | null;
   meta: Record<string, any> | null;
   createdAt: string;
 };
 
-export type Delivery = {
-  id: string;
-  status: 'pending' | 'assigned' | 'in_progress' | 'done' | 'cancelled';
-  description: string | null;
-};
+export type Delivery = { id: string; status: DeliveryStatus };
 
-export type ConversationResponse = {
-  client: { id: string; alias: string } | null;
-  delivery: Delivery | null;
-  messages: Message[];
-};
-
-function buildPayload(type: string, phone: string, body: any) {
-  const msg: any = {
-    id: `wamid.sim_${Date.now()}`,
-    from: phone.replace(/[^\d]/g, ''),
-    timestamp: Math.floor(Date.now() / 1000).toString(),
-    type,
-  };
-  if (type === 'text') msg.text = { body };
-  if (type === 'location') msg.location = body;
-  if (type === 'audio') msg.audio = body;
-  if (type === 'image') msg.image = body;
-
-  return {
-    object: 'whatsapp_business_account',
-    entry: [{ id: 'sim_entry', changes: [{ value: {
-      messaging_product: 'whatsapp',
-      metadata: { phone_number_id: WA_PHONE_ID },
-      messages: [msg],
-    }}]}],
-  };
+export async function getActiveDelivery(): Promise<{ delivery: Delivery | null; messages: Message[] }> {
+  return req('/api/client/delivery/active');
 }
 
-export async function sendWhatsAppMessage(phone: string, type: string, body: any) {
-  const payload = buildPayload(type, phone, body);
-  const res = await fetch(`${BASE}/webhook/whatsapp`, {
+export async function createDelivery(payload: {
+  type: string;
+  content?: string | null;
+  meta?: Record<string, any> | null;
+}): Promise<{ delivery: Delivery }> {
+  return req('/api/client/delivery', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function getMessages(deliveryId: string): Promise<{ messages: Message[] }> {
+  return req(`/api/client/delivery/${deliveryId}/messages`);
+}
+
+export async function sendMessage(deliveryId: string, payload: {
+  type: string;
+  content?: string | null;
+  meta?: Record<string, any> | null;
+}): Promise<{ message: Message }> {
+  return req(`/api/client/delivery/${deliveryId}/message`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`Erreur ${res.status}`);
 }
 
-export async function getConversation(phone: string): Promise<ConversationResponse> {
-  const res = await fetch(`${BASE}/sim/conversation?phone=${encodeURIComponent(phone)}`);
-  if (!res.ok) throw new Error(`Erreur ${res.status}`);
-  return res.json();
-}
+// ── Upload ────────────────────────────────────────────────────────────────────
 
 export async function uploadFile(uri: string, mime: string, ext: string): Promise<{ url: string; key: string }> {
   const formData = new FormData();
   formData.append('file', { uri, type: mime, name: `file.${ext}` } as any);
-  // Upload sans auth — endpoint public en dev
-  const res = await fetch(`${BASE}/api/upload-public`, {
+  const res = await fetch(`${BASE}/api/upload`, {
     method: 'POST',
+    headers: { Authorization: `Bearer ${_token}` },
     body: formData,
   });
   if (!res.ok) throw new Error(`Upload échoué ${res.status}`);

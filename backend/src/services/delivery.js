@@ -1,5 +1,5 @@
 import db from '../config/db.js';
-import { emitOrderTaken } from './socket.js';
+import { emitOrderTaken, emitOrderAssigned } from './socket.js';
 
 // Retourne la delivery active (pending ou assigned) pour un client donné
 export async function getActiveDelivery(clientId) {
@@ -50,8 +50,8 @@ export async function acceptDelivery(deliveryId, driverId) {
 
     await trx('drivers').where({ id: driverId }).update({ status: 'busy' });
 
-    // Notifier tous les livreurs que la course est prise
     emitOrderTaken(deliveryId);
+    emitOrderAssigned(deliveryId);
 
     return updated;
   });

@@ -9,6 +9,8 @@ export type Delivery = {
   clientAlias: string;
   createdAt: string;
   status?: 'pending' | 'assigned' | 'in_progress' | 'done' | 'cancelled';
+  initialMediaType?: string | null;
+  initialMediaUrl?: string | null;
 };
 
 export type MessageType = 'text' | 'audio' | 'image' | 'location';

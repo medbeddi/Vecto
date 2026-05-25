@@ -1,6 +1,7 @@
 import db from '../config/db.js';
 import { decryptWaId } from './pii-filter.js';
 import { sendText, sendAudio, sendImage, sendLocation } from './messaging.js';
+import { emitDriverMessage } from './socket.js';
 
 // Point d'entrée unique pour le relay driver → client WhatsApp.
 // waId est décrypté ici et n'existe que le temps de l'appel réseau.
@@ -36,6 +37,8 @@ export async function relayDriverMessage(deliveryId, driverId, { type, content, 
       meta: meta ?? null,
     })
     .returning('*');
+
+  emitDriverMessage(deliveryId, message);
 
   return { delivery, message };
 }

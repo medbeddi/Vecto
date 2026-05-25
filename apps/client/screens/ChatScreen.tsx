@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActionSheetIOS, ActivityIndicator, Alert, FlatList,
-  Image, KeyboardAvoidingView, Modal, Platform, Pressable,
+  ActivityIndicator, Alert, FlatList, Image,
+  KeyboardAvoidingView, Linking, Platform,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -9,8 +9,12 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { sendWhatsAppMessage, getConversation, uploadFile } from '../lib/api';
-import type { Message, Delivery } from '../lib/api';
+import {
+  getActiveDelivery, sendMessage, getMessages, uploadFile,
+  getClientToken,
+} from '../lib/api';
+import type { Message } from '../lib/api';
+import { connectClientSocket } from '../lib/socket';
 import type { RootStackParamList } from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
@@ -32,309 +36,299 @@ const STATUS_COLORS: Record<string, string> = {
   in_progress: '#4db8ff', done: BRAND, cancelled: '#ff6b6b',
 };
 
-export default function ChatScreen({ route }: Props) {
-  const { phone } = route.params;
-  const [text, setText] = useState('');
+export default function ChatScreen({ route, navigation }: Props) {
+  const { deliveryId } = route.params;
   const [messages, setMessages] = useState<Message[]>([]);
-  const [delivery, setDelivery] = useState<Delivery | null>(null);
-  const [sending, setSending] = useState(false);
+  const [status, setStatus] = useState<string>('assigned');
+  const [text, setText] = useState('');
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recSeconds, setRecSeconds] = useState(0);
-  const [showAttach, setShowAttach] = useState(false);
+  const [sending, setSending] = useState(false);
   const [playingUri, setPlayingUri] = useState<string | null>(null);
   const listRef = useRef<FlatList>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const msgCountRef = useRef(0);
   const soundRef = useRef<Audio.Sound | null>(null);
+  const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const data = await getConversation(phone);
-      setMessages(data.messages);
-      setDelivery(data.delivery);
-      if (data.messages.length !== msgCountRef.current) {
-        msgCountRef.current = data.messages.length;
-        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-      }
-    } catch {}
-  }, [phone]);
+  const isClosed = status === 'done' || status === 'cancelled';
 
+  // Chargement initial
   useEffect(() => {
-    load();
-    pollRef.current = setInterval(load, 2000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [load]);
+    loadMessages();
+    // Polling léger pour le statut
+    pollRef.current = setInterval(async () => {
+      try {
+        const { delivery } = await getActiveDelivery();
+        if (delivery) setStatus(delivery.status);
+      } catch {}
+    }, 5000);
 
-  const send = async (type: string, body: any) => {
+    // Socket.IO pour messages driver en temps réel
+    const token = getClientToken();
+    if (token) {
+      const socket = connectClientSocket(token);
+      socket.emit('join_delivery', { deliveryId });
+      socket.on('driver_message', (m: Message) => {
+        setMessages(prev => [...prev, { ...m, senderRole: 'driver' }]);
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      });
+      socket.on('delivery_cancelled', () => {
+        setStatus('cancelled');
+        Alert.alert('Course annulée', 'Cette course a été annulée par le livreur.');
+      });
+    }
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [deliveryId]);
+
+  const loadMessages = useCallback(async () => {
+    try {
+      const { messages: msgs } = await getMessages(deliveryId);
+      setMessages(msgs);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 100);
+    } catch {}
+  }, [deliveryId]);
+
+  const send = useCallback(async (type: string, content?: string | null, meta?: any) => {
     setSending(true);
     try {
-      await sendWhatsAppMessage(phone, type, body);
-      setTimeout(load, 600);
+      const { message } = await sendMessage(deliveryId, { type, content, meta });
+      setMessages(prev => [...prev, { ...message, senderRole: 'client' }]);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     } catch {
       Alert.alert('Erreur', 'Message non envoyé.');
+    } finally {
+      setSending(false);
     }
-    setSending(false);
-  };
+  }, [deliveryId]);
 
-  const sendText = () => {
+  const sendText = useCallback(() => {
     const t = text.trim();
     if (!t || sending) return;
     setText('');
     send('text', t);
-  };
+  }, [text, sending, send]);
 
-  const sendLocation = async () => {
-    setShowAttach(false);
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission refusée', 'Activez la localisation dans les paramètres.');
-      return;
-    }
+  const sendLocation = useCallback(async () => {
+    const { status: s } = await Location.requestForegroundPermissionsAsync();
+    if (s !== 'granted') { Alert.alert('Permission refusée'); return; }
     setSending(true);
     try {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      await send('location', {
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-        name: 'Ma position',
-        address: `${loc.coords.latitude.toFixed(5)}, ${loc.coords.longitude.toFixed(5)}`,
+      await send('location', null, {
+        lat: loc.coords.latitude,
+        lng: loc.coords.longitude,
+        label: 'Ma position',
       });
     } catch { setSending(false); }
-  };
+  }, [send]);
 
-  const pickFromGallery = async () => {
-    setShowAttach(false);
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission refusée'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], quality: 0.8, allowsEditing: false,
-    });
+  const pickImage = useCallback(async () => {
+    const { status: s } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (s !== 'granted') { Alert.alert('Permission refusée'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (result.canceled || !result.assets[0]) return;
-    uploadImage(result.assets[0]);
-  };
-
-  const pickFromCamera = async () => {
-    setShowAttach(false);
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission refusée'); return; }
-    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
-    if (result.canceled || !result.assets[0]) return;
-    uploadImage(result.assets[0]);
-  };
-
-  const uploadImage = async (asset: ImagePicker.ImagePickerAsset) => {
+    const asset = result.assets[0];
     const ext = asset.uri.split('.').pop() ?? 'jpg';
     const mime = asset.mimeType ?? `image/${ext}`;
     setSending(true);
     try {
       const { url } = await uploadFile(asset.uri, mime, ext);
-      await send('image', { id: url, mime_type: mime });
+      await send('image', url);
     } catch { Alert.alert('Erreur', "Upload image échoué."); setSending(false); }
-  };
+  }, [send]);
 
-  const toggleRecording = async () => {
+  const toggleRecording = useCallback(async () => {
     if (recording) {
       if (recTimer.current) clearInterval(recTimer.current);
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
-      setRecording(null);
-      setRecSeconds(0);
+      setRecording(null); setRecSeconds(0);
       if (uri) {
         setSending(true);
         try {
           const { url } = await uploadFile(uri, 'audio/m4a', 'm4a');
-          await send('audio', { id: url, mime_type: 'audio/m4a' });
-        } catch { Alert.alert('Erreur', "Upload audio échoué."); }
-        setSending(false);
+          await send('audio', url);
+        } catch { Alert.alert('Erreur', "Upload audio échoué."); setSending(false); }
       }
       return;
     }
-    const { status } = await Audio.requestPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission refusée'); return; }
+    const { status: s } = await Audio.requestPermissionsAsync();
+    if (s !== 'granted') { Alert.alert('Permission refusée'); return; }
     await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
     const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-    setRecording(rec);
-    setRecSeconds(0);
-    recTimer.current = setInterval(() => setRecSeconds(s => s + 1), 1000);
-  };
+    setRecording(rec); setRecSeconds(0);
+    recTimer.current = setInterval(() => setRecSeconds(n => n + 1), 1000);
+  }, [recording, send]);
 
-  const playAudio = async (uri: string) => {
+  const playAudio = useCallback(async (uri: string) => {
     if (soundRef.current) { await soundRef.current.unloadAsync(); soundRef.current = null; setPlayingUri(null); }
     if (playingUri === uri) return;
     setPlayingUri(uri);
     const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
     soundRef.current = sound;
-    sound.setOnPlaybackStatusUpdate((s) => {
-      if ('didJustFinish' in s && s.didJustFinish) { setPlayingUri(null); sound.unloadAsync(); }
+    sound.setOnPlaybackStatusUpdate((st) => {
+      if ('didJustFinish' in st && st.didJustFinish) { setPlayingUri(null); sound.unloadAsync(); }
     });
-  };
+  }, [playingUri]);
 
-  const formatTime = (s: number) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+  const openLocation = useCallback((lat: number, lng: number, label?: string) => {
+    const encoded = encodeURIComponent(label ?? `${lat},${lng}`);
+    const url = Platform.OS === 'ios'
+      ? `maps://?q=${encoded}&ll=${lat},${lng}`
+      : `geo:${lat},${lng}?q=${encoded}`;
+    Linking.openURL(url).catch(() => {
+      Linking.openURL(`https://maps.google.com/?q=${lat},${lng}`);
+    });
+  }, []);
+
+  const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
   const renderItem = ({ item }: { item: Message }) => {
-    const isMe = item.sender_role === 'client';
+    const isMe = item.senderRole === 'client';
     const time = new Date(item.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
     let content = null;
+
     if (item.type === 'text') {
-      content = <Text style={s.msgText}>{item.content}</Text>;
+      content = <Text style={styles.msgText}>{item.content}</Text>;
     } else if (item.type === 'image' && item.content) {
-      content = (
-        <Image source={{ uri: item.content }} style={s.msgImage} resizeMode="cover" />
-      );
+      content = <Image source={{ uri: item.content }} style={styles.msgImage} resizeMode="cover" />;
     } else if (item.type === 'audio' && item.content) {
       const isPlaying = playingUri === item.content;
       content = (
-        <TouchableOpacity style={s.audioBtn} onPress={() => playAudio(item.content!)}>
-          <Text style={s.audioIcon}>{isPlaying ? '⏸' : '▶'}</Text>
-          <View style={s.audioBar} />
-          <Text style={s.audioLabel}>{isPlaying ? 'En cours...' : 'Message vocal'}</Text>
+        <TouchableOpacity style={styles.audioBtn} onPress={() => playAudio(item.content!)}>
+          <Text style={styles.audioIcon}>{isPlaying ? '⏸' : '▶'}</Text>
+          <View style={styles.audioBar} />
+          <Text style={styles.audioLabel}>{isPlaying ? 'En cours...' : 'Message vocal'}</Text>
         </TouchableOpacity>
       );
     } else if (item.type === 'location') {
-      const m = item.meta as any;
+      const m = item.meta ?? {};
+      const lat = m.lat ?? m.latitude;
+      const lng = m.lng ?? m.longitude;
       content = (
-        <View style={s.locBubble}>
-          <Text style={s.locIcon}>📍</Text>
-          <Text style={s.locText}>{m?.label ?? m?.name ?? `${m?.lat}, ${m?.lng}`}</Text>
-        </View>
+        <TouchableOpacity style={styles.locBubble} onPress={() => lat && openLocation(lat, lng, m.label)}>
+          <Text style={styles.locIcon}>📍</Text>
+          <View>
+            <Text style={styles.locText}>{m.label ?? 'Position'}</Text>
+            {lat ? <Text style={styles.locSub}>Appuyer pour ouvrir</Text> : null}
+          </View>
+        </TouchableOpacity>
       );
     } else {
-      content = <Text style={s.msgText}>{item.content ?? `[${item.type}]`}</Text>;
+      content = <Text style={styles.msgText}>{item.content ?? `[${item.type}]`}</Text>;
     }
 
     return (
-      <View style={[s.row, isMe ? s.rowMe : s.rowOther]}>
-        <View style={[s.bubble, isMe ? s.bubbleMe : s.bubbleOther]}>
-          {!isMe && <Text style={s.senderName}>Livreur</Text>}
+      <View style={[styles.row, isMe ? styles.rowMe : styles.rowOther]}>
+        <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleOther]}>
+          {!isMe && <Text style={styles.senderName}>Livreur</Text>}
           {content}
-          <Text style={s.msgTime}>{time} {isMe ? '✓' : ''}</Text>
+          <Text style={styles.msgTime}>{time}{isMe ? ' ✓' : ''}</Text>
         </View>
       </View>
     );
   };
 
   return (
-    <KeyboardAvoidingView style={s.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
       <StatusBar style="light" />
 
-      {/* Status bar */}
-      {delivery && (
-        <View style={[s.statusBar, { borderBottomColor: STATUS_COLORS[delivery.status] ?? '#333' }]}>
-          <View style={[s.statusDot, { backgroundColor: STATUS_COLORS[delivery.status] ?? '#333' }]} />
-          <Text style={[s.statusText, { color: STATUS_COLORS[delivery.status] ?? '#aaa' }]}>
-            {STATUS_LABELS[delivery.status] ?? delivery.status}
-          </Text>
-        </View>
-      )}
+      {/* Statut */}
+      <View style={[styles.statusBar, { borderBottomColor: STATUS_COLORS[status] ?? '#333' }]}>
+        <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[status] ?? '#333' }]} />
+        <Text style={[styles.statusText, { color: STATUS_COLORS[status] ?? '#aaa' }]}>
+          {STATUS_LABELS[status] ?? status}
+        </Text>
+      </View>
 
       {/* Messages */}
       <FlatList
         ref={listRef}
         data={messages}
-        keyExtractor={(m) => m.id}
+        keyExtractor={(m, i) => m.id ?? String(i)}
         renderItem={renderItem}
-        contentContainerStyle={s.list}
+        contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <View style={s.empty}>
-            <Text style={s.emptyIcon}>🛵</Text>
-            <Text style={s.emptyTitle}>Bonjour !</Text>
-            <Text style={s.emptyText}>Envoyez votre adresse, une photo ou un message vocal pour commander.</Text>
+          <View style={styles.empty}>
+            <Text style={styles.emptyIcon}>🛵</Text>
+            <Text style={styles.emptyTitle}>Course en attente</Text>
+            <Text style={styles.emptyText}>Un livreur a accepté votre commande. Vous pouvez communiquer ici.</Text>
           </View>
         }
       />
 
-      {/* Input bar */}
-      {recording ? (
-        <View style={s.recBar}>
-          <View style={s.recDot} />
-          <Text style={s.recText}>🎙 {formatTime(recSeconds)}</Text>
-          <TouchableOpacity style={s.recStop} onPress={toggleRecording}>
-            <Text style={{ color: '#fff', fontWeight: '700' }}>Envoyer</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.recCancel} onPress={async () => {
-            if (recTimer.current) clearInterval(recTimer.current);
-            await recording.stopAndUnloadAsync();
-            setRecording(null); setRecSeconds(0);
-          }}>
-            <Text style={{ color: '#ff6b6b' }}>✕</Text>
-          </TouchableOpacity>
-        </View>
+      {/* Saisie */}
+      {!isClosed ? (
+        recording ? (
+          <View style={styles.recBar}>
+            <View style={styles.recDot} />
+            <Text style={styles.recText}>🎙 {fmt(recSeconds)}</Text>
+            <TouchableOpacity style={styles.recStop} onPress={toggleRecording}>
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Envoyer</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={async () => {
+              if (recTimer.current) clearInterval(recTimer.current);
+              await recording.stopAndUnloadAsync();
+              setRecording(null); setRecSeconds(0);
+            }}>
+              <Text style={{ color: '#f44336', padding: 8 }}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.bar}>
+            <TouchableOpacity style={styles.iconBtn} onPress={sendLocation} disabled={sending}>
+              <Text style={styles.iconTxt}>📍</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn} onPress={pickImage} disabled={sending}>
+              <Text style={styles.iconTxt}>🖼</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn} onPress={toggleRecording} disabled={sending}>
+              <Text style={styles.iconTxt}>🎙</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={styles.input}
+              placeholder="Message..."
+              placeholderTextColor="#555"
+              value={text}
+              onChangeText={setText}
+              returnKeyType="send"
+              onSubmitEditing={sendText}
+              editable={!sending}
+              multiline
+            />
+            <TouchableOpacity
+              style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnOff]}
+              onPress={sendText}
+              disabled={!text.trim() || sending}
+            >
+              {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.sendIcon}>➤</Text>}
+            </TouchableOpacity>
+          </View>
+        )
       ) : (
-        <View style={s.bar}>
-          <TouchableOpacity style={s.attachBtn} onPress={() => setShowAttach(true)} disabled={sending}>
-            <Text style={s.attachIcon}>＋</Text>
-          </TouchableOpacity>
-          <TextInput
-            style={s.input}
-            placeholder="Message..."
-            placeholderTextColor="#555"
-            value={text}
-            onChangeText={setText}
-            returnKeyType="send"
-            onSubmitEditing={sendText}
-            editable={!sending}
-            multiline
-          />
-          {text.trim() ? (
-            <TouchableOpacity style={s.sendBtn} onPress={sendText} disabled={sending}>
-              {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.sendIcon}>➤</Text>}
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={s.micBtn} onPress={toggleRecording} disabled={sending}>
-              <Text style={s.micIcon}>🎙</Text>
-            </TouchableOpacity>
-          )}
+        <View style={styles.closedBanner}>
+          <Text style={styles.closedText}>
+            {status === 'done' ? '✅ Livraison terminée' : '❌ Course annulée'}
+          </Text>
         </View>
       )}
-
-      {/* Attach modal */}
-      <Modal visible={showAttach} transparent animationType="slide" onRequestClose={() => setShowAttach(false)}>
-        <Pressable style={s.modalOverlay} onPress={() => setShowAttach(false)}>
-          <View style={s.attachSheet}>
-            <Text style={s.attachTitle}>Joindre</Text>
-            <View style={s.attachGrid}>
-              <TouchableOpacity style={s.attachItem} onPress={pickFromCamera}>
-                <View style={[s.attachCircle, { backgroundColor: '#E91E63' }]}>
-                  <Text style={s.attachEmoji}>📷</Text>
-                </View>
-                <Text style={s.attachLabel}>Caméra</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.attachItem} onPress={pickFromGallery}>
-                <View style={[s.attachCircle, { backgroundColor: '#9C27B0' }]}>
-                  <Text style={s.attachEmoji}>🖼</Text>
-                </View>
-                <Text style={s.attachLabel}>Galerie</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.attachItem} onPress={sendLocation}>
-                <View style={[s.attachCircle, { backgroundColor: '#2196F3' }]}>
-                  <Text style={s.attachEmoji}>📍</Text>
-                </View>
-                <Text style={s.attachLabel}>Position</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Pressable>
-      </Modal>
     </KeyboardAvoidingView>
   );
 }
 
-const s = StyleSheet.create({
+const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  statusBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 16, paddingVertical: 10,
-    backgroundColor: '#111', borderBottomWidth: 1,
-  },
+  statusBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#111', borderBottomWidth: 2 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { fontSize: 13, fontWeight: '600' },
   list: { padding: 12, gap: 4, flexGrow: 1 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10 },
   emptyIcon: { fontSize: 48 },
-  emptyTitle: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  emptyText: { color: '#555', textAlign: 'center', fontSize: 14, lineHeight: 22, paddingHorizontal: 30 },
+  emptyTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  emptyText: { color: '#555', textAlign: 'center', fontSize: 13, lineHeight: 20, paddingHorizontal: 30 },
   row: { marginVertical: 2 },
   rowMe: { alignItems: 'flex-end' },
   rowOther: { alignItems: 'flex-start' },
@@ -349,50 +343,21 @@ const s = StyleSheet.create({
   audioIcon: { fontSize: 22 },
   audioBar: { flex: 1, height: 3, backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 2 },
   audioLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 12 },
-  locBubble: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  locIcon: { fontSize: 20 },
-  locText: { color: '#e8e8e8', fontSize: 14, flex: 1 },
-  // Input bar
-  bar: {
-    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
-    paddingHorizontal: 10, paddingVertical: 8,
-    backgroundColor: '#111', borderTopWidth: 1, borderTopColor: '#1e1e1e',
-  },
-  attachBtn: {
-    width: 42, height: 42, borderRadius: 21,
-    backgroundColor: '#222', alignItems: 'center', justifyContent: 'center',
-  },
-  attachIcon: { color: BRAND, fontSize: 22, fontWeight: '300' },
-  input: {
-    flex: 1, backgroundColor: '#1e1e1e', borderRadius: 21,
-    paddingHorizontal: 16, paddingVertical: 10,
-    color: '#fff', fontSize: 15, maxHeight: 120,
-    borderWidth: 1, borderColor: '#2a2a2a',
-  },
-  sendBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: BRAND, alignItems: 'center', justifyContent: 'center' },
-  sendIcon: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  micBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: BRAND, alignItems: 'center', justifyContent: 'center' },
-  micIcon: { fontSize: 20 },
-  // Recording bar
-  recBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: '#111', borderTopWidth: 1, borderTopColor: '#1e1e1e',
-  },
+  locBubble: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  locIcon: { fontSize: 22 },
+  locText: { color: '#e8e8e8', fontSize: 14, fontWeight: '600' },
+  locSub: { color: BRAND, fontSize: 11, marginTop: 2 },
+  bar: { flexDirection: 'row', alignItems: 'flex-end', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#111', borderTopWidth: 1, borderTopColor: '#1e1e1e' },
+  iconBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#222', alignItems: 'center', justifyContent: 'center' },
+  iconTxt: { fontSize: 18 },
+  input: { flex: 1, backgroundColor: '#1e1e1e', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 10, color: '#fff', fontSize: 15, maxHeight: 120, borderWidth: 1, borderColor: '#2a2a2a' },
+  sendBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: BRAND, alignItems: 'center', justifyContent: 'center' },
+  sendBtnOff: { opacity: 0.4 },
+  sendIcon: { color: '#fff', fontSize: 15 },
+  recBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#111', borderTopWidth: 1, borderTopColor: '#1e1e1e' },
   recDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#f44336' },
   recText: { flex: 1, color: '#fff', fontSize: 16, fontWeight: '600' },
   recStop: { backgroundColor: BRAND, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
-  recCancel: { padding: 8 },
-  // Attach sheet
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  attachSheet: {
-    backgroundColor: '#1a1a1a', borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    padding: 24, paddingBottom: 40,
-  },
-  attachTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 20 },
-  attachGrid: { flexDirection: 'row', gap: 20 },
-  attachItem: { alignItems: 'center', gap: 8 },
-  attachCircle: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center' },
-  attachEmoji: { fontSize: 26 },
-  attachLabel: { color: '#aaa', fontSize: 13 },
+  closedBanner: { padding: 16, backgroundColor: '#111', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#222' },
+  closedText: { color: '#888', fontSize: 15 },
 });
