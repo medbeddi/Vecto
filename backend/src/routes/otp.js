@@ -63,12 +63,17 @@ router.post('/otp/send', loginLimiter, async (req, res) => {
 
     await db('otps').insert({ phone_hash: phoneHash, code, expires_at: expiresAt });
 
-    await sendOtpWhatsApp(phone.trim(), phoneHash, code);
+    // WhatsApp non-bloquant : si l'envoi échoue, le code est quand même en DB
+    sendOtpWhatsApp(phone.trim(), phoneHash, code).catch((err) => {
+      console.error('[OTP] WhatsApp failed (non-blocking):', err.message);
+      console.info(`[OTP] code fallback hash=${phoneHash.slice(0, 8)}... : ${code}`);
+    });
 
     // En dev : retourner le code directement
     const isDev = env.NODE_ENV !== 'production';
     res.json({ sent: true, ...(isDev ? { code } : {}) });
-  } catch {
+  } catch (e) {
+    console.error('[OTP] send error:', e.message);
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
 });

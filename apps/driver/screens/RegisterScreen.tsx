@@ -8,16 +8,19 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store/auth.store';
 import { BRAND, BG } from '../lib/config';
+import CountryPicker, { COUNTRIES, type Country } from '../components/CountryPicker';
 import type { RootStackParamList } from '../types';
 
 export default function RegisterScreen() {
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState<Country>(COUNTRIES[0]); // Mauritanie par défaut
+  const [local, setLocal] = useState('');
   const phoneRef = useRef<TextInput>(null);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { sendOtp, isLoading, error, clearError } = useAuthStore();
 
-  const isValid = name.trim().length >= 2 && phone.trim().length >= 8;
+  const phone = `${country.dial}${local.replace(/\D/g, '')}`;
+  const isValid = name.trim().length >= 2 && local.replace(/\D/g, '').length >= 6;
 
   useEffect(() => {
     if (error) {
@@ -29,8 +32,8 @@ export default function RegisterScreen() {
   const handleSend = async () => {
     if (!isValid || isLoading) return;
     try {
-      await sendOtp(phone.trim());
-      navigation.navigate('OTP', { phone: phone.trim(), name: name.trim(), mode: 'register' });
+      await sendOtp(phone);
+      navigation.navigate('OTP', { phone, name: name.trim(), mode: 'register' });
     } catch {}
   };
 
@@ -48,7 +51,7 @@ export default function RegisterScreen() {
 
       <View style={styles.form}>
         <TextInput
-          style={styles.input}
+          style={styles.nameInput}
           placeholder="Nom complet"
           placeholderTextColor="#555"
           value={name}
@@ -58,18 +61,21 @@ export default function RegisterScreen() {
           editable={!isLoading}
         />
 
-        <TextInput
-          ref={phoneRef}
-          style={styles.input}
-          placeholder="+216 XX XXX XXX"
-          placeholderTextColor="#555"
-          keyboardType="phone-pad"
-          value={phone}
-          onChangeText={setPhone}
-          returnKeyType="done"
-          onSubmitEditing={handleSend}
-          editable={!isLoading}
-        />
+        <View style={styles.inputRow}>
+          <CountryPicker selected={country} onSelect={setCountry} />
+          <TextInput
+            ref={phoneRef}
+            style={styles.input}
+            placeholder="XX XXX XXX"
+            placeholderTextColor="#555"
+            keyboardType="phone-pad"
+            value={local}
+            onChangeText={setLocal}
+            returnKeyType="done"
+            onSubmitEditing={handleSend}
+            editable={!isLoading}
+          />
+        </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -106,9 +112,15 @@ const styles = StyleSheet.create({
   logo: { fontSize: 52, fontWeight: '800', color: BRAND },
   subtitle: { color: '#888', fontSize: 16, marginTop: 4 },
   form: { gap: 14 },
-  input: {
+  nameInput: {
     backgroundColor: '#1e1e1e', borderRadius: 12, padding: 16,
     color: '#fff', fontSize: 16, borderWidth: 1, borderColor: '#2a2a2a',
+  },
+  input: { flex: 1, padding: 16, color: '#fff', fontSize: 16 },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#1e1e1e', borderRadius: 12,
+    borderWidth: 1, borderColor: '#2a2a2a', overflow: 'hidden',
   },
   error: { color: '#ff6b6b', textAlign: 'center', fontSize: 14 },
   btn: {

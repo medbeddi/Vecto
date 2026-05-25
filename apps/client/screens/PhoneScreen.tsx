@@ -7,23 +7,27 @@ import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { sendOtp } from '../lib/api';
+import CountryPicker, { COUNTRIES, type Country } from '../components/CountryPicker';
 import type { RootStackParamList } from '../App';
 
 const BRAND = '#25D366';
 const BG = '#0a0a0a';
 
 export default function PhoneScreen() {
-  const [phone, setPhone] = useState('');
+  const [country, setCountry] = useState<Country>(COUNTRIES[0]); // Mauritanie par défaut
+  const [local, setLocal] = useState('');
   const [loading, setLoading] = useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const isValid = phone.trim().length >= 8;
+
+  const phone = `${country.dial}${local.replace(/\D/g, '')}`;
+  const isValid = local.replace(/\D/g, '').length >= 6;
 
   const handleSend = async () => {
     if (!isValid || loading) return;
     setLoading(true);
     try {
-      await sendOtp(phone.trim());
-      navigation.navigate('OTP', { phone: phone.trim() });
+      await sendOtp(phone);
+      navigation.navigate('OTP', { phone });
     } catch {
       Alert.alert('Erreur', 'Impossible d\'envoyer le code. Vérifiez votre numéro.');
     } finally {
@@ -50,16 +54,14 @@ export default function PhoneScreen() {
         </Text>
 
         <View style={s.inputRow}>
-          <View style={s.flag}>
-            <Text style={{ fontSize: 20 }}>🇹🇳</Text>
-          </View>
+          <CountryPicker selected={country} onSelect={setCountry} />
           <TextInput
             style={s.input}
-            placeholder="+216 XX XXX XXX"
+            placeholder="XX XXX XXX"
             placeholderTextColor="#555"
             keyboardType="phone-pad"
-            value={phone}
-            onChangeText={setPhone}
+            value={local}
+            onChangeText={setLocal}
             returnKeyType="done"
             onSubmitEditing={handleSend}
             editable={!loading}
@@ -106,7 +108,6 @@ const s = StyleSheet.create({
     backgroundColor: '#1a1a1a', borderRadius: 12,
     borderWidth: 1, borderColor: '#333', overflow: 'hidden',
   },
-  flag: { paddingHorizontal: 14, paddingVertical: 14, borderRightWidth: 1, borderRightColor: '#333' },
   input: { flex: 1, padding: 14, color: '#fff', fontSize: 16 },
   btn: {
     backgroundColor: BRAND, borderRadius: 12,
