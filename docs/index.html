@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vecto — Livraison rapide & anonyme</title>
+  <meta name="description" content="Vecto est une application de livraison rapide et anonyme. Commandez via WhatsApp, suivez votre livraison en temps réel." />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a0a; color: #fff; }
+
+    /* HERO */
+    .hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 40px 24px;
+      background: linear-gradient(135deg, #0a0a0a 0%, #0d1f14 100%);
+      text-align: center;
+    }
+    .logo-circle {
+      width: 90px; height: 90px; border-radius: 50%;
+      background: #111; border: 2.5px solid #25D366;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 42px; margin-bottom: 20px;
+    }
+    .hero h1 { font-size: 56px; font-weight: 800; letter-spacing: 1px; }
+    .hero h1 span { color: #25D366; }
+    .hero p.tagline { color: #888; font-size: 18px; margin-top: 10px; margin-bottom: 40px; }
+
+    .badges { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-bottom: 50px; }
+    .badge {
+      background: #111; border: 1px solid #222; border-radius: 12px;
+      padding: 10px 20px; font-size: 14px; color: #aaa;
+    }
+    .badge span { color: #25D366; font-weight: 700; }
+
+    /* FEATURES */
+    .features {
+      padding: 80px 24px;
+      max-width: 900px; margin: 0 auto;
+    }
+    .features h2 { font-size: 32px; font-weight: 700; text-align: center; margin-bottom: 48px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 24px; }
+    .card {
+      background: #111; border: 1px solid #1e1e1e; border-radius: 16px;
+      padding: 28px; transition: border-color 0.2s;
+    }
+    .card:hover { border-color: #25D366; }
+    .card .icon { font-size: 36px; margin-bottom: 14px; }
+    .card h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .card p { color: #666; font-size: 14px; line-height: 1.6; }
+
+    /* HOW IT WORKS */
+    .how { background: #0d0d0d; padding: 80px 24px; }
+    .how-inner { max-width: 700px; margin: 0 auto; text-align: center; }
+    .how h2 { font-size: 32px; font-weight: 700; margin-bottom: 48px; }
+    .steps { display: flex; flex-direction: column; gap: 24px; text-align: left; }
+    .step { display: flex; align-items: flex-start; gap: 16px; }
+    .step-num {
+      min-width: 40px; height: 40px; border-radius: 50%;
+      background: #25D366; color: #000; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .step-text h4 { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .step-text p { color: #666; font-size: 14px; }
+
+    /* PRIVACY */
+    .privacy { padding: 80px 24px; max-width: 700px; margin: 0 auto; text-align: center; }
+    .privacy h2 { font-size: 32px; font-weight: 700; margin-bottom: 16px; }
+    .privacy p { color: #666; font-size: 16px; line-height: 1.7; }
+    .privacy .shield { font-size: 48px; margin-bottom: 20px; }
+
+    /* CONTACT */
+    .contact {
+      background: #111; border-top: 1px solid #1e1e1e;
+      padding: 60px 24px; text-align: center;
+    }
+    .contact h2 { font-size: 28px; font-weight: 700; margin-bottom: 16px; }
+    .contact p { color: #666; font-size: 15px; margin-bottom: 8px; }
+    .contact a { color: #25D366; text-decoration: none; font-weight: 600; }
+
+    /* FOOTER */
+    footer {
+      background: #0a0a0a; border-top: 1px solid #1a1a1a;
+      padding: 24px; text-align: center; color: #444; font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="logo-circle">🛵</div>
+    <h1><span>Vecto</span></h1>
+    <p class="tagline">Livraison rapide & anonyme via WhatsApp</p>
+    <div class="badges">
+      <div class="badge"><span>📱</span> Application mobile</div>
+      <div class="badge"><span>🔒</span> 100% anonyme</div>
+      <div class="badge"><span>⚡</span> Temps réel</div>
+      <div class="badge"><span>💬</span> Via WhatsApp</div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features">
+    <h2>Pourquoi Vecto ?</h2>
+    <div class="grid">
+      <div class="card">
+        <div class="icon">🛵</div>
+        <h3>Livraison rapide</h3>
+        <p>Commandez et suivez votre livraison en temps réel depuis votre smartphone.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔒</div>
+        <h3>Anonymat total</h3>
+        <p>Votre numéro WhatsApp n'est jamais partagé avec le livreur. Confidentialité garantie.</p>
+      </div>
+      <div class="card">
+        <div class="icon">💬</div>
+        <h3>Chat en direct</h3>
+        <p>Échangez des messages, photos, et localisations avec votre livreur en toute sécurité.</p>
+      </div>
+      <div class="card">
+        <div class="icon">📍</div>
+        <h3>Localisation partagée</h3>
+        <p>Envoyez votre position exacte pour une livraison précise et sans erreur.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔔</div>
+        <h3>Notifications instantanées</h3>
+        <p>Soyez alerté dès qu'un livreur accepte votre commande.</p>
+      </div>
+      <div class="card">
+        <div class="icon">📱</div>
+        <h3>Vérification OTP</h3>
+        <p>Connexion sécurisée par code WhatsApp. Pas de mot de passe à mémoriser.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="how">
+    <div class="how-inner">
+      <h2>Comment ça marche ?</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-text">
+            <h4>Entrez votre numéro WhatsApp</h4>
+            <p>Ouvrez l'app Vecto et entrez votre numéro de téléphone.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-text">
+            <h4>Recevez un code de vérification</h4>
+            <p>Un code à 6 chiffres est envoyé sur votre WhatsApp pour confirmer votre identité.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-text">
+            <h4>Décrivez votre commande</h4>
+            <p>Envoyez un message, une photo ou votre localisation au livreur.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-text">
+            <h4>Suivez en temps réel</h4>
+            <p>Un livreur accepte votre commande et vous tient informé jusqu'à la livraison.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRIVACY -->
+  <section class="privacy">
+    <div class="shield">🛡️</div>
+    <h2>Votre vie privée est protégée</h2>
+    <p>
+      Vecto ne stocke jamais votre numéro de téléphone en clair.
+      Nous utilisons un chiffrement avancé (SHA-256 + AES-256-GCM) pour garantir
+      que votre identité reste confidentielle. Ni le livreur, ni l'administrateur
+      ne peut voir votre numéro réel.
+    </p>
+  </section>
+
+  <!-- CONTACT -->
+  <section class="contact">
+    <h2>Contact</h2>
+    <p>Pour toute question ou assistance :</p>
+    <p><a href="mailto:contact@vecto.app">contact@vecto.app</a></p>
+    <p style="margin-top: 16px; color: #444; font-size: 13px;">
+      Vecto est une plateforme de livraison locale opérée par un prestataire indépendant.
+    </p>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <p>© 2026 Vecto — Tous droits réservés</p>
+  </footer>
+
+</body>
+</html>
