@@ -2,5 +2,5 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "cd backend && node src/app.js"
+startCommand = "cd backend && npm start"
 restartPolicyType = "on_failure"

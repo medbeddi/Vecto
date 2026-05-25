@@ -5,4 +5,4 @@ nixPkgs = ["nodejs_20"]
 cmds = ["cd backend && npm install --production"]
 
 [start]
-cmd = "cd backend && node src/app.js"
+cmd = "cd backend && npm start"
