@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Politique de confidentialité — Vecto</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #fff; line-height: 1.7; }
+    nav {
+      background: rgba(10,10,10,0.95); border-bottom: 1px solid #1a1a1a;
+      padding: 16px 32px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .nav-logo { font-size: 22px; font-weight: 800; color: #25D366; text-decoration: none; }
+    .container { max-width: 760px; margin: 0 auto; padding: 60px 24px; }
+    h1 { font-size: 36px; font-weight: 800; margin-bottom: 8px; }
+    .date { color: #555; font-size: 14px; margin-bottom: 48px; }
+    h2 { font-size: 20px; font-weight: 700; color: #25D366; margin: 40px 0 12px; }
+    p { color: #aaa; font-size: 15px; margin-bottom: 14px; }
+    ul { color: #aaa; font-size: 15px; padding-left: 20px; margin-bottom: 14px; }
+    ul li { margin-bottom: 8px; }
+    .highlight {
+      background: #0d2b19; border: 1px solid #25D36633; border-radius: 12px;
+      padding: 20px 24px; margin: 24px 0;
+    }
+    .highlight p { margin: 0; color: #ccc; }
+    footer { text-align: center; padding: 32px; color: #444; font-size: 13px; border-top: 1px solid #1a1a1a; }
+    a { color: #25D366; }
+  </style>
+</head>
+<body>
+<nav>
+  <a class="nav-logo" href="index.html">🛵 Vecto</a>
+</nav>
+
+<div class="container">
+  <h1>Politique de confidentialité</h1>
+  <p class="date">Dernière mise à jour : 25 mai 2026</p>
+
+  <div class="highlight">
+    <p>🛡️ <strong>Résumé :</strong> Vecto ne stocke jamais votre numéro de téléphone en clair. Votre identité est chiffrée et jamais partagée avec les livreurs ou des tiers.</p>
+  </div>
+
+  <h2>1. Qui sommes-nous ?</h2>
+  <p>Vecto est une plateforme de livraison rapide opérée en Mauritanie. Notre application mobile permet aux clients de commander des livraisons et aux livreurs de les effectuer, de façon sécurisée et anonyme.</p>
+  <p>Contact : <a href="mailto:contact@vecto.app">contact@vecto.app</a></p>
+
+  <h2>2. Données collectées</h2>
+  <p>Nous collectons uniquement les données nécessaires au fonctionnement du service :</p>
+  <ul>
+    <li><strong>Numéro de téléphone WhatsApp</strong> — utilisé uniquement pour l'authentification OTP et la communication. Il est immédiatement chiffré après réception.</li>
+    <li><strong>Messages et médias</strong> — textes, photos, audios et localisations échangés dans le chat de livraison.</li>
+    <li><strong>Données de livraison</strong> — statut, date et description des commandes.</li>
+  </ul>
+
+  <h2>3. Comment nous protégeons vos données</h2>
+  <div class="highlight">
+    <p>🔒 Votre numéro WhatsApp n'est <strong>jamais stocké en clair</strong>. Nous utilisons deux mécanismes :</p>
+  </div>
+  <ul>
+    <li><strong>SHA-256 + sel secret</strong> : un hash irréversible de votre numéro, utilisé pour les recherches en base de données.</li>
+    <li><strong>AES-256-GCM</strong> : un chiffrement symétrique réversible, utilisé uniquement pour vous envoyer des messages WhatsApp.</li>
+  </ul>
+  <p>Les livreurs ne voient jamais votre numéro réel. Ils communiquent avec vous via un alias anonyme (ex: "Client #ABC12").</p>
+
+  <h2>4. Partage des données</h2>
+  <p>Nous ne vendons ni ne partageons vos données personnelles avec des tiers, sauf :</p>
+  <ul>
+    <li><strong>WhatsApp (Meta)</strong> — pour l'envoi des codes OTP de vérification, via l'API WhatsApp Business.</li>
+    <li><strong>Hébergeur Railway</strong> — notre infrastructure serveur, soumise aux normes de sécurité standard.</li>
+  </ul>
+
+  <h2>5. Durée de conservation</h2>
+  <ul>
+    <li>Codes OTP : supprimés après utilisation ou expiration (10 minutes)</li>
+    <li>Messages de livraison : conservés 90 jours après la fin de la livraison</li>
+    <li>Compte utilisateur : conservé jusqu'à la suppression du compte</li>
+  </ul>
+
+  <h2>6. Vos droits</h2>
+  <p>Conformément aux lois applicables sur la protection des données, vous avez le droit de :</p>
+  <ul>
+    <li>Demander la suppression de votre compte et de vos données</li>
+    <li>Demander des informations sur les données que nous détenons</li>
+    <li>Retirer votre consentement à tout moment</li>
+  </ul>
+  <p>Pour exercer vos droits, contactez-nous à : <a href="mailto:contact@vecto.app">contact@vecto.app</a></p>
+
+  <h2>7. Cookies et traceurs</h2>
+  <p>L'application mobile Vecto n'utilise pas de cookies. Notre site web utilise uniquement des cookies techniques nécessaires au fonctionnement.</p>
+
+  <h2>8. Modifications</h2>
+  <p>Nous pouvons mettre à jour cette politique de confidentialité. Toute modification importante sera notifiée via l'application.</p>
+
+  <h2>9. Contact</h2>
+  <p>Pour toute question relative à cette politique : <a href="mailto:contact@vecto.app">contact@vecto.app</a></p>
+</div>
+
+<footer>© 2026 Vecto — <a href="index.html">Accueil</a> · <a href="terms.html">CGU</a></footer>
+</body>
+</html>
