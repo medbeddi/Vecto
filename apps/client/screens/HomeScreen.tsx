@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Linking, Platform,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, Alert, StyleSheet, Text,
+  TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
@@ -15,21 +15,29 @@ import type { RootStackParamList } from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
+type Point = { label: string; lat: number; lng: number } | null;
+
 const BRAND = '#25D366';
 const BG = '#0a0a0a';
 
 export default function HomeScreen({ navigation }: Props) {
   const [region, setRegion] = useState({
-    latitude: 18.0735, longitude: -15.9582, // Nouakchott
+    latitude: 18.0735, longitude: -15.9582,
     latitudeDelta: 0.05, longitudeDelta: 0.05,
   });
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [destination, setDestination] = useState('');
+  const [departure, setDeparture] = useState<Point>(null);
+  const [destination, setDestination] = useState<Point>(null);
+  const [activeField, setActiveField] = useState<'departure' | 'destination'>('destination');
+  const [departureText, setDepartureText] = useState('');
+  const [destinationText, setDestinationText] = useState('');
+
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recSeconds, setRecSeconds] = useState(0);
   const [sending, setSending] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [deliveryId, setDeliveryId] = useState<string | null>(null);
+
   const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mapRef = useRef<MapView>(null);
@@ -63,9 +71,7 @@ export default function HomeScreen({ navigation }: Props) {
         }
       } catch {}
     })();
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
   const connectToSocket = useCallback((dId: string) => {
@@ -105,41 +111,64 @@ export default function HomeScreen({ navigation }: Props) {
       if (err.code === 'DELIVERY_ALREADY_ACTIVE') {
         Alert.alert('Course en cours', 'Vous avez déjà une course en attente.');
       } else {
-        Alert.alert('Erreur', 'Impossible d\'envoyer la commande.');
+        Alert.alert('Erreur', 'Impossible d\'envoyer la commande. Vérifiez votre connexion.');
       }
     } finally {
       setSending(false);
     }
   }, [startPolling, connectToSocket]);
 
-  const sendText = useCallback(async () => {
-    const t = destination.trim();
-    if (!t) return;
-    setDestination('');
-    await submitOrder('text', t);
-  }, [destination, submitOrder]);
+  // Tap sur la carte → place un marqueur pour le champ actif
+  const handleMapPress = useCallback((e: any) => {
+    const { latitude, longitude } = e.nativeEvent.coordinate;
+    const label = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+    if (activeField === 'departure') {
+      setDeparture({ label, lat: latitude, lng: longitude });
+      setDepartureText(label);
+    } else {
+      setDestination({ label, lat: latitude, lng: longitude });
+      setDestinationText(label);
+    }
+  }, [activeField]);
 
-  const sendLocation = useCallback(async () => {
+  // Bouton "Ma position" → remplit le départ avec GPS
+  const locateMe = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission refusée'); return; }
-    setSending(true);
     try {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      await submitOrder('location', null, {
-        lat: loc.coords.latitude,
-        lng: loc.coords.longitude,
-        label: 'Ma position',
-      });
-    } catch { setSending(false); }
-  }, [submitOrder]);
+      const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setDeparture({ label: 'Ma position', ...coords });
+      setDepartureText('Ma position');
+      setActiveField('destination');
+      mapRef.current?.animateToRegion({
+        latitude: coords.lat, longitude: coords.lng,
+        latitudeDelta: 0.02, longitudeDelta: 0.02,
+      }, 400);
+    } catch { Alert.alert('Erreur', 'Impossible d\'obtenir la position.'); }
+  }, []);
 
+  // Commande avec les deux points
+  const sendRoute = useCallback(async () => {
+    if (!destination) return;
+    if (departure) {
+      await submitOrder('location', null, {
+        from: { label: departure.label, lat: departure.lat, lng: departure.lng },
+        to: { label: destination.label, lat: destination.lat, lng: destination.lng },
+        label: `${departure.label} → ${destination.label}`,
+      });
+    } else {
+      await submitOrder('text', destination.label);
+    }
+  }, [departure, destination, submitOrder]);
+
+  // Enregistrement vocal
   const toggleRecording = useCallback(async () => {
     if (recording) {
       if (recTimer.current) clearInterval(recTimer.current);
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
-      setRecording(null);
-      setRecSeconds(0);
+      setRecording(null); setRecSeconds(0);
       if (!uri) return;
       setSending(true);
       try {
@@ -154,21 +183,20 @@ export default function HomeScreen({ navigation }: Props) {
     const { status } = await Audio.requestPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission refusée'); return; }
     await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-    const { recording: rec } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY
-    );
-    setRecording(rec);
-    setRecSeconds(0);
+    const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+    setRecording(rec); setRecSeconds(0);
     recTimer.current = setInterval(() => setRecSeconds(s => s + 1), 1000);
   }, [recording, submitOrder]);
 
   const cancelWaiting = useCallback(() => {
     if (pollRef.current) clearInterval(pollRef.current);
-    setWaiting(false);
-    setDeliveryId(null);
+    setWaiting(false); setDeliveryId(null);
   }, []);
 
-  const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  const fmt = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+  const canSend = !!destination && !sending && !waiting;
 
   return (
     <View style={s.root}>
@@ -182,35 +210,100 @@ export default function HomeScreen({ navigation }: Props) {
         region={region}
         showsUserLocation
         showsMyLocationButton={false}
+        onPress={!waiting ? handleMapPress : undefined}
+        onRegionChangeComplete={setRegion}
       >
-        {userLocation && (
-          <Marker coordinate={userLocation} title="Vous" />
+        {departure && (
+          <Marker
+            coordinate={{ latitude: departure.lat, longitude: departure.lng }}
+            title="Départ"
+            pinColor="#2196F3"
+          />
+        )}
+        {destination && (
+          <Marker
+            coordinate={{ latitude: destination.lat, longitude: destination.lng }}
+            title="Destination"
+            pinColor="#f44336"
+          />
         )}
       </MapView>
 
-      {/* Barre de recherche flottante */}
+      {/* Carte de recherche flottante */}
       {!waiting && (
         <View style={s.searchCard}>
-          <Text style={s.searchLabel}>🛵 Vecto — Où livrer ?</Text>
-          <View style={s.searchRow}>
+          <Text style={s.searchLabel}>🛵 Vecto — Commander une course</Text>
+
+          {/* Champ départ */}
+          <TouchableOpacity
+            style={[s.inputRow, activeField === 'departure' && s.inputRowActive]}
+            onPress={() => setActiveField('departure')}
+            activeOpacity={1}
+          >
+            <View style={[s.dot, { backgroundColor: '#2196F3' }]} />
             <TextInput
-              style={s.searchInput}
-              placeholder="Adresse ou description..."
+              style={s.textInput}
+              placeholder="Point de départ (optionnel)"
               placeholderTextColor="#555"
-              value={destination}
-              onChangeText={setDestination}
-              returnKeyType="send"
-              onSubmitEditing={sendText}
+              value={departureText}
+              onChangeText={(v) => {
+                setDepartureText(v);
+                setDeparture(v.trim() ? { label: v, lat: 0, lng: 0 } : null);
+              }}
+              onFocus={() => setActiveField('departure')}
+              returnKeyType="next"
               editable={!sending}
             />
-            {destination.trim() ? (
-              <TouchableOpacity style={s.sendBtn} onPress={sendText} disabled={sending}>
-                {sending
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={s.sendIcon}>➤</Text>}
+            {departure && (
+              <TouchableOpacity onPress={() => { setDeparture(null); setDepartureText(''); }}>
+                <Text style={s.clearBtn}>✕</Text>
               </TouchableOpacity>
-            ) : null}
-          </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Champ destination */}
+          <TouchableOpacity
+            style={[s.inputRow, activeField === 'destination' && s.inputRowActive]}
+            onPress={() => setActiveField('destination')}
+            activeOpacity={1}
+          >
+            <View style={[s.dot, { backgroundColor: '#f44336' }]} />
+            <TextInput
+              style={s.textInput}
+              placeholder="Destination *"
+              placeholderTextColor="#555"
+              value={destinationText}
+              onChangeText={(v) => {
+                setDestinationText(v);
+                setDestination(v.trim() ? { label: v, lat: 0, lng: 0 } : null);
+              }}
+              onFocus={() => setActiveField('destination')}
+              returnKeyType="done"
+              onSubmitEditing={canSend ? sendRoute : undefined}
+              editable={!sending}
+            />
+            {destination && (
+              <TouchableOpacity onPress={() => { setDestination(null); setDestinationText(''); }}>
+                <Text style={s.clearBtn}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+
+          <Text style={s.tapHint}>
+            {activeField === 'departure' ? '👆 Appuyez sur la carte pour le départ' : '👆 Appuyez sur la carte pour la destination'}
+          </Text>
+
+          {/* Bouton commander */}
+          {canSend && (
+            <TouchableOpacity style={s.commandBtn} onPress={sendRoute} activeOpacity={0.85}>
+              <Text style={s.commandBtnText}>Commander →</Text>
+            </TouchableOpacity>
+          )}
+          {sending && (
+            <View style={s.commandBtn}>
+              <ActivityIndicator color="#fff" />
+            </View>
+          )}
         </View>
       )}
 
@@ -226,28 +319,35 @@ export default function HomeScreen({ navigation }: Props) {
         </View>
       )}
 
-      {/* Boutons flottants bas */}
+      {/* Boutons bas */}
       {!waiting && (
         <View style={s.bottomBar}>
-          <TouchableOpacity style={s.locBtn} onPress={sendLocation} disabled={sending}>
+          {/* Locate me */}
+          <TouchableOpacity style={s.locBtn} onPress={locateMe} disabled={sending}>
             <Text style={s.btnIcon}>📍</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[s.micBtn, recording && s.micBtnRec]}
-            onPress={toggleRecording}
-            disabled={sending && !recording}
-          >
-            {sending && !recording
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={s.btnIcon}>{recording ? '⏹' : '🎙'}</Text>}
-          </TouchableOpacity>
-
-          {recording && (
-            <View style={s.recInfo}>
-              <View style={s.recDot} />
-              <Text style={s.recText}>{fmt(recSeconds)}</Text>
-            </View>
+          {/* Micro vocal */}
+          {recording ? (
+            <>
+              <View style={s.recInfo}>
+                <View style={s.recDot} />
+                <Text style={s.recText}>{fmt(recSeconds)}</Text>
+              </View>
+              <TouchableOpacity style={[s.micBtn, s.micBtnRec]} onPress={toggleRecording}>
+                <Text style={s.btnIcon}>⏹</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity
+              style={[s.micBtn, sending && s.micBtnOff]}
+              onPress={toggleRecording}
+              disabled={sending}
+            >
+              {sending
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={s.btnIcon}>🎙</Text>}
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -259,26 +359,30 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
   map: { ...StyleSheet.absoluteFillObject },
   searchCard: {
-    position: 'absolute', top: 56, left: 16, right: 16,
-    backgroundColor: 'rgba(20,20,20,0.97)',
-    borderRadius: 16, padding: 16,
+    position: 'absolute', top: 48, left: 14, right: 14,
+    backgroundColor: 'rgba(15,15,15,0.97)',
+    borderRadius: 16, padding: 14,
     borderWidth: 1, borderColor: '#2a2a2a',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4, shadowRadius: 8, elevation: 8,
+    shadowOpacity: 0.5, shadowRadius: 10, elevation: 10,
+    gap: 8,
   },
-  searchLabel: { color: BRAND, fontSize: 13, fontWeight: '700', marginBottom: 10 },
-  searchRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  searchInput: {
-    flex: 1, backgroundColor: '#111', borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12,
-    color: '#fff', fontSize: 15,
-    borderWidth: 1, borderColor: '#333',
+  searchLabel: { color: BRAND, fontSize: 13, fontWeight: '700' },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#111', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1.5, borderColor: '#2a2a2a',
   },
-  sendBtn: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: BRAND, alignItems: 'center', justifyContent: 'center',
+  inputRowActive: { borderColor: BRAND },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  textInput: { flex: 1, color: '#fff', fontSize: 14 },
+  clearBtn: { color: '#555', fontSize: 16, paddingLeft: 4 },
+  tapHint: { color: '#444', fontSize: 11, textAlign: 'center' },
+  commandBtn: {
+    backgroundColor: BRAND, borderRadius: 12,
+    paddingVertical: 13, alignItems: 'center',
   },
-  sendIcon: { color: '#fff', fontSize: 16 },
+  commandBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   waitingCard: {
     position: 'absolute', bottom: 120, left: 24, right: 24,
     backgroundColor: 'rgba(15,15,15,0.97)', borderRadius: 20,
@@ -290,12 +394,12 @@ const s = StyleSheet.create({
   cancelBtn: { marginTop: 4, paddingVertical: 8, paddingHorizontal: 20 },
   cancelText: { color: '#f44336', fontSize: 14 },
   bottomBar: {
-    position: 'absolute', bottom: 48, left: 0, right: 0,
+    position: 'absolute', bottom: 40, left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16,
   },
   locBtn: {
     width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(20,20,20,0.9)',
+    backgroundColor: 'rgba(20,20,20,0.92)',
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: '#333',
   },
@@ -306,10 +410,11 @@ const s = StyleSheet.create({
     shadowOpacity: 0.5, shadowRadius: 8, elevation: 6,
   },
   micBtnRec: { backgroundColor: '#f44336' },
+  micBtnOff: { opacity: 0.5 },
   btnIcon: { fontSize: 28 },
   recInfo: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(20,20,20,0.9)', borderRadius: 20,
+    backgroundColor: 'rgba(20,20,20,0.92)', borderRadius: 20,
     paddingHorizontal: 12, paddingVertical: 8,
   },
   recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#f44336' },

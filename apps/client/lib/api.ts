@@ -1,8 +1,31 @@
+import * as SecureStore from 'expo-secure-store';
+
 const BASE = process.env.EXPO_PUBLIC_API_URL!;
+const TOKEN_KEY = 'vecto_client_token';
 
 let _token: string | null = null;
-export function setClientToken(t: string) { _token = t; }
+
+export function setClientToken(t: string) {
+  _token = t;
+  SecureStore.setItemAsync(TOKEN_KEY, t).catch(() => {});
+}
+
 export function getClientToken() { return _token; }
+
+export async function loadClientToken(): Promise<string | null> {
+  try {
+    const t = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (t) _token = t;
+    return t;
+  } catch {
+    return null;
+  }
+}
+
+export function clearClientToken() {
+  _token = null;
+  SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
+}
 
 async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

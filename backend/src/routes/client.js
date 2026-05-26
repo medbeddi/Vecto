@@ -54,9 +54,7 @@ router.post('/client/delivery', requireClientAuth, async (req, res) => {
         sender_role: 'client',
         type,
         content: type !== 'location' ? (content ?? null) : null,
-        meta: meta ?? null,
-        initial_media_type: type,
-        initial_media_url: type !== 'location' ? (content ?? null) : null,
+        meta: meta ? JSON.stringify(meta) : null,
       })
       .returning('*');
 
