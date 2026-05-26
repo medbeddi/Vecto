@@ -43,7 +43,7 @@ Notifications.setNotificationHandler({
 export default function DeliveriesScreen() {
   const navigation = useNavigation<Nav>();
   const { driver, logout } = useAuthStore();
-  const { available, loadingDeliveries, loadAvailable, upsertAvailable, removeAvailable, activeCourses, addActiveCourse } =
+  const { available, loadingDeliveries, loadAvailable, loadActiveCourses, upsertAvailable, removeAvailable, activeCourses, addActiveCourse } =
     useDeliveriesStore();
   const [accepting, setAccepting] = useState<string | null>(null);
   const [connected, setConnected] = useState(socketService.connected);
@@ -59,6 +59,7 @@ export default function DeliveriesScreen() {
   // Chargement initial + connexion socket
   useEffect(() => {
     loadAvailable();
+    loadActiveCourses();
     registerFCMToken();
 
     // Écouter les nouveaux ordres en temps réel (broadcast)

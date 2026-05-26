@@ -75,6 +75,7 @@ function AudioContent({ url }: { url: string | null }) {
     }
     setLoading(true);
     try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
       if (!soundRef.current) {
         const { sound } = await Audio.Sound.createAsync({ uri: url });
         soundRef.current = sound;

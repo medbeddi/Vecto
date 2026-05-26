@@ -200,11 +200,11 @@ export default function ChatScreen() {
         body: formData,
       });
       if (!uploadRes.ok) throw new Error('upload failed');
-      const { url, key } = await uploadRes.json();
+      const { url } = await uploadRes.json();
 
       const { message } = await api<{ message: Message }>(
         `/api/deliveries/${delivery.id}/message`,
-        { method: 'POST', body: { type, content: key } }
+        { method: 'POST', body: { type, content: url } }
       );
       appendMessage({ ...message, senderRole: 'driver', type, content: url, meta: null });
       listRef.current?.scrollToEnd({ animated: true });

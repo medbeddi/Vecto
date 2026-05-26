@@ -131,6 +131,29 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
   }
 });
 
+// Courses actives du driver (assigned/in_progress)
+router.get('/deliveries/mine', requireAuth, async (req, res) => {
+  try {
+    const deliveries = await db('deliveries')
+      .join('clients', 'deliveries.client_id', 'clients.id')
+      .where({ 'deliveries.driver_id': req.driver.id })
+      .whereIn('deliveries.status', ['assigned', 'in_progress'])
+      .orderBy('deliveries.assigned_at', 'desc')
+      .select(
+        'deliveries.id',
+        'deliveries.description',
+        'deliveries.status',
+        'deliveries.created_at as createdAt',
+        'deliveries.initial_media_type as initialMediaType',
+        'deliveries.initial_media_url as initialMediaUrl',
+        'clients.alias as clientAlias'
+      );
+    res.json({ deliveries });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 router.post('/deliveries/:id/accept', requireAuth, async (req, res) => {
   try {
     const delivery = await acceptDelivery(req.params.id, req.driver.id);

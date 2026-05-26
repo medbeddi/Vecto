@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Image,
+  ActivityIndicator, Alert, FlatList, Image, Modal,
   KeyboardAvoidingView, Linking, Platform,
   StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
@@ -45,6 +45,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [recSeconds, setRecSeconds] = useState(0);
   const [sending, setSending] = useState(false);
   const [playingUri, setPlayingUri] = useState<string | null>(null);
+  const [fullscreenImg, setFullscreenImg] = useState<string | null>(null);
   const listRef = useRef<FlatList>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
   const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -164,14 +165,21 @@ export default function ChatScreen({ route, navigation }: Props) {
   }, [recording, send]);
 
   const playAudio = useCallback(async (uri: string) => {
-    if (soundRef.current) { await soundRef.current.unloadAsync(); soundRef.current = null; setPlayingUri(null); }
-    if (playingUri === uri) return;
+    if (soundRef.current) {
+      await soundRef.current.stopAsync();
+      await soundRef.current.unloadAsync();
+      soundRef.current = null;
+      if (playingUri === uri) { setPlayingUri(null); return; }
+    }
     setPlayingUri(uri);
-    const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
-    soundRef.current = sound;
-    sound.setOnPlaybackStatusUpdate((st) => {
-      if ('didJustFinish' in st && st.didJustFinish) { setPlayingUri(null); sound.unloadAsync(); }
-    });
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
+      const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
+      soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((st) => {
+        if (st.isLoaded && st.didJustFinish) { setPlayingUri(null); sound.unloadAsync(); soundRef.current = null; }
+      });
+    } catch { setPlayingUri(null); }
   }, [playingUri]);
 
   const openLocation = useCallback((lat: number, lng: number, label?: string) => {
@@ -194,7 +202,11 @@ export default function ChatScreen({ route, navigation }: Props) {
     if (item.type === 'text') {
       content = <Text style={styles.msgText}>{item.content}</Text>;
     } else if (item.type === 'image' && item.content) {
-      content = <Image source={{ uri: item.content }} style={styles.msgImage} resizeMode="cover" />;
+      content = (
+        <TouchableOpacity onPress={() => setFullscreenImg(item.content!)} activeOpacity={0.9}>
+          <Image source={{ uri: item.content }} style={styles.msgImage} resizeMode="cover" />
+        </TouchableOpacity>
+      );
     } else if (item.type === 'audio' && item.content) {
       const isPlaying = playingUri === item.content;
       content = (
@@ -235,6 +247,18 @@ export default function ChatScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={90}>
       <StatusBar style="light" />
+
+      {/* Modal image plein écran */}
+      <Modal visible={!!fullscreenImg} transparent animationType="fade" onRequestClose={() => setFullscreenImg(null)}>
+        <View style={styles.imgModal}>
+          <TouchableOpacity style={styles.imgModalClose} onPress={() => setFullscreenImg(null)}>
+            <Text style={styles.imgModalCloseText}>✕</Text>
+          </TouchableOpacity>
+          {fullscreenImg && (
+            <Image source={{ uri: fullscreenImg }} style={styles.imgModalImg} resizeMode="contain" />
+          )}
+        </View>
+      </Modal>
 
       {/* Statut */}
       <View style={[styles.statusBar, { borderBottomColor: STATUS_COLORS[status] ?? '#333' }]}>
@@ -360,4 +384,8 @@ const styles = StyleSheet.create({
   recStop: { backgroundColor: BRAND, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   closedBanner: { padding: 16, backgroundColor: '#111', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#222' },
   closedText: { color: '#888', fontSize: 15 },
+  imgModal: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+  imgModalClose: { position: 'absolute', top: 52, right: 20, zIndex: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  imgModalCloseText: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  imgModalImg: { width: '100%', height: '100%' },
 });
