@@ -1,4 +1,6 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Audio } from 'expo-av';
 import { BRAND, CARD } from '../lib/config';
 import type { Delivery } from '../types';
 
@@ -36,6 +38,48 @@ export function DeliveryCard({ delivery, onAccept, accepting }: Props) {
   const label = TYPE_LABEL[mediaType] ?? mediaType;
   const color = TYPE_COLOR[mediaType] ?? '#607D8B';
 
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [loadingAudio, setLoadingAudio] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync();
+    };
+  }, []);
+
+  const toggleAudio = async () => {
+    const url = delivery.initialMediaUrl;
+    if (!url) return;
+
+    if (playing) {
+      await soundRef.current?.stopAsync();
+      await soundRef.current?.unloadAsync();
+      soundRef.current = null;
+      setPlaying(false);
+      return;
+    }
+
+    setLoadingAudio(true);
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
+      const { sound } = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: true });
+      soundRef.current = sound;
+      setPlaying(true);
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setPlaying(false);
+          sound.unloadAsync();
+          soundRef.current = null;
+        }
+      });
+    } catch {
+      setPlaying(false);
+    } finally {
+      setLoadingAudio(false);
+    }
+  };
+
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -44,11 +88,29 @@ export function DeliveryCard({ delivery, onAccept, accepting }: Props) {
         <Text style={styles.age}>{age}</Text>
       </View>
 
+      {/* Badge type */}
       <View style={[styles.typeBadge, { backgroundColor: color + '22', borderColor: color + '66' }]}>
         <Text style={styles.typeIcon}>{icon}</Text>
         <Text style={[styles.typeLabel, { color }]}>{label}</Text>
       </View>
 
+      {/* Lecteur audio intégré si message vocal */}
+      {mediaType === 'audio' && delivery.initialMediaUrl ? (
+        <TouchableOpacity
+          style={[styles.audioBtn, playing && styles.audioBtnPlaying]}
+          onPress={toggleAudio}
+          disabled={loadingAudio}
+          activeOpacity={0.75}
+        >
+          {loadingAudio ? (
+            <ActivityIndicator color="#E91E63" size="small" />
+          ) : (
+            <Text style={styles.audioBtnIcon}>{playing ? '⏹ Arrêter' : '▶ Écouter le message'}</Text>
+          )}
+        </TouchableOpacity>
+      ) : null}
+
+      {/* Texte si message texte */}
       {delivery.description && mediaType === 'text' ? (
         <Text style={styles.description} numberOfLines={2}>{delivery.description}</Text>
       ) : null}
@@ -96,6 +158,13 @@ const styles = StyleSheet.create({
   },
   typeIcon: { fontSize: 16 },
   typeLabel: { fontSize: 13, fontWeight: '700' },
+  audioBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#1a0a0f', borderWidth: 1, borderColor: '#E91E6366',
+    borderRadius: 10, paddingVertical: 10,
+  },
+  audioBtnPlaying: { borderColor: '#E91E63', backgroundColor: '#2a0a14' },
+  audioBtnIcon: { color: '#E91E63', fontWeight: '700', fontSize: 14 },
   description: { color: '#ccc', fontSize: 14, lineHeight: 20 },
   btn: {
     backgroundColor: BRAND,
