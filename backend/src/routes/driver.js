@@ -117,7 +117,10 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
       .select(
         'deliveries.id',
         'deliveries.description',
+        'deliveries.status',
         'deliveries.created_at as createdAt',
+        'deliveries.initial_media_type as initialMediaType',
+        'deliveries.initial_media_url as initialMediaUrl',
         'clients.alias as clientAlias'
         // JAMAIS : wa_id_hash, wa_id_enc, client_id
       );

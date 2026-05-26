@@ -3,8 +3,16 @@ import { API_BASE } from './config';
 import { storage } from './storage';
 import type { Delivery, Message } from '../types';
 
+type NewOrderPayload = {
+  deliveryId: string;
+  clientAlias: string;
+  createdAt: string;
+  message: { type: string; content: string | null; meta: any };
+};
+
 type EventMap = {
-  new_delivery: (data: Delivery) => void;
+  new_order: (data: NewOrderPayload) => void;
+  order_taken: (data: { deliveryId: string }) => void;
   client_message: (data: Message) => void;
   delivery_cancelled: (data: { deliveryId: string }) => void;
   relay_error: (data: { deliveryId: string; code: string }) => void;
