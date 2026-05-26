@@ -25,8 +25,9 @@ export async function sendText(waId, text) {
   });
 }
 
-export async function sendAudio(waId, r2Key) {
-  const url = await getSignedMediaUrl(r2Key, 300);
+export async function sendAudio(waId, urlOrKey) {
+  // Si c'est déjà une URL publique (upload local driver), on l'utilise directement
+  const url = urlOrKey?.startsWith('http') ? urlOrKey : await getSignedMediaUrl(urlOrKey, 300);
   return post({
     messaging_product: 'whatsapp',
     to: waId,
@@ -35,8 +36,8 @@ export async function sendAudio(waId, r2Key) {
   });
 }
 
-export async function sendImage(waId, r2Key, caption = '') {
-  const url = await getSignedMediaUrl(r2Key, 300);
+export async function sendImage(waId, urlOrKey, caption = '') {
+  const url = urlOrKey?.startsWith('http') ? urlOrKey : await getSignedMediaUrl(urlOrKey, 300);
   return post({
     messaging_product: 'whatsapp',
     to: waId,

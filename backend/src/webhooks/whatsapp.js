@@ -134,21 +134,27 @@ async function extractContent(msg, deliveryId) {
 
     case 'audio':
     case 'image': {
-      const mediaId = msg[msg.type]?.id;
-      const mimeType = msg[msg.type]?.mime_type || 'application/octet-stream';
+      try {
+        const mediaId = msg[msg.type]?.id;
+        const mimeType = msg[msg.type]?.mime_type || 'application/octet-stream';
 
-      const { buffer } = await downloadFromMeta(mediaId);
-      const ext = extFromMime(mimeType);
-      const key = `media/${deliveryId}/${msg.type}/${Date.now()}_${mediaId}.${ext}`;
+        const { buffer } = await downloadFromMeta(mediaId);
+        const ext = extFromMime(mimeType);
+        const key = `media/${deliveryId}/${msg.type}/${Date.now()}_${mediaId}.${ext}`;
 
-      await uploadToR2(buffer, key, mimeType);
-      const signedUrl = await getSignedMediaUrl(key);
+        await uploadToR2(buffer, key, mimeType);
+        const signedUrl = await getSignedMediaUrl(key);
 
-      const meta = msg.type === 'audio'
-        ? { duration: msg.audio?.duration ?? null, r2Key: key }
-        : { r2Key: key };
+        const meta = msg.type === 'audio'
+          ? { duration: msg.audio?.duration ?? null, r2Key: key }
+          : { r2Key: key };
 
-      return { content: signedUrl, meta };
+        return { content: signedUrl, meta };
+      } catch (err) {
+        // R2 non configuré ou erreur réseau — on passe en mode texte dégradé
+        console.warn(`[webhook] media ${msg.type} non stocké: ${err.message}`);
+        return { content: null, meta: { raw_type: msg.type } };
+      }
     }
 
     case 'location': {

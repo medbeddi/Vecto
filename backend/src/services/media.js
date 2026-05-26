@@ -3,14 +3,16 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import axios from 'axios';
 import { env } from '../config/env.js';
 
-const r2 = new S3Client({
-  region: 'auto',
-  endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId: env.R2_ACCESS_KEY_ID,
-    secretAccessKey: env.R2_SECRET_ACCESS_KEY,
-  },
-});
+const r2 = env.R2_ENABLED
+  ? new S3Client({
+      region: 'auto',
+      endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: env.R2_ACCESS_KEY_ID,
+        secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+      },
+    })
+  : null;
 
 // Télécharge un media depuis Meta Cloud API et retourne le buffer + mimeType
 export async function downloadFromMeta(mediaId) {
@@ -34,6 +36,7 @@ export async function downloadFromMeta(mediaId) {
 
 // Upload vers R2 et retourne la clé de stockage
 export async function uploadToR2(buffer, key, contentType) {
+  if (!r2) throw Object.assign(new Error('R2 non configuré'), { code: 'R2_NOT_CONFIGURED' });
   await r2.send(
     new PutObjectCommand({
       Bucket: env.R2_BUCKET_NAME,
@@ -47,6 +50,7 @@ export async function uploadToR2(buffer, key, contentType) {
 
 // Génère une URL signée valable `expiresIn` secondes (défaut 1h)
 export async function getSignedMediaUrl(key, expiresIn = 3600) {
+  if (!r2) throw Object.assign(new Error('R2 non configuré'), { code: 'R2_NOT_CONFIGURED' });
   return getSignedUrl(
     r2,
     new GetObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: key }),
@@ -56,6 +60,7 @@ export async function getSignedMediaUrl(key, expiresIn = 3600) {
 
 // Génère une URL pré-signée pour upload direct Flutter → R2 (PUT)
 export async function getSignedUploadUrl(key, expiresIn = 300) {
+  if (!r2) throw Object.assign(new Error('R2 non configuré'), { code: 'R2_NOT_CONFIGURED' });
   return getSignedUrl(
     r2,
     new PutObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: key }),

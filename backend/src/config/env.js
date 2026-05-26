@@ -2,18 +2,14 @@ import { config } from 'dotenv';
 config();
 
 const REQUIRED = [
+  'DATABASE_URL',
+  'JWT_SECRET',
+  'JWT_REFRESH_SECRET',
   'WA_TOKEN',
   'WA_PHONE_ID',
   'WA_VERIFY_TOKEN',
   'WA_SALT',
   'WA_ENCRYPTION_KEY',
-  'DATABASE_URL',
-  'JWT_SECRET',
-  'JWT_REFRESH_SECRET',
-  'R2_ACCOUNT_ID',
-  'R2_ACCESS_KEY_ID',
-  'R2_SECRET_ACCESS_KEY',
-  'R2_BUCKET_NAME',
 ];
 
 const missing = REQUIRED.filter((k) => !process.env[k]);
@@ -23,6 +19,13 @@ if (missing.length > 0) {
 
 if (process.env.WA_ENCRYPTION_KEY.length !== 64) {
   throw new Error('WA_ENCRYPTION_KEY doit être exactement 64 caractères hex (32 bytes)');
+}
+
+// R2 optionnel — si absent, les médias WhatsApp entrants sont ignorés
+const R2_VARS = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME'];
+const missingR2 = R2_VARS.filter((k) => !process.env[k]);
+if (missingR2.length > 0) {
+  console.warn(`[env] R2 non configuré (${missingR2.join(', ')}) — médias WhatsApp entrants désactivés`);
 }
 
 export const env = {
@@ -42,11 +45,12 @@ export const env = {
   JWT_ACCESS_EXPIRES: process.env.JWT_ACCESS_EXPIRES || '1h',
   JWT_REFRESH_EXPIRES: process.env.JWT_REFRESH_EXPIRES || '30d',
 
-  // R2
-  R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
-  R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
-  R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
-  R2_BUCKET_NAME: process.env.R2_BUCKET_NAME,
+  // R2 — optionnel
+  R2_ENABLED: missingR2.length === 0,
+  R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID || '',
+  R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID || '',
+  R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY || '',
+  R2_BUCKET_NAME: process.env.R2_BUCKET_NAME || '',
   R2_PUBLIC_URL: process.env.R2_PUBLIC_URL || '',
 
   // FCM — optionnel (notifications push désactivées si absent)
