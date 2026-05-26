@@ -19,7 +19,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useDeliveriesStore } from '../store/deliveries.store';
 import { socketService } from '../lib/socket';
-import { api, uploadToR2 } from '../lib/api';
+import { api, uploadFile } from '../lib/api';
 import { MessageBubble } from '../components/MessageBubble';
 import { BRAND, BG, CARD, SURFACE } from '../lib/config';
 import type { Message, RootStackParamList } from '../types';
@@ -189,18 +189,9 @@ export default function ChatScreen() {
   ) => {
     setSending(true);
     try {
-      const token = await import('../lib/storage').then(m => m.storage.getAccessToken());
       const formData = new FormData();
       formData.append('file', { uri, type: mime, name: `file.${ext}` } as any);
-
-      const { API_BASE } = await import('../lib/config');
-      const uploadRes = await fetch(`${API_BASE}/api/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      if (!uploadRes.ok) throw new Error('upload failed');
-      const { url } = await uploadRes.json();
+      const { url } = await uploadFile('/api/upload', formData);
 
       const { message } = await api<{ message: Message }>(
         `/api/deliveries/${delivery.id}/message`,

@@ -85,6 +85,48 @@ export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
   return data as T;
 }
 
+// Upload fichier avec auth + auto-refresh du token
+export async function uploadFile(
+  path: string,
+  formData: FormData,
+  _retry = false
+): Promise<{ url: string; key: string }> {
+  const token = await storage.getAccessToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (res.status === 401 && !_retry) {
+    if (!refreshing) {
+      refreshing = true;
+      try {
+        const newToken = await doRefresh();
+        queue.forEach((cb) => cb(newToken));
+        queue = [];
+        return uploadFile(path, formData, true);
+      } catch (err) {
+        queue = [];
+        throw err;
+      } finally {
+        refreshing = false;
+      }
+    }
+    return new Promise((resolve, reject) => {
+      queue.push(async (newToken: string) => {
+        try { resolve(await uploadFile(path, formData, true)); }
+        catch (e) { reject(e); }
+      });
+    });
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : null;
+    throw new ApiError(data?.error ?? res.statusText, res.status);
+  }
+  return res.json() as Promise<{ url: string; key: string }>;
+}
+
 // Upload direct vers R2 via URL pré-signée (PUT)
 export async function uploadToR2(
   presignedUrl: string,
