@@ -5,6 +5,7 @@ const K = {
   ACCESS: 'at',
   REFRESH: 'rt',
   DRIVER: 'drv',
+  PHONE: 'ph',
 } as const;
 
 export const storage = {
@@ -15,6 +16,9 @@ export const storage = {
 
   getAccessToken: () => SecureStore.getItemAsync(K.ACCESS),
   getRefreshToken: () => SecureStore.getItemAsync(K.REFRESH),
+
+  setPhone: (phone: string) => SecureStore.setItemAsync(K.PHONE, phone),
+  getPhone: () => SecureStore.getItemAsync(K.PHONE),
 
   async setDriver(driver: Driver) {
     await SecureStore.setItemAsync(K.DRIVER, JSON.stringify(driver));
@@ -30,6 +34,7 @@ export const storage = {
       SecureStore.deleteItemAsync(K.ACCESS),
       SecureStore.deleteItemAsync(K.REFRESH),
       SecureStore.deleteItemAsync(K.DRIVER),
+      SecureStore.deleteItemAsync(K.PHONE),
     ]);
   },
 };

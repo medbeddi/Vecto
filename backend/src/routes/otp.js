@@ -8,7 +8,7 @@ import { loginLimiter } from '../middleware/rate-limit.js';
 const router = Router();
 
 function generateCode() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return Math.floor(1000 + Math.random() * 9000).toString(); // 4 chiffres
 }
 
 async function sendOtpWhatsApp(phone, phoneHash, code) {

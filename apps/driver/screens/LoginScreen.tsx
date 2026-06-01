@@ -1,18 +1,24 @@
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, KeyboardAvoidingView, Platform,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store/auth.store';
-import { BRAND, BG } from '../lib/config';
+import { PRIMARY, BG, CARD, TEXT, TEXT2, BORDER, BRAND } from '../lib/config';
 import CountryPicker, { COUNTRIES, type Country } from '../components/CountryPicker';
 import type { RootStackParamList } from '../types';
 
 export default function LoginScreen() {
-  const [country, setCountry] = useState<Country>(COUNTRIES[0]); // Mauritanie par défaut
+  const [country, setCountry] = useState<Country>(COUNTRIES[0]);
   const [local, setLocal] = useState('');
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { sendOtp, isLoading, error, clearError } = useAuthStore();
@@ -40,24 +46,28 @@ export default function LoginScreen() {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
 
-      <View style={styles.brand}>
-        <Text style={styles.logo}>Vecto</Text>
-        <Text style={styles.subtitle}>Espace Livreur</Text>
+      {/* Logo */}
+      <View style={styles.logoBlock}>
+        <View style={styles.logoSquare}>
+          <Text style={styles.logoLetter}>V</Text>
+        </View>
+        <Text style={styles.logoText}>VECTO</Text>
+        <Text style={styles.logoSub}>Espace Livreur</Text>
       </View>
 
-      <View style={styles.form}>
-        <Text style={styles.desc}>
-          Entrez votre numéro pour recevoir un code de vérification.
-        </Text>
+      {/* Card */}
+      <View style={styles.card}>
+        <Text style={styles.welcome}>Bienvenue 👋</Text>
+        <Text style={styles.desc}>Connectez-vous pour recevoir des courses</Text>
 
         <View style={styles.inputRow}>
-          <CountryPicker selected={country} onSelect={setCountry} />
+          <CountryPicker selected={country} onSelect={setCountry} light />
           <TextInput
             style={styles.input}
-            placeholder="XX XXX XXX"
-            placeholderTextColor="#555"
+            placeholder="XX XX XX XX"
+            placeholderTextColor={TEXT2}
             keyboardType="phone-pad"
             value={local}
             onChangeText={setLocal}
@@ -81,42 +91,42 @@ export default function LoginScreen() {
           }
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.linkBtn}
-          onPress={() => navigation.navigate('Register')}
-          disabled={isLoading}
-        >
-          <Text style={styles.linkText}>
-            Nouveau livreur ?{' '}
-            <Text style={styles.linkBold}>Créer un compte</Text>
-          </Text>
-        </TouchableOpacity>
+        <Text style={styles.hint}>Un code de vérification vous sera envoyé</Text>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BG, justifyContent: 'center', padding: 28 },
-  brand: { alignItems: 'center', marginBottom: 40 },
-  logo: { fontSize: 52, fontWeight: '800', color: BRAND },
-  subtitle: { color: '#888', fontSize: 16, marginTop: 4 },
-  form: { gap: 14 },
-  desc: { color: '#666', fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  root: { flex: 1, backgroundColor: BG, justifyContent: 'center', paddingHorizontal: 24 },
+  logoBlock: { alignItems: 'center', marginBottom: 36 },
+  logoSquare: {
+    width: 60, height: 60, borderRadius: 14,
+    backgroundColor: PRIMARY, justifyContent: 'center', alignItems: 'center',
+    marginBottom: 10,
+  },
+  logoLetter: { color: '#fff', fontSize: 30, fontWeight: '900' },
+  logoText: { fontSize: 22, fontWeight: '900', color: PRIMARY, letterSpacing: 3 },
+  logoSub: { fontSize: 13, color: TEXT2, marginTop: 2, letterSpacing: 1 },
+  card: {
+    backgroundColor: CARD, borderRadius: 20, padding: 24,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, gap: 14,
+  },
+  welcome: { fontSize: 22, fontWeight: '800', color: TEXT, textAlign: 'center' },
+  desc: { fontSize: 13, color: TEXT2, textAlign: 'center', lineHeight: 20 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#1e1e1e', borderRadius: 12,
-    borderWidth: 1, borderColor: '#2a2a2a', overflow: 'hidden',
+    borderWidth: 1.5, borderColor: BORDER, borderRadius: 12, overflow: 'hidden',
+    backgroundColor: '#FAFAFA',
   },
-  input: { flex: 1, padding: 16, color: '#fff', fontSize: 16 },
-  error: { color: '#ff6b6b', textAlign: 'center', fontSize: 14 },
+  input: { flex: 1, paddingVertical: 14, paddingHorizontal: 12, color: TEXT, fontSize: 16 },
+  error: { color: BRAND, textAlign: 'center', fontSize: 13 },
   btn: {
-    backgroundColor: BRAND, borderRadius: 12,
-    paddingVertical: 16, alignItems: 'center', marginTop: 6,
+    backgroundColor: PRIMARY, borderRadius: 12,
+    paddingVertical: 16, alignItems: 'center', marginTop: 4,
   },
-  btnOff: { opacity: 0.45 },
-  btnText: { color: '#fff', fontWeight: '700', fontSize: 17 },
-  linkBtn: { alignItems: 'center', marginTop: 8 },
-  linkText: { color: '#888', fontSize: 14 },
-  linkBold: { color: BRAND, fontWeight: '600' },
+  btnOff: { opacity: 0.4 },
+  btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  hint: { color: TEXT2, fontSize: 12, textAlign: 'center' },
 });

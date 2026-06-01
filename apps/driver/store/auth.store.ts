@@ -8,6 +8,7 @@ const API_BASE = process.env.EXPO_PUBLIC_API_URL!;
 
 type AuthState = {
   driver: Driver | null;
+  phone: string | null;
   isReady: boolean;
   isLoading: boolean;
   error: string | null;
@@ -21,18 +22,20 @@ type AuthState = {
 
 export const useAuthStore = create<AuthState>((set) => ({
   driver: null,
+  phone: null,
   isReady: false,
   isLoading: false,
   error: null,
 
   initialize: async () => {
     try {
-      const [token, driver] = await Promise.all([
+      const [token, driver, phone] = await Promise.all([
         storage.getAccessToken(),
         storage.getDriver(),
+        storage.getPhone(),
       ]);
       if (token && driver) {
-        set({ driver, isReady: true });
+        set({ driver, phone, isReady: true });
         socketService.connect().catch(() => {});
       } else {
         set({ isReady: true });
@@ -77,8 +80,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       await storage.setTokens(data.accessToken, data.refreshToken);
       await storage.setDriver(data.driver);
+      await storage.setPhone(phone);
       await socketService.connect();
-      set({ driver: data.driver, isLoading: false });
+      set({ driver: data.driver, phone, isLoading: false });
     } catch (err) {
       let msg = 'Erreur de vérification. Réessayez.';
       if (err instanceof ApiError) {

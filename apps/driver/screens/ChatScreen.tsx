@@ -21,7 +21,7 @@ import { useDeliveriesStore } from '../store/deliveries.store';
 import { socketService } from '../lib/socket';
 import { api, uploadFile } from '../lib/api';
 import { MessageBubble } from '../components/MessageBubble';
-import { BRAND, BG, CARD, SURFACE } from '../lib/config';
+import { PRIMARY, BG, CARD, SURFACE, TEXT, TEXT2, BORDER } from '../lib/config';
 import type { Message, RootStackParamList } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Chat'>;
@@ -273,7 +273,7 @@ export default function ChatScreen() {
       {!isClosed && (
         <View style={styles.statusBar}>
           {delivery.status === 'assigned' && (
-            <StatusBtn label="🛵  En route" onPress={() => updateStatus('in_progress')} />
+            <StatusBtn label="🛵  En route" color={PRIMARY} onPress={() => updateStatus('in_progress')} />
           )}
           {delivery.status === 'in_progress' && (
             <StatusBtn label="✅  Terminé" color="#4caf50" onPress={() => updateStatus('done')} />
@@ -306,7 +306,7 @@ export default function ChatScreen() {
           <TextInput
             style={styles.textInput}
             placeholder={recording ? 'Enregistrement...' : 'Message...'}
-            placeholderTextColor="#555"
+            placeholderTextColor={TEXT2}
             value={text}
             onChangeText={setText}
             multiline
@@ -341,7 +341,7 @@ export default function ChatScreen() {
 
 function StatusBtn({
   label,
-  color = BRAND,
+  color = PRIMARY,
   onPress,
 }: {
   label: string;
@@ -368,13 +368,13 @@ const styles = StyleSheet.create({
     padding: 14,
     backgroundColor: CARD,
     borderBottomWidth: 1,
-    borderBottomColor: '#2a2a2a',
+    borderBottomColor: BORDER,
   },
-  infoAlias: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  infoStatus: { color: '#888', fontSize: 12, marginTop: 2 },
+  infoAlias: { color: TEXT, fontWeight: '700', fontSize: 16 },
+  infoStatus: { color: TEXT2, fontSize: 12, marginTop: 2 },
   closedBadge: {
-    backgroundColor: '#333',
-    color: '#888',
+    backgroundColor: SURFACE,
+    color: TEXT2,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: CARD,
     borderTopWidth: 1,
-    borderTopColor: '#2a2a2a',
+    borderTopColor: BORDER,
   },
   statusBtn: {
     flex: 1,
@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
     padding: 10,
     backgroundColor: CARD,
     borderTopWidth: 1,
-    borderTopColor: '#2a2a2a',
+    borderTopColor: BORDER,
   },
   iconBtn: {
     width: 40,
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    color: '#fff',
+    color: TEXT,
     fontSize: 15,
     maxHeight: 100,
   },
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: BRAND,
+    backgroundColor: PRIMARY,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -437,10 +437,10 @@ const styles = StyleSheet.create({
   sendIcon: { color: '#fff', fontSize: 16, marginLeft: 2 },
   closedBanner: {
     padding: 16,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: CARD,
     alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#2a2a2a',
+    borderTopColor: BORDER,
   },
-  closedBannerText: { color: '#888', fontSize: 15 },
+  closedBannerText: { color: TEXT2, fontSize: 15 },
 });

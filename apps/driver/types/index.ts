@@ -37,6 +37,6 @@ export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   OTP: { phone: string; name?: string; mode: 'login' | 'register' };
-  Deliveries: undefined;
+  Main: undefined;
   Chat: { delivery: Delivery };
 };

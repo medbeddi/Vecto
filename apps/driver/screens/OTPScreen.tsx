@@ -1,21 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store/auth.store';
-import { BRAND, BG } from '../lib/config';
+import { PRIMARY, BG, CARD, TEXT, TEXT2, BORDER, BRAND } from '../lib/config';
 import type { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OTP'>;
 
 const RESEND_DELAY = 60;
+const CODE_LENGTH = 4;
 
 export default function OTPScreen({ route, navigation }: Props) {
   const { phone, name, mode } = route.params;
-  const [digits, setDigits] = useState(['', '', '', '', '', '']);
+  const [digits, setDigits] = useState(Array(CODE_LENGTH).fill(''));
   const [resendTimer, setResendTimer] = useState(RESEND_DELAY);
   const inputs = useRef<(TextInput | null)[]>([]);
 
@@ -35,14 +43,14 @@ export default function OTPScreen({ route, navigation }: Props) {
   }, [resendTimer]);
 
   const code = digits.join('');
-  const isComplete = code.length === 6;
+  const isComplete = code.length === CODE_LENGTH;
 
   const handleDigit = (val: string, idx: number) => {
     const clean = val.replace(/\D/g, '').slice(-1);
     const next = [...digits];
     next[idx] = clean;
     setDigits(next);
-    if (clean && idx < 5) inputs.current[idx + 1]?.focus();
+    if (clean && idx < CODE_LENGTH - 1) inputs.current[idx + 1]?.focus();
     if (!clean && idx > 0) inputs.current[idx - 1]?.focus();
   };
 
@@ -56,9 +64,8 @@ export default function OTPScreen({ route, navigation }: Props) {
     if (!isComplete || isLoading) return;
     try {
       await verifyOtp(phone, code, name);
-      // Navigation handled by App.tsx auth state change
     } catch {
-      setDigits(['', '', '', '', '', '']);
+      setDigits(Array(CODE_LENGTH).fill(''));
       inputs.current[0]?.focus();
     }
   };
@@ -68,7 +75,7 @@ export default function OTPScreen({ route, navigation }: Props) {
     try {
       await sendOtp(phone);
       setResendTimer(RESEND_DELAY);
-      setDigits(['', '', '', '', '', '']);
+      setDigits(Array(CODE_LENGTH).fill(''));
       inputs.current[0]?.focus();
     } catch {
       Alert.alert('Erreur', 'Impossible de renvoyer le code.');
@@ -80,20 +87,18 @@ export default function OTPScreen({ route, navigation }: Props) {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
 
-      <View style={styles.brand}>
-        <Text style={styles.logo}>Vecto</Text>
-        <Text style={styles.subtitle}>
-          {mode === 'register' ? 'Créer un compte' : 'Connexion'}
-        </Text>
-      </View>
+      {/* Back */}
+      <TouchableOpacity style={styles.back} onPress={() => navigation.goBack()} disabled={isLoading}>
+        <Text style={styles.backText}>←</Text>
+      </TouchableOpacity>
 
+      {/* Card */}
       <View style={styles.card}>
-        <Text style={styles.info}>Code envoyé au</Text>
+        <Text style={styles.title}>Vérification</Text>
+        <Text style={styles.sub}>Code envoyé au</Text>
         <Text style={styles.phone}>{phone}</Text>
-
-        <Text style={styles.label}>Entrez le code à 6 chiffres</Text>
 
         <View style={styles.digitRow}>
           {digits.map((d, i) => (
@@ -122,28 +127,16 @@ export default function OTPScreen({ route, navigation }: Props) {
         >
           {isLoading
             ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.btnText}>
-                {mode === 'register' ? 'Créer mon compte' : 'Se connecter'}
-              </Text>
+            : <Text style={styles.btnText}>Confirmer</Text>
           }
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.resendBtn, resendTimer > 0 && styles.resendOff]}
-          onPress={handleResend}
-          disabled={resendTimer > 0 || isLoading}
-        >
-          <Text style={[styles.resendText, resendTimer > 0 && styles.resendTextOff]}>
-            {resendTimer > 0 ? `Renvoyer (${resendTimer}s)` : 'Renvoyer le code'}
+        <TouchableOpacity onPress={handleResend} disabled={resendTimer > 0 || isLoading}>
+          <Text style={[styles.resend, resendTimer > 0 && styles.resendOff]}>
+            {resendTimer > 0
+              ? `Renvoyer le code dans : ${resendTimer}s`
+              : 'Renvoyer le code'}
           </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          disabled={isLoading}
-        >
-          <Text style={styles.backText}>← Changer de numéro</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -151,35 +144,32 @@ export default function OTPScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BG, justifyContent: 'center', padding: 28 },
-  brand: { alignItems: 'center', marginBottom: 32 },
-  logo: { fontSize: 52, fontWeight: '800', color: BRAND },
-  subtitle: { color: '#888', fontSize: 16, marginTop: 4 },
+  root: { flex: 1, backgroundColor: BG, justifyContent: 'center', paddingHorizontal: 24 },
+  back: { position: 'absolute', top: 56, left: 24, padding: 8 },
+  backText: { fontSize: 22, color: TEXT },
   card: {
-    backgroundColor: '#1e1e1e', borderRadius: 20, padding: 24,
-    borderWidth: 1, borderColor: '#2a2a2a', gap: 14, alignItems: 'center',
+    backgroundColor: CARD, borderRadius: 20, padding: 28, alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, gap: 12,
   },
-  info: { color: '#666', fontSize: 14 },
-  phone: { color: BRAND, fontSize: 16, fontWeight: '600' },
-  label: { color: '#aaa', fontSize: 13 },
-  digitRow: { flexDirection: 'row', gap: 8, width: '100%' },
+  title: { fontSize: 24, fontWeight: '800', color: TEXT },
+  sub: { fontSize: 14, color: TEXT2 },
+  phone: { fontSize: 15, fontWeight: '700', color: TEXT },
+  digitRow: { flexDirection: 'row', gap: 12, marginVertical: 8 },
   digitBox: {
-    flex: 1, height: 54, borderRadius: 12,
-    backgroundColor: '#111', borderWidth: 1.5, borderColor: '#333',
-    color: '#fff', fontSize: 22, fontWeight: '700', textAlign: 'center',
+    width: 60, height: 64, borderRadius: 14,
+    borderWidth: 1.5, borderColor: BORDER,
+    backgroundColor: '#FAFAFA',
+    color: TEXT, fontSize: 26, fontWeight: '800', textAlign: 'center',
   },
-  digitBoxFilled: { borderColor: BRAND },
-  error: { color: '#ff6b6b', fontSize: 13, textAlign: 'center' },
+  digitBoxFilled: { borderColor: PRIMARY, backgroundColor: CARD },
+  error: { color: BRAND, fontSize: 13, textAlign: 'center' },
   btn: {
-    backgroundColor: BRAND, borderRadius: 12,
-    paddingVertical: 15, alignItems: 'center', width: '100%', marginTop: 4,
+    backgroundColor: PRIMARY, borderRadius: 12,
+    paddingVertical: 16, alignItems: 'center', width: '100%', marginTop: 4,
   },
-  btnOff: { opacity: 0.45 },
+  btnOff: { opacity: 0.4 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  resendBtn: { paddingVertical: 4 },
-  resendOff: {},
-  resendText: { color: BRAND, fontSize: 14, fontWeight: '600' },
-  resendTextOff: { color: '#555' },
-  backBtn: { paddingVertical: 4 },
-  backText: { color: '#555', fontSize: 13 },
+  resend: { color: PRIMARY, fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  resendOff: { color: TEXT2 },
 });

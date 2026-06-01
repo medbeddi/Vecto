@@ -5,12 +5,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from './store/auth.store';
 import LoginScreen from './screens/LoginScreen';
-import RegisterScreen from './screens/RegisterScreen';
 import OTPScreen from './screens/OTPScreen';
-import DeliveriesScreen from './screens/DeliveriesScreen';
+import MainScreen from './screens/MainScreen';
 import ChatScreen from './screens/ChatScreen';
 import type { RootStackParamList } from './types';
-import { BRAND, BG } from './lib/config';
+import { PRIMARY, BG, CARD, BORDER, TEXT } from './lib/config';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -21,33 +20,32 @@ export default function App() {
     initialize();
   }, []);
 
-  // Attente de la vérification du token stocké
   if (!isReady) {
     return (
       <View style={{ flex: 1, backgroundColor: BG, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={BRAND} />
-        <StatusBar style="light" />
+        <ActivityIndicator size="large" color={PRIMARY} />
+        <StatusBar style="dark" />
       </View>
     );
   }
 
   return (
     <NavigationContainer>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       <Stack.Navigator
         screenOptions={{
-          headerStyle: { backgroundColor: '#1e1e1e' },
-          headerTintColor: '#fff',
+          headerStyle: { backgroundColor: CARD },
+          headerTintColor: TEXT,
           headerTitleStyle: { fontWeight: '700' },
+          headerShadowVisible: false,
           contentStyle: { backgroundColor: BG },
         }}
       >
         {driver ? (
-          // ─── Livreur connecté ─────────────────────────────────────────
           <>
             <Stack.Screen
-              name="Deliveries"
-              component={DeliveriesScreen}
+              name="Main"
+              component={MainScreen}
               options={{ headerShown: false }}
             />
             <Stack.Screen
@@ -55,28 +53,17 @@ export default function App() {
               component={ChatScreen}
               options={({ route }) => ({
                 title: route.params.delivery.clientAlias,
-                headerBackTitle: 'Courses',
+                headerBackTitle: 'Retour',
+                headerStyle: { backgroundColor: CARD },
+                headerTintColor: TEXT,
+                headerBottomBorderColor: BORDER,
               })}
             />
           </>
         ) : (
-          // ─── Non connecté ─────────────────────────────────────────────
           <>
-            <Stack.Screen
-              name="Login"
-              component={LoginScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="Register"
-              component={RegisterScreen}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="OTP"
-              component={OTPScreen}
-              options={{ headerShown: false }}
-            />
+            <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="OTP" component={OTPScreen} options={{ headerShown: false }} />
           </>
         )}
       </Stack.Navigator>

@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import { BRAND, SURFACE } from '../lib/config';
+import { PRIMARY, TEXT, TEXT2, BUBBLE_DRIVER, BUBBLE_CLIENT } from '../lib/config';
 import type { Message } from '../types';
 
 type Props = { message: Message };
@@ -19,51 +19,43 @@ export function MessageBubble({ message }: Props) {
 
   return (
     <View style={[styles.row, isDriver ? styles.rowRight : styles.rowLeft]}>
-      <View
-        style={[styles.bubble, isDriver ? styles.bubbleDriver : styles.bubbleClient]}
-      >
-        <BubbleContent message={message} />
-        <Text style={styles.time}>{formatTime(message.createdAt)}</Text>
+      <View style={[styles.bubble, isDriver ? styles.bubbleDriver : styles.bubbleClient]}>
+        <BubbleContent message={message} isDriver={isDriver} />
+        <Text style={[styles.time, isDriver ? styles.timeDriver : styles.timeClient]}>
+          {formatTime(message.createdAt)}
+        </Text>
       </View>
     </View>
   );
 }
 
-function BubbleContent({ message }: Props) {
+function BubbleContent({ message, isDriver }: Props & { isDriver: boolean }) {
   switch (message.type) {
     case 'text':
-      return <Text style={styles.text}>{message.content}</Text>;
+      return <Text style={[styles.text, isDriver ? styles.textDriver : styles.textClient]}>{message.content}</Text>;
     case 'image':
       return <ImageContent url={message.content} />;
     case 'audio':
-      return <AudioContent url={message.content} />;
+      return <AudioContent url={message.content} isDriver={isDriver} />;
     case 'location':
-      return <LocationContent meta={message.meta} />;
+      return <LocationContent meta={message.meta} isDriver={isDriver} />;
     default:
-      return <Text style={styles.text}>[message non supporté]</Text>;
+      return <Text style={[styles.text, isDriver ? styles.textDriver : styles.textClient]}>[message non supporté]</Text>;
   }
 }
 
 function ImageContent({ url }: { url: string | null }) {
-  if (!url) return <Text style={styles.text}>[image indisponible]</Text>;
-  return (
-    <Image
-      source={{ uri: url }}
-      style={styles.image}
-      resizeMode="cover"
-    />
-  );
+  if (!url) return <Text style={styles.textClient}>[image indisponible]</Text>;
+  return <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />;
 }
 
-function AudioContent({ url }: { url: string | null }) {
+function AudioContent({ url, isDriver }: { url: string | null; isDriver: boolean }) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    return () => {
-      soundRef.current?.unloadAsync();
-    };
+    return () => { soundRef.current?.unloadAsync(); };
   }, []);
 
   const toggle = async () => {
@@ -79,8 +71,8 @@ function AudioContent({ url }: { url: string | null }) {
       if (!soundRef.current) {
         const { sound } = await Audio.Sound.createAsync({ uri: url });
         soundRef.current = sound;
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) setPlaying(false);
+        sound.setOnPlaybackStatusUpdate((s) => {
+          if (s.isLoaded && s.didJustFinish) setPlaying(false);
         });
       }
       await soundRef.current.playAsync();
@@ -92,30 +84,47 @@ function AudioContent({ url }: { url: string | null }) {
 
   return (
     <TouchableOpacity onPress={toggle} style={styles.audioRow}>
-      {loading ? (
-        <ActivityIndicator size="small" color="#fff" />
-      ) : (
-        <Text style={styles.audioIcon}>{playing ? '⏸' : '▶'}</Text>
-      )}
-      <Text style={styles.audioLabel}>{playing ? 'En cours...' : 'Audio'}</Text>
+      <View style={[styles.audioPlayBtn, isDriver ? styles.audioPlayBtnDriver : styles.audioPlayBtnClient]}>
+        {loading
+          ? <ActivityIndicator size="small" color={isDriver ? '#fff' : TEXT} />
+          : <Text style={[styles.audioPlayIcon, isDriver && { color: '#fff' }]}>
+              {playing ? '⏸' : '▶'}
+            </Text>
+        }
+      </View>
+      <View style={styles.audioWave}>
+        {[3, 6, 9, 7, 5, 8, 4, 7, 6, 4, 5, 8, 6, 3].map((h, i) => (
+          <View
+            key={i}
+            style={[
+              styles.audioBar,
+              { height: playing ? h * 3 : h * 2 },
+              isDriver ? styles.audioBarDriver : styles.audioBarClient,
+            ]}
+          />
+        ))}
+      </View>
+      <Text style={[styles.audioDur, isDriver ? styles.audioDurDriver : styles.audioDurClient]}>
+        {playing ? 'En cours' : '0:08'}
+      </Text>
     </TouchableOpacity>
   );
 }
 
-function LocationContent({ meta }: { meta: Message['meta'] }) {
+function LocationContent({ meta, isDriver }: { meta: Message['meta']; isDriver: boolean }) {
   const open = () => {
     if (!meta?.lat || !meta?.lng) return;
-    Linking.openURL(
-      `https://maps.google.com/?q=${meta.lat},${meta.lng}`
-    );
+    Linking.openURL(`https://maps.google.com/?q=${meta.lat},${meta.lng}`);
   };
   return (
     <TouchableOpacity onPress={open} style={styles.locationRow}>
       <Text style={styles.locationIcon}>📍</Text>
       <View>
-        <Text style={styles.locationLabel}>{meta?.label ?? 'Position partagée'}</Text>
+        <Text style={[styles.locationLabel, isDriver ? styles.textDriver : styles.textClient]}>
+          {meta?.label ?? 'Position partagée'}
+        </Text>
         {meta?.lat != null && (
-          <Text style={styles.locationCoords}>
+          <Text style={[styles.locationCoords, isDriver ? styles.timeDriver : styles.timeClient]}>
             {meta.lat.toFixed(5)}, {meta.lng?.toFixed(5)}
           </Text>
         )}
@@ -125,37 +134,44 @@ function LocationContent({ meta }: { meta: Message['meta'] }) {
 }
 
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('fr-FR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
 const styles = StyleSheet.create({
-  row: { marginVertical: 4, paddingHorizontal: 12 },
+  row: { marginVertical: 3, paddingHorizontal: 12 },
   rowLeft: { alignItems: 'flex-start' },
   rowRight: { alignItems: 'flex-end' },
-  bubble: {
-    maxWidth: '78%',
-    borderRadius: 16,
-    padding: 10,
-  },
-  bubbleClient: {
-    backgroundColor: SURFACE,
-    borderBottomLeftRadius: 4,
-  },
-  bubbleDriver: {
-    backgroundColor: BRAND,
-    borderBottomRightRadius: 4,
-  },
-  text: { color: '#fff', fontSize: 15, lineHeight: 21 },
-  time: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 4, alignSelf: 'flex-end' },
-  image: { width: 200, height: 150, borderRadius: 8 },
+  bubble: { maxWidth: '78%', borderRadius: 18, padding: 10 },
+  bubbleDriver: { backgroundColor: BUBBLE_DRIVER, borderBottomRightRadius: 4 },
+  bubbleClient: { backgroundColor: BUBBLE_CLIENT, borderBottomLeftRadius: 4 },
+  text: { fontSize: 15, lineHeight: 21 },
+  textDriver: { color: '#fff' },
+  textClient: { color: TEXT },
+  time: { fontSize: 11, marginTop: 4, alignSelf: 'flex-end' },
+  timeDriver: { color: 'rgba(255,255,255,0.55)' },
+  timeClient: { color: TEXT2 },
+  image: { width: 200, height: 150, borderRadius: 10 },
+
+  // Audio
   audioRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
-  audioIcon: { fontSize: 20, color: '#fff' },
-  audioLabel: { color: '#fff', fontSize: 14 },
+  audioPlayBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  audioPlayBtnDriver: { backgroundColor: 'rgba(255,255,255,0.2)' },
+  audioPlayBtnClient: { backgroundColor: 'rgba(0,0,0,0.08)' },
+  audioPlayIcon: { fontSize: 14, color: TEXT },
+  audioWave: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 30 },
+  audioBar: { width: 3, borderRadius: 2 },
+  audioBarDriver: { backgroundColor: 'rgba(255,255,255,0.7)' },
+  audioBarClient: { backgroundColor: 'rgba(0,0,0,0.3)' },
+  audioDur: { fontSize: 11 },
+  audioDurDriver: { color: 'rgba(255,255,255,0.7)' },
+  audioDurClient: { color: TEXT2 },
+
+  // Location
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   locationIcon: { fontSize: 22 },
-  locationLabel: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  locationCoords: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
+  locationLabel: { fontSize: 14, fontWeight: '600' },
+  locationCoords: { fontSize: 11, marginTop: 2 },
 });

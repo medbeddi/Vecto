@@ -31,9 +31,10 @@ export const COUNTRIES: Country[] = [
 type Props = {
   selected: Country;
   onSelect: (c: Country) => void;
+  light?: boolean;
 };
 
-export default function CountryPicker({ selected, onSelect }: Props) {
+export default function CountryPicker({ selected, onSelect, light }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -45,10 +46,14 @@ export default function CountryPicker({ selected, onSelect }: Props) {
 
   return (
     <>
-      <TouchableOpacity style={s.trigger} onPress={() => setOpen(true)} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={[s.trigger, light && s.triggerLight]}
+        onPress={() => setOpen(true)}
+        activeOpacity={0.7}
+      >
         <Text style={s.flag}>{selected.flag}</Text>
-        <Text style={s.dial}>{selected.dial}</Text>
-        <Text style={s.arrow}>▾</Text>
+        <Text style={[s.dial, light && s.dialLight]}>{selected.dial}</Text>
+        <Text style={[s.arrow, light && s.arrowLight]}>▾</Text>
       </TouchableOpacity>
 
       <Modal visible={open} animationType="slide" transparent>
@@ -93,9 +98,12 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 14,
     borderRightWidth: 1, borderRightColor: '#2a2a2a',
   },
+  triggerLight: { borderRightColor: '#EBEBEB' },
   flag: { fontSize: 20 },
   dial: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  dialLight: { color: '#1A1A1A' },
   arrow: { color: '#666', fontSize: 10 },
+  arrowLight: { color: '#888' },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: '#1a1a1a', borderTopLeftRadius: 20, borderTopRightRadius: 20,
