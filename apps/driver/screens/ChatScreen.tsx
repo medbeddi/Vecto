@@ -257,7 +257,7 @@ export default function ChatScreen() {
 
       {/* Messages */}
       {loadingMessages ? (
-        <ActivityIndicator color={BRAND} style={{ flex: 1 }} />
+        <ActivityIndicator color={PRIMARY} style={{ flex: 1 }} />
       ) : (
         <FlatList
           ref={listRef}
