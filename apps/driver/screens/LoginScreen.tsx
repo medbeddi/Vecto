@@ -21,7 +21,7 @@ export default function LoginScreen() {
   const [country, setCountry] = useState<Country>(COUNTRIES[0]);
   const [local, setLocal] = useState('');
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { sendOtp, isLoading, error, clearError } = useAuthStore();
+  const { checkPhone, sendOtp, isLoading, error, clearError } = useAuthStore();
 
   const phone = `${country.dial}${local.replace(/\D/g, '')}`;
   const isValid = local.replace(/\D/g, '').length >= 6;
@@ -33,11 +33,16 @@ export default function LoginScreen() {
     }
   }, [error]);
 
-  const handleSend = async () => {
+  const handleContinue = async () => {
     if (!isValid || isLoading) return;
     try {
-      await sendOtp(phone);
-      navigation.navigate('OTP', { phone, mode: 'login' });
+      const exists = await checkPhone(phone);
+      if (exists) {
+        navigation.navigate('Password', { phone });
+      } else {
+        await sendOtp(phone);
+        navigation.navigate('OTP', { phone });
+      }
     } catch {}
   };
 
@@ -72,7 +77,7 @@ export default function LoginScreen() {
             value={local}
             onChangeText={setLocal}
             returnKeyType="done"
-            onSubmitEditing={handleSend}
+            onSubmitEditing={handleContinue}
             editable={!isLoading}
           />
         </View>
@@ -81,7 +86,7 @@ export default function LoginScreen() {
 
         <TouchableOpacity
           style={[styles.btn, (!isValid || isLoading) && styles.btnOff]}
-          onPress={handleSend}
+          onPress={handleContinue}
           disabled={!isValid || isLoading}
           activeOpacity={0.8}
         >
@@ -91,7 +96,7 @@ export default function LoginScreen() {
           }
         </TouchableOpacity>
 
-        <Text style={styles.hint}>Un code de vérification vous sera envoyé</Text>
+        <Text style={styles.hint}>Un SMS de vérification vous sera envoyé</Text>
       </View>
     </KeyboardAvoidingView>
   );

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { hashWaId } from '../services/pii-filter.js';
@@ -121,10 +122,10 @@ router.post('/otp/verify/client', loginLimiter, async (req, res) => {
   }
 });
 
-// ── Vérifier OTP + créer/retourner compte driver ──────────────────────────────
+// ── Vérifier OTP + créer compte driver (1ère inscription) ────────────────────
 router.post('/otp/verify/driver', loginLimiter, async (req, res) => {
   try {
-    const { phone, code, name } = req.body;
+    const { phone, code, name, password } = req.body;
     if (!phone || !code) return res.status(400).json({ error: 'MISSING_FIELDS' });
 
     const phoneHash = hashWaId(phone.trim());
@@ -139,14 +140,16 @@ router.post('/otp/verify/driver', loginLimiter, async (req, res) => {
 
     await db('otps').where({ id: otp.id }).update({ used: true });
 
-    // Upsert driver
+    // Compte existant — connexion directe après OTP
     let driver = await db('drivers').where({ phone_hash: phoneHash }).first();
     if (!driver) {
-      if (!name || name.trim().length < 2) {
-        return res.status(400).json({ error: 'NAME_REQUIRED' });
-      }
+      // Nouveau driver — nom + mot de passe requis
+      if (!name || name.trim().length < 2) return res.status(400).json({ error: 'NAME_REQUIRED' });
+      if (!password || password.length < 6) return res.status(400).json({ error: 'PASSWORD_REQUIRED' });
+
+      const passwordHash = await bcrypt.hash(password, 12);
       [driver] = await db('drivers')
-        .insert({ name: name.trim(), phone_hash: phoneHash, status: 'available' })
+        .insert({ name: name.trim(), phone_hash: phoneHash, password_hash: passwordHash, status: 'available' })
         .returning(['id', 'name', 'status']);
     }
 

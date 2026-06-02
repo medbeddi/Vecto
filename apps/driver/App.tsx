@@ -6,6 +6,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useAuthStore } from './store/auth.store';
 import LoginScreen from './screens/LoginScreen';
 import OTPScreen from './screens/OTPScreen';
+import PasswordScreen from './screens/PasswordScreen';
+import SetupScreen from './screens/SetupScreen';
 import MainScreen from './screens/MainScreen';
 import ChatScreen from './screens/ChatScreen';
 import type { RootStackParamList } from './types';
@@ -51,19 +53,15 @@ export default function App() {
             <Stack.Screen
               name="Chat"
               component={ChatScreen}
-              options={({ route }) => ({
-                title: route.params.delivery.clientAlias,
-                headerBackTitle: 'Retour',
-                headerStyle: { backgroundColor: CARD },
-                headerTintColor: TEXT,
-                headerBottomBorderColor: BORDER,
-              })}
+              options={{ headerShown: false }}
             />
           </>
         ) : (
           <>
             <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Password" component={PasswordScreen} options={{ headerShown: false }} />
             <Stack.Screen name="OTP" component={OTPScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Setup" component={SetupScreen} options={{ headerShown: false }} />
           </>
         )}
       </Stack.Navigator>

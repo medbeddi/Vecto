@@ -10,6 +10,7 @@ import { apiLimiter, webhookLimiter } from './middleware/rate-limit.js';
 import whatsappWebhook from './webhooks/whatsapp.js';
 import driverRouter from './routes/driver.js';
 import otpRouter from './routes/otp.js';
+import walletRouter from './routes/wallet.js';
 import simRouter from './routes/sim.js';
 import uploadRouter from './routes/upload.js';
 import adminRouter from './routes/admin.js';
@@ -58,6 +59,7 @@ app.use('/webhook/whatsapp', webhookLimiter, whatsappWebhook);
 // ─── API REST Flutter ─────────────────────────────────────────────────────────
 app.use('/api', apiLimiter, otpRouter);
 app.use('/api', apiLimiter, driverRouter);
+app.use('/api', apiLimiter, walletRouter);
 app.use('/api', apiLimiter, uploadRouter);
 app.use('/api', apiLimiter, adminRouter);
 app.use('/api', apiLimiter, clientRouter);

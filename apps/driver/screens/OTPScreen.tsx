@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -22,19 +21,12 @@ const RESEND_DELAY = 60;
 const CODE_LENGTH = 4;
 
 export default function OTPScreen({ route, navigation }: Props) {
-  const { phone, name, mode } = route.params;
+  const { phone } = route.params;
   const [digits, setDigits] = useState(Array(CODE_LENGTH).fill(''));
   const [resendTimer, setResendTimer] = useState(RESEND_DELAY);
   const inputs = useRef<(TextInput | null)[]>([]);
 
-  const { verifyOtp, sendOtp, isLoading, error, clearError } = useAuthStore();
-
-  useEffect(() => {
-    if (error) {
-      const t = setTimeout(clearError, 4000);
-      return () => clearTimeout(t);
-    }
-  }, [error]);
+  const { sendOtp, isLoading } = useAuthStore();
 
   useEffect(() => {
     if (resendTimer <= 0) return;
@@ -60,14 +52,9 @@ export default function OTPScreen({ route, navigation }: Props) {
     }
   };
 
-  const handleVerify = async () => {
-    if (!isComplete || isLoading) return;
-    try {
-      await verifyOtp(phone, code, name);
-    } catch {
-      setDigits(Array(CODE_LENGTH).fill(''));
-      inputs.current[0]?.focus();
-    }
+  const handleNext = () => {
+    if (!isComplete) return;
+    navigation.navigate('Setup', { phone, code });
   };
 
   const handleResend = async () => {
@@ -97,8 +84,7 @@ export default function OTPScreen({ route, navigation }: Props) {
       {/* Card */}
       <View style={styles.card}>
         <Text style={styles.title}>Vérification</Text>
-        <Text style={styles.sub}>Code envoyé au</Text>
-        <Text style={styles.phone}>{phone}</Text>
+        <Text style={styles.sub}>Code envoyé au <Text style={styles.phone}>{phone}</Text></Text>
 
         <View style={styles.digitRow}>
           {digits.map((d, i) => (
@@ -117,24 +103,19 @@ export default function OTPScreen({ route, navigation }: Props) {
           ))}
         </View>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
         <TouchableOpacity
-          style={[styles.btn, (!isComplete || isLoading) && styles.btnOff]}
-          onPress={handleVerify}
-          disabled={!isComplete || isLoading}
+          style={[styles.btn, !isComplete && styles.btnOff]}
+          onPress={handleNext}
+          disabled={!isComplete}
           activeOpacity={0.8}
         >
-          {isLoading
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.btnText}>Confirmer</Text>
-          }
+          <Text style={styles.btnText}>Confirmer</Text>
         </TouchableOpacity>
 
         <TouchableOpacity onPress={handleResend} disabled={resendTimer > 0 || isLoading}>
           <Text style={[styles.resend, resendTimer > 0 && styles.resendOff]}>
             {resendTimer > 0
-              ? `Renvoyer le code dans : ${resendTimer}s`
+              ? `Renvoyer le code dans ${resendTimer}s`
               : 'Renvoyer le code'}
           </Text>
         </TouchableOpacity>

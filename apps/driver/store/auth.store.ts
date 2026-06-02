@@ -14,8 +14,10 @@ type AuthState = {
   error: string | null;
 
   initialize: () => Promise<void>;
+  checkPhone: (phone: string) => Promise<boolean>;  // true = existant
+  loginWithPassword: (phone: string, password: string) => Promise<void>;
   sendOtp: (phone: string) => Promise<void>;
-  verifyOtp: (phone: string, code: string, name?: string) => Promise<void>;
+  verifyOtp: (phone: string, code: string, name: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
 };
@@ -45,6 +47,42 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
+  checkPhone: async (phone) => {
+    const res = await fetch(`${API_BASE}/api/auth/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return !!data.exists;
+  },
+
+  loginWithPassword: async (phone, password) => {
+    set({ isLoading: true, error: null });
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new ApiError(data.error ?? 'LOGIN_FAILED', res.status);
+
+      await storage.setTokens(data.accessToken, data.refreshToken);
+      await storage.setDriver(data.driver);
+      await storage.setPhone(phone);
+      await socketService.connect();
+      set({ driver: data.driver, phone, isLoading: false });
+    } catch (err) {
+      const msg = err instanceof ApiError && err.code === 'INVALID_CREDENTIALS'
+        ? 'Mot de passe incorrect.'
+        : 'Erreur de connexion. Réessayez.';
+      set({ error: msg, isLoading: false });
+      throw err;
+    }
+  },
+
   sendOtp: async (phone) => {
     set({ isLoading: true, error: null });
     try {
@@ -67,13 +105,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  verifyOtp: async (phone, code, name) => {
+  verifyOtp: async (phone, code, name, password) => {
     set({ isLoading: true, error: null });
     try {
       const res = await fetch(`${API_BASE}/api/otp/verify/driver`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code, name }),
+        body: JSON.stringify({ phone, code, name, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new ApiError(data.error ?? 'VERIFY_FAILED', res.status);
@@ -87,6 +125,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       let msg = 'Erreur de vérification. Réessayez.';
       if (err instanceof ApiError) {
         if (err.code === 'INVALID_OR_EXPIRED_CODE') msg = 'Code incorrect ou expiré.';
+        else if (err.code === 'PASSWORD_REQUIRED') msg = 'Mot de passe requis (6 caractères min).';
         else if (err.code === 'NAME_REQUIRED') msg = 'Nom requis pour créer un compte.';
       }
       set({ error: msg, isLoading: false });

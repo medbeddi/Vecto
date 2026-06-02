@@ -22,6 +22,7 @@ import { socketService } from '../lib/socket';
 import { api, uploadFile } from '../lib/api';
 import { MessageBubble } from '../components/MessageBubble';
 import { PRIMARY, BG, CARD, SURFACE, TEXT, TEXT2, BORDER } from '../lib/config';
+import { Icon } from '../components/Icon';
 import type { Message, RootStackParamList } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Chat'>;
@@ -244,15 +245,23 @@ export default function ChatScreen() {
     <KeyboardAvoidingView
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={90}
+      keyboardVerticalOffset={0}
     >
-      {/* Info course */}
-      <View style={styles.infoBar}>
-        <View>
-          <Text style={styles.infoAlias}>{delivery.clientAlias}</Text>
-          <Text style={styles.infoStatus}>{STATUS_LABELS[delivery.status ?? 'assigned']}</Text>
+      {/* Header sombre — style screenshot */}
+      <View style={styles.chatHeader}>
+        <TouchableOpacity style={styles.headerCircleBtn} onPress={() => navigation.goBack()}>
+          <Icon name="chevron-left" size={22} color="#fff" strokeWidth={2} />
+        </TouchableOpacity>
+        <View style={styles.headerAvatar}>
+          <Text style={styles.headerAvatarText}>{(delivery.clientAlias ?? '?')[0].toUpperCase()}</Text>
         </View>
-        {isClosed && <Text style={styles.closedBadge}>Fermée</Text>}
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerName}>{delivery.clientAlias}</Text>
+          <Text style={styles.headerStatus}>{STATUS_LABELS[delivery.status ?? 'assigned']}</Text>
+        </View>
+        <TouchableOpacity style={styles.headerCircleBtn} onPress={() => Alert.alert('Appel', 'Appel en cours de développement.')}>
+          <Icon name="phone" size={18} color="#fff" strokeWidth={1.75} />
+        </TouchableOpacity>
       </View>
 
       {/* Messages */}
@@ -287,20 +296,11 @@ export default function ChatScreen() {
       {/* Zone de saisie */}
       {!isClosed && (
         <View style={styles.inputBar}>
-          <TouchableOpacity style={styles.iconBtn} onPress={sendLocation} disabled={sending}>
-            <Text style={styles.iconTxt}>📍</Text>
-          </TouchableOpacity>
-
           <TouchableOpacity style={styles.iconBtn} onPress={pickImage} disabled={sending}>
-            <Text style={styles.iconTxt}>🖼</Text>
+            <Icon name="image" size={20} color={TEXT2} strokeWidth={1.75} />
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.iconBtn, recording && styles.iconBtnRec]}
-            onPress={toggleRecording}
-            disabled={sending && !recording}
-          >
-            <Text style={styles.iconTxt}>{recording ? '⏹' : '🎙'}</Text>
+          <TouchableOpacity style={styles.iconBtn} onPress={sendLocation} disabled={sending}>
+            <Icon name="location" size={20} color={TEXT2} strokeWidth={1.75} />
           </TouchableOpacity>
 
           <TextInput
@@ -312,19 +312,32 @@ export default function ChatScreen() {
             multiline
             maxLength={1000}
             editable={!recording}
+            onSubmitEditing={sendText}
           />
 
-          <TouchableOpacity
-            style={[styles.sendBtn, (!text.trim() || sending) && styles.sendBtnOff]}
-            onPress={sendText}
-            disabled={!text.trim() || sending}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.sendIcon}>➤</Text>
-            )}
-          </TouchableOpacity>
+          {text.trim() ? (
+            <TouchableOpacity
+              style={styles.micBtn}
+              onPress={sendText}
+              disabled={sending}
+            >
+              {sending
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Icon name="send" size={18} color="#fff" />
+              }
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.micBtn, recording && styles.micBtnRec]}
+              onPress={toggleRecording}
+              disabled={sending && !recording}
+            >
+              {recording
+                ? <Icon name="pause" size={18} color="#fff" strokeWidth={2} />
+                : <Icon name="mic" size={20} color="#fff" strokeWidth={1.75} />
+              }
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -360,87 +373,73 @@ function StatusBtn({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BG },
-  infoBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 14,
-    backgroundColor: CARD,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
+  root: { flex: 1, backgroundColor: '#F0F0F5' },
+
+  // Header sombre
+  chatHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: PRIMARY,
+    paddingTop: 50, paddingBottom: 14, paddingHorizontal: 14,
   },
-  infoAlias: { color: TEXT, fontWeight: '700', fontSize: 16 },
-  infoStatus: { color: TEXT2, fontSize: 12, marginTop: 2 },
-  closedBadge: {
-    backgroundColor: SURFACE,
-    color: TEXT2,
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    fontSize: 12,
+  headerCircleBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
   },
-  messageList: { paddingVertical: 12, flexGrow: 1 },
+  headerBackIcon: { color: '#fff', fontSize: 24, fontWeight: '300', marginTop: -2 },
+  headerPhoneIcon: { fontSize: 16 },
+  headerAvatar: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+  },
+  headerAvatarText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  headerName: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  headerStatus: { color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 1 },
+
+  messageList: { paddingVertical: 12, paddingHorizontal: 2, flexGrow: 1 },
+
+  // Status buttons
   statusBar: {
-    flexDirection: 'row',
-    gap: 8,
-    padding: 10,
-    backgroundColor: CARD,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
+    flexDirection: 'row', gap: 8, padding: 10,
+    backgroundColor: CARD, borderTopWidth: 0.5, borderTopColor: BORDER,
   },
-  statusBtn: {
-    flex: 1,
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
+  statusBtn: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   statusBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // Input bar — screenshot exact
   inputBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    padding: 10,
-    backgroundColor: CARD,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
+    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
+    padding: 10, backgroundColor: CARD,
+    borderTopWidth: 0.5, borderTopColor: BORDER,
   },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38, height: 38, borderRadius: 19,
     backgroundColor: SURFACE,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'center', alignItems: 'center',
   },
-  iconBtnRec: { backgroundColor: '#f44336' },
   iconTxt: { fontSize: 18 },
   textInput: {
-    flex: 1,
-    backgroundColor: SURFACE,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    color: TEXT,
-    fontSize: 15,
-    maxHeight: 100,
+    flex: 1, backgroundColor: '#F0F0F5', borderRadius: 22,
+    paddingHorizontal: 16, paddingVertical: 10,
+    color: TEXT, fontSize: 15, maxHeight: 100,
   },
-  sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  micBtn: {
+    width: 42, height: 42, borderRadius: 21,
     backgroundColor: PRIMARY,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'center', alignItems: 'center',
   },
-  sendBtnOff: { opacity: 0.35 },
-  sendIcon: { color: '#fff', fontSize: 16, marginLeft: 2 },
+  micBtnRec: { backgroundColor: '#f44336' },
+  sendIcon: { color: '#fff', fontSize: 15, marginLeft: 1 },
+
+  // Closed
+  closedBadge: {
+    backgroundColor: SURFACE, color: TEXT2, borderRadius: 6,
+    paddingHorizontal: 8, paddingVertical: 4, fontSize: 12,
+  },
   closedBanner: {
-    padding: 16,
-    backgroundColor: CARD,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
+    padding: 16, backgroundColor: CARD, alignItems: 'center',
+    borderTopWidth: 1, borderTopColor: BORDER,
   },
   closedBannerText: { color: TEXT2, fontSize: 15 },
 });

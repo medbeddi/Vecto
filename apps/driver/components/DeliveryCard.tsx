@@ -1,74 +1,88 @@
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator, Animated, StyleSheet, Text,
+  TouchableOpacity, View,
+} from 'react-native';
 import { Audio } from 'expo-av';
-import { BRAND, CARD } from '../lib/config';
+import { PRIMARY, CARD, BORDER, TEXT, TEXT2 } from '../lib/config';
+import { Icon } from './Icon';
 import type { Delivery } from '../types';
 
 type Props = {
   delivery: Delivery;
   onAccept: (delivery: Delivery) => void;
+  onRefuse?: (delivery: Delivery) => void;
   accepting: boolean;
 };
 
-const TYPE_ICON: Record<string, string> = {
-  audio: '🎙️',
-  location: '📍',
-  image: '🖼️',
-  text: '💬',
-};
+const WAVE_COUNT = 20;
 
-const TYPE_LABEL: Record<string, string> = {
-  audio: 'Message vocal',
-  location: 'Localisation',
-  image: 'Photo',
-  text: 'Texte',
-};
+function genWave(n: number) {
+  return Array.from({ length: n }, () => Math.random() * 0.65 + 0.2);
+}
 
-const TYPE_COLOR: Record<string, string> = {
-  audio: '#E91E63',
-  location: '#2196F3',
-  image: '#9C27B0',
-  text: '#607D8B',
-};
-
-export function DeliveryCard({ delivery, onAccept, accepting }: Props) {
+export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props) {
   const age = formatAge(delivery.createdAt);
-  const mediaType = delivery.initialMediaType ?? 'text';
-  const icon = TYPE_ICON[mediaType] ?? '💬';
-  const label = TYPE_LABEL[mediaType] ?? mediaType;
-  const color = TYPE_COLOR[mediaType] ?? '#607D8B';
+  const initial = (delivery.clientAlias ?? '?')[0].toUpperCase();
+  const hasAudio = delivery.initialMediaType === 'audio' && !!delivery.initialMediaUrl;
 
+  const wave = useMemo(() => genWave(WAVE_COUNT), [delivery.id]);
+  const animVals = useRef(wave.map(() => new Animated.Value(1))).current;
   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
+  const loopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
     return () => {
       soundRef.current?.unloadAsync();
+      loopRef.current?.stop();
     };
   }, []);
 
-  const toggleAudio = async () => {
-    const url = delivery.initialMediaUrl;
-    if (!url) return;
+  const startWaveAnim = () => {
+    const anims = animVals.map((v, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 35),
+          Animated.timing(v, { toValue: 0.3 + Math.random() * 0.7, duration: 200, useNativeDriver: false }),
+          Animated.timing(v, { toValue: wave[i], duration: 200, useNativeDriver: false }),
+        ])
+      )
+    );
+    loopRef.current = Animated.parallel(anims);
+    loopRef.current.start();
+  };
 
+  const stopWaveAnim = () => {
+    loopRef.current?.stop();
+    animVals.forEach((v, i) => v.setValue(wave[i]));
+  };
+
+  const toggleAudio = async () => {
+    if (!hasAudio) return;
     if (playing) {
       await soundRef.current?.stopAsync();
       await soundRef.current?.unloadAsync();
       soundRef.current = null;
       setPlaying(false);
+      stopWaveAnim();
       return;
     }
-
     setLoadingAudio(true);
     try {
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
-      const { sound } = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: true });
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: delivery.initialMediaUrl! },
+        { shouldPlay: true }
+      );
       soundRef.current = sound;
       setPlaying(true);
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
+      startWaveAnim();
+      sound.setOnPlaybackStatusUpdate((s) => {
+        if (s.isLoaded && s.didJustFinish) {
           setPlaying(false);
+          stopWaveAnim();
           sound.unloadAsync();
           soundRef.current = null;
         }
@@ -82,96 +96,156 @@ export function DeliveryCard({ delivery, onAccept, accepting }: Props) {
 
   return (
     <View style={styles.card}>
-      <View style={styles.header}>
-        <View style={styles.dot} />
-        <Text style={styles.alias}>{delivery.clientAlias}</Text>
-        <Text style={styles.age}>{age}</Text>
+      {/* Header: avatar + nom + temps */}
+      <View style={styles.cardHeader}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{initial}</Text>
+        </View>
+        <View>
+          <Text style={styles.clientName}>{delivery.clientAlias}</Text>
+          <Text style={styles.clientTime}>{age}</Text>
+        </View>
       </View>
 
-      {/* Badge type */}
-      <View style={[styles.typeBadge, { backgroundColor: color + '22', borderColor: color + '66' }]}>
-        <Text style={styles.typeIcon}>{icon}</Text>
-        <Text style={[styles.typeLabel, { color }]}>{label}</Text>
-      </View>
-
-      {/* Lecteur audio intégré si message vocal */}
-      {mediaType === 'audio' && delivery.initialMediaUrl ? (
+      {/* Waveform audio player */}
+      <View style={styles.waveRow}>
         <TouchableOpacity
-          style={[styles.audioBtn, playing && styles.audioBtnPlaying]}
-          onPress={toggleAudio}
+          style={styles.playBtn}
+          onPress={hasAudio ? toggleAudio : undefined}
           disabled={loadingAudio}
           activeOpacity={0.75}
         >
-          {loadingAudio ? (
-            <ActivityIndicator color="#E91E63" size="small" />
-          ) : (
-            <Text style={styles.audioBtnIcon}>{playing ? '⏹ Arrêter' : '▶ Écouter le message'}</Text>
-          )}
+          {loadingAudio
+            ? <ActivityIndicator size="small" color="#fff" />
+            : playing
+              ? <Icon name="pause" size={16} color="#fff" strokeWidth={2} />
+              : <Icon name="play" size={16} color="#fff" />
+          }
         </TouchableOpacity>
-      ) : null}
+
+        <View style={styles.waveform}>
+          {animVals.map((v, i) => (
+            <Animated.View
+              key={i}
+              style={[
+                styles.waveBar,
+                { height: v.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) },
+                playing && styles.waveBarActive,
+              ]}
+            />
+          ))}
+        </View>
+
+        <Text style={styles.waveDur}>
+          {delivery.initialMediaType === 'audio' ? '0:08' : '—'}
+        </Text>
+      </View>
 
       {/* Texte si message texte */}
-      {delivery.description && mediaType === 'text' ? (
-        <Text style={styles.description} numberOfLines={2}>{delivery.description}</Text>
+      {delivery.description && delivery.initialMediaType !== 'audio' ? (
+        <Text style={styles.desc} numberOfLines={2}>{delivery.description}</Text>
       ) : null}
 
-      <TouchableOpacity
-        style={[styles.btn, accepting && styles.btnDisabled]}
-        onPress={() => onAccept(delivery)}
-        disabled={accepting}
-        activeOpacity={0.75}
-      >
-        <Text style={styles.btnText}>
-          {accepting ? 'Acceptation...' : 'Accepter la course'}
-        </Text>
-      </TouchableOpacity>
+      {/* Boutons */}
+      <View style={styles.actions}>
+        <TouchableOpacity
+          style={styles.btnRefuse}
+          onPress={() => onRefuse?.(delivery)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.btnRefuseText}>Refuser</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.btnAccept, accepting && styles.btnOff]}
+          onPress={() => onAccept(delivery)}
+          disabled={accepting}
+          activeOpacity={0.75}
+        >
+          {accepting
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <>
+                <Icon name="check" size={16} color="#fff" strokeWidth={2.5} />
+                <Text style={styles.btnAcceptText}>Accepter</Text>
+              </>
+          }
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 function formatAge(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (m < 1) return "à l'instant";
-  if (m < 60) return `il y a ${m} min`;
-  return `il y a ${Math.floor(m / 60)} h`;
+  if (m < 60) return `Il y a ${m} min`;
+  return `Il y a ${Math.floor(m / 60)} h`;
 }
 
 const styles = StyleSheet.create({
   card: {
     backgroundColor: CARD,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 18,
+    marginHorizontal: 16,
     marginBottom: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: BRAND,
-    gap: 10,
+    padding: 16,
+    borderWidth: 0.5,
+    borderColor: BORDER,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    gap: 14,
   },
-  header: { flexDirection: 'row', alignItems: 'center' },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50', marginRight: 8 },
-  alias: { color: '#fff', fontWeight: '700', fontSize: 15, flex: 1 },
-  age: { color: '#888', fontSize: 12 },
-  typeBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1,
+  // Header
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatar: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: '#C7E0F4',
+    justifyContent: 'center', alignItems: 'center',
   },
-  typeIcon: { fontSize: 16 },
-  typeLabel: { fontSize: 13, fontWeight: '700' },
-  audioBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#1a0a0f', borderWidth: 1, borderColor: '#E91E6366',
-    borderRadius: 10, paddingVertical: 10,
+  avatarText: { fontSize: 16, fontWeight: '700', color: '#1565C0' },
+  clientName: { fontSize: 15, fontWeight: '700', color: TEXT },
+  clientTime: { fontSize: 12, color: TEXT2, marginTop: 1 },
+  // Waveform
+  waveRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#F5F5F7', borderRadius: 12, padding: 12,
+    borderWidth: 0.5, borderColor: BORDER,
   },
-  audioBtnPlaying: { borderColor: '#E91E63', backgroundColor: '#2a0a14' },
-  audioBtnIcon: { color: '#E91E63', fontWeight: '700', fontSize: 14 },
-  description: { color: '#ccc', fontSize: 14, lineHeight: 20 },
-  btn: {
-    backgroundColor: BRAND,
-    borderRadius: 10,
-    paddingVertical: 12,
+  playBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: PRIMARY,
+    justifyContent: 'center', alignItems: 'center',
+    flexShrink: 0,
+  },
+  playIcon: { color: '#fff', fontSize: 14, marginLeft: 2 },
+  waveform: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    gap: 2, height: 32,
+  },
+  waveBar: {
+    flex: 1, borderRadius: 2, backgroundColor: '#AEAEB2',
+  },
+  waveBarActive: { backgroundColor: PRIMARY },
+  waveDur: { fontSize: 12, fontWeight: '600', color: TEXT2, flexShrink: 0 },
+  desc: { fontSize: 14, color: TEXT2, lineHeight: 20 },
+  // Boutons
+  actions: { flexDirection: 'row', gap: 10 },
+  btnRefuse: {
+    flex: 1,
+    paddingVertical: 13, borderRadius: 12,
+    backgroundColor: '#F5F5F7',
+    borderWidth: 0.5, borderColor: BORDER,
     alignItems: 'center',
   },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  btnRefuseText: { fontSize: 15, fontWeight: '600', color: TEXT2 },
+  btnAccept: {
+    flex: 2,
+    paddingVertical: 13, borderRadius: 12,
+    backgroundColor: PRIMARY,
+    alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
+  },
+  btnAcceptText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  btnOff: { opacity: 0.5 },
 });

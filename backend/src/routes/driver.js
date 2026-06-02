@@ -25,6 +25,19 @@ const router = Router();
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+// Vérifie si un numéro est déjà inscrit (sans révéler d'info sensible)
+router.post('/auth/check', loginLimiter, async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone || phone.trim().length < 6) return res.status(400).json({ error: 'INVALID_PHONE' });
+    const phoneHash = hashWaId(phone.trim());
+    const driver = await db('drivers').where({ phone_hash: phoneHash }).first('id');
+    res.json({ exists: !!driver });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 router.post('/auth/register', loginLimiter, validate(registerSchema), async (req, res) => {
   try {
     const { name, phone, password } = req.body;
