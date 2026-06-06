@@ -44,6 +44,7 @@ async function sendOtpWhatsApp(phone, phoneHash, code) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     console.error('[OTP] échec envoi WhatsApp:', err?.error?.message ?? res.status);
+    console.info(`[OTP-DEBUG] code pour hash=${phoneHash.slice(0, 8)} : ${code}`);
   }
 }
 
