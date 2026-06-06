@@ -138,14 +138,14 @@
           <div class="section-card-header">
             <div class="section-title" style="margin-bottom:0">Courses par jour (7 jours)</div>
           </div>
-          <div class="bar-chart">
-            <div class="bar-group"><div class="bar" style="height:55%"></div><div class="bar-label">Lun</div></div>
-            <div class="bar-group"><div class="bar" style="height:70%"></div><div class="bar-label">Mar</div></div>
-            <div class="bar-group"><div class="bar" style="height:48%"></div><div class="bar-label">Mer</div></div>
-            <div class="bar-group"><div class="bar" style="height:85%"></div><div class="bar-label">Jeu</div></div>
-            <div class="bar-group"><div class="bar" style="height:92%"></div><div class="bar-label">Ven</div></div>
-            <div class="bar-group"><div class="bar" style="height:100%"></div><div class="bar-label">Sam</div></div>
-            <div class="bar-group"><div class="bar" style="height:63%"></div><div class="bar-label">Dim</div></div>
+          <div class="bar-chart" id="bar-chart-wrap">
+            <div class="bar-group"><div class="bar" style="height:2%"></div><div class="bar-label">—</div></div>
+            <div class="bar-group"><div class="bar" style="height:2%"></div><div class="bar-label">—</div></div>
+            <div class="bar-group"><div class="bar" style="height:2%"></div><div class="bar-label">—</div></div>
+            <div class="bar-group"><div class="bar" style="height:2%"></div><div class="bar-label">—</div></div>
+            <div class="bar-group"><div class="bar" style="height:2%"></div><div class="bar-label">—</div></div>
+            <div class="bar-group"><div class="bar" style="height:2%"></div><div class="bar-label">—</div></div>
+            <div class="bar-group"><div class="bar" style="height:2%"></div><div class="bar-label">—</div></div>
           </div>
         </div>
         <div class="section-card">
@@ -224,7 +224,7 @@
         <table class="table">
           <thead>
             <tr>
-              <th>Nom</th><th>Statut</th>
+              <th>#</th><th>Nom</th><th>Statut</th>
               <th>Courses</th><th>Wallet</th><th>Inscrit le</th><th>Action</th>
             </tr>
           </thead>
@@ -245,8 +245,8 @@
         <table class="table">
           <thead>
             <tr>
-              <th>Alias</th><th>Commandes</th>
-              <th>Dernière</th><th>Inscrit le</th><th>Action</th>
+              <th>#</th><th>Alias</th><th>Téléphone</th>
+              <th>Commandes</th><th>Dernière</th><th>Action</th>
             </tr>
           </thead>
           <tbody id="clients-tbody"></tbody>
@@ -292,8 +292,8 @@
         <table class="table">
           <thead>
             <tr>
-              <th>Livreur</th><th>Type</th><th>Fournisseur</th>
-              <th>Montant</th><th>Date</th><th>Statut</th>
+              <th>#</th><th>Livreur</th><th>Type</th>
+              <th>Description</th><th>Montant</th><th>Date</th><th>Statut</th>
             </tr>
           </thead>
           <tbody id="wallet-tbody"></tbody>
@@ -423,7 +423,10 @@
 ================================================================ -->
 <div class="modal-overlay" id="modal-client-detail">
   <div class="modal">
-    <div class="modal-title" id="client-detail-nom">—</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <div class="modal-title" id="client-detail-nom" style="margin-bottom:0;flex:1">—</div>
+      <span style="font-size:13px;font-weight:600;color:var(--text-3)" id="client-detail-num">#1</span>
+    </div>
     <div class="client-detail-grid">
       <div class="client-detail-item">
         <div class="cdi-label">Téléphone</div>
@@ -444,6 +447,21 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-client-detail')">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     MODAL — Modifier un livreur
+================================================================ -->
+<div class="modal-overlay" id="modal-edit-driver">
+  <div class="modal">
+    <div class="modal-title">Modifier le livreur</div>
+    <label class="field-label">Nom complet</label>
+    <div class="field-row"><input type="text" id="edit-driver-name" placeholder="Nom du livreur" /></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-driver')">Annuler</button>
+      <button class="btn btn-dark" onclick="saveDriver()">Enregistrer</button>
     </div>
   </div>
 </div>

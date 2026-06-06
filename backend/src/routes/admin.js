@@ -5,7 +5,7 @@ import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { emitNewOrder } from '../services/socket.js';
 import { createDelivery } from '../services/delivery.js';
-import { hashWaId, encryptWaId } from '../services/pii-filter.js';
+import { hashWaId, encryptWaId, decryptWaId } from '../services/pii-filter.js';
 
 const router = Router();
 
@@ -129,11 +129,39 @@ router.get('/admin/stats', requireAdmin, async (req, res) => {
       .sum('amount as total')
       .first();
 
+    // Courbes 7 derniers jours
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const dailyRaw = await db('deliveries')
+      .where('created_at', '>=', sevenDaysAgo)
+      .groupByRaw("DATE_TRUNC('day', created_at AT TIME ZONE 'UTC')")
+      .orderByRaw("DATE_TRUNC('day', created_at AT TIME ZONE 'UTC')")
+      .select(
+        db.raw("DATE_TRUNC('day', created_at AT TIME ZONE 'UTC') as day"),
+        db.raw('COUNT(*) as count')
+      );
+
+    const daily = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      d.setHours(0, 0, 0, 0);
+      const dayStr = d.toISOString().slice(0, 10);
+      const found = dailyRaw.find(r => new Date(r.day).toISOString().slice(0, 10) === dayStr);
+      daily.push({
+        label: d.toLocaleDateString('fr-FR', { weekday: 'short' }),
+        count: found ? parseInt(found.count, 10) : 0,
+      });
+    }
+
     res.json({
       coursesToday: parseInt(coursesToday.count, 10),
       activeDrivers: parseInt(activeDrivers.count, 10),
       totalClients: parseInt(totalClients.count, 10),
       totalRevenue: parseFloat(revenueRow?.total ?? 0),
+      daily,
     });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -176,6 +204,17 @@ router.get('/admin/drivers', requireAdmin, async (req, res) => {
   }
 });
 
+router.put('/admin/drivers/:id', requireAdmin, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'NAME_REQUIRED' });
+    await db('drivers').where({ id: req.params.id }).update({ name: name.trim() });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 router.post('/admin/drivers/:id/suspend', requireAdmin, async (req, res) => {
   try {
     await db('drivers').where({ id: req.params.id }).update({ suspended: true, status: 'offline' });
@@ -199,7 +238,7 @@ router.get('/admin/clients', requireAdmin, async (req, res) => {
   try {
     const clients = await db('clients')
       .orderBy('clients.created_at', 'desc')
-      .select('clients.id', 'clients.alias', 'clients.created_at as createdAt');
+      .select('clients.id', 'clients.alias', 'clients.wa_id_enc', 'clients.created_at as createdAt');
 
     const counts = await db('deliveries')
       .whereNotNull('client_id')
@@ -209,13 +248,25 @@ router.get('/admin/clients', requireAdmin, async (req, res) => {
     const countMap = {};
     for (const c of counts) countMap[c.client_id] = { total: parseInt(c.total, 10), lastAt: c.lastAt };
 
-    const result = clients.map(c => ({
-      id: c.id,
-      alias: c.alias,
-      commandes: countMap[c.id]?.total ?? 0,
-      derniere: countMap[c.id]?.lastAt ?? null,
-      createdAt: c.createdAt,
-    }));
+    const result = clients.map((c, idx) => {
+      let phone = null;
+      try {
+        const raw = decryptWaId(c.wa_id_enc);
+        // Clients WA réels : wa_id est le numéro de téléphone (ex: 22244123456)
+        // Clients admin (broadcast) : commence par "admin_call_"
+        phone = raw.startsWith('admin_call_') ? null : raw;
+      } catch {}
+
+      return {
+        num: idx + 1,
+        id: c.id,
+        alias: c.alias,
+        phone,
+        commandes: countMap[c.id]?.total ?? 0,
+        derniere: countMap[c.id]?.lastAt ?? null,
+        createdAt: c.createdAt,
+      };
+    });
 
     res.json({ clients: result });
   } catch {
