@@ -54,6 +54,7 @@ function showApp() {
   loadLivreurs();
   loadClients();
   loadTransactions();
+  loadInbox();
 }
 
 /* ================================================================
@@ -101,6 +102,26 @@ function initSocket() {
       renderCommandes();
     }
   });
+
+  // Nouveau message texte WA → call center
+  _socket.on('incoming_text', function (data) {
+    // Mettre à jour l'inbox si la page est active
+    loadInbox();
+    // Si la conversation est déjà ouverte, ajouter le message en temps réel
+    if (_inboxSelectedId === data.deliveryId && data.message) {
+      var container = document.getElementById('cc-messages');
+      if (container) {
+        var div = document.createElement('div');
+        div.className = 'cc-msg client';
+        var body = data.message.type === 'text'
+          ? escHtml(data.message.content || '')
+          : '[' + data.message.type + ']';
+        div.innerHTML = body + '<div class="cc-msg-time">' + fmtTime(data.message.createdAt) + '</div>';
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+  });
 }
 
 /* ================================================================
@@ -125,8 +146,11 @@ function showPage(pageId) {
   };
   document.getElementById('page-title').textContent = titles[pageId] || '';
 
-  if (pageId === 'p-callcenter' && !_ccMapInitialized) {
-    setTimeout(function () { initCCMap(); _ccMapInitialized = true; }, 150);
+  if (pageId === 'p-callcenter') {
+    loadInbox();
+    if (!_ccMapInitialized && window.GOOGLE_MAPS_KEY) {
+      setTimeout(function () { initCCMap(); _ccMapInitialized = true; }, 150);
+    }
   }
 }
 
@@ -659,4 +683,204 @@ function showModal(id) {
 function closeModal(id) {
   var m = document.getElementById(id);
   if (m) m.classList.remove('open');
+}
+
+/* ================================================================
+   CALL CENTER — INBOX (conversations WhatsApp en attente)
+================================================================ */
+var _inboxSelectedId = null;
+var _inboxItems = {};
+
+async function loadInbox() {
+  try {
+    var res = await fetch(API + '/api/admin/inbox', { headers: authHeaders() });
+    if (!res.ok) return;
+    var data = await res.json();
+    renderInboxList(data.inbox || []);
+  } catch {}
+}
+
+function renderInboxList(items) {
+  var list = document.getElementById('cc-inbox-list');
+  if (!list) return;
+
+  _inboxItems = {};
+  items.forEach(function (item) { _inboxItems[item.id] = item; });
+
+  if (!items.length) {
+    list.innerHTML = '<div class="cc-inbox-empty">Aucune conversation en attente</div>';
+    return;
+  }
+
+  list.innerHTML = items.map(function (item) {
+    var preview = item.lastMessage
+      ? (item.lastMessage.type === 'text' ? (item.lastMessage.content || '') : '[' + item.lastMessage.type + ']')
+      : 'Nouveau contact';
+    var time = item.lastMessage ? fmtTime(item.lastMessage.createdAt) : fmtTime(item.createdAt);
+    var active = item.id === _inboxSelectedId ? ' active' : '';
+    return '<div class="cc-inbox-item' + active + '" onclick="openConversation(\'' + item.id + '\')">'
+      + '<div class="cc-inbox-alias">' + escHtml(item.clientAlias) + '</div>'
+      + '<div class="cc-inbox-preview">' + escHtml(preview.slice(0, 60)) + '</div>'
+      + '<div class="cc-inbox-time">' + time + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+async function openConversation(deliveryId) {
+  _inboxSelectedId = deliveryId;
+  var item = _inboxItems[deliveryId];
+
+  // Mettre en évidence la ligne
+  document.querySelectorAll('.cc-inbox-item').forEach(function (el) { el.classList.remove('active'); });
+  var clicked = document.querySelector('.cc-inbox-item[onclick*="' + deliveryId + '"]');
+  if (clicked) clicked.classList.add('active');
+
+  // Afficher le panneau chat
+  document.getElementById('cc-chat-empty').style.display = 'none';
+  var chatView = document.getElementById('cc-chat-view');
+  chatView.style.display = 'flex';
+  document.getElementById('cc-chat-client-name').textContent = item ? item.clientAlias : '—';
+
+  // Charger les messages
+  await loadMessages(deliveryId);
+}
+
+async function loadMessages(deliveryId) {
+  try {
+    var res = await fetch(API + '/api/admin/inbox/' + deliveryId + '/messages', { headers: authHeaders() });
+    if (!res.ok) return;
+    var data = await res.json();
+    renderMessages(data.messages || []);
+  } catch {}
+}
+
+function renderMessages(messages) {
+  var container = document.getElementById('cc-messages');
+  if (!container) return;
+
+  if (!messages.length) {
+    container.innerHTML = '<div style="text-align:center;color:var(--text-3);font-size:13px;padding:20px">Aucun message</div>';
+    return;
+  }
+
+  container.innerHTML = messages.map(function (m) {
+    var side = (m.sender_role === 'admin') ? 'admin' : 'client';
+    var body = '';
+    if (m.type === 'text') {
+      body = escHtml(m.content || '');
+    } else if (m.type === 'audio') {
+      body = m.content
+        ? '<audio controls src="' + escHtml(m.content) + '" style="max-width:220px"></audio>'
+        : '[Message vocal]';
+    } else if (m.type === 'image') {
+      body = m.content
+        ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px" />'
+        : '[Image]';
+    } else if (m.type === 'location') {
+      var meta = m.meta || {};
+      body = 'Localisation : ' + (meta.label || (meta.lat + ', ' + meta.lng));
+    } else {
+      body = '[' + m.type + ']';
+    }
+    return '<div class="cc-msg ' + side + '">'
+      + body
+      + '<div class="cc-msg-time">' + fmtTime(m.createdAt) + '</div>'
+      + '</div>';
+  }).join('');
+
+  container.scrollTop = container.scrollHeight;
+}
+
+async function sendReply() {
+  if (!_inboxSelectedId) return;
+  var input = document.getElementById('cc-reply-input');
+  var text = (input.value || '').trim();
+  if (!text) return;
+
+  input.value = '';
+  try {
+    var res = await fetch(API + '/api/admin/inbox/' + _inboxSelectedId + '/reply', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ text: text }),
+    });
+    if (!res.ok) { alert('Erreur lors de l\'envoi.'); return; }
+    // Ajouter localement sans recharger
+    var container = document.getElementById('cc-messages');
+    var div = document.createElement('div');
+    div.className = 'cc-msg admin';
+    div.innerHTML = escHtml(text) + '<div class="cc-msg-time">maintenant</div>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  } catch {
+    alert('Erreur réseau.');
+  }
+}
+
+function openLaunchPanel() {
+  if (!_inboxSelectedId) return;
+  document.getElementById('cc-launch-panel').style.display = 'flex';
+  document.getElementById('cc-launch-status').textContent = '';
+  document.getElementById('cc-launch-status').className = 'cc-launch-status';
+  document.querySelector('.cc-inbox-layout').classList.add('launch-open');
+}
+
+function closeLaunchPanel() {
+  document.getElementById('cc-launch-panel').style.display = 'none';
+  document.querySelector('.cc-inbox-layout').classList.remove('launch-open');
+}
+
+async function launchCourse() {
+  if (!_inboxSelectedId) return;
+  var pickup  = (document.getElementById('cc-pickup').value || '').trim();
+  var dropoff = (document.getElementById('cc-dropoff').value || '').trim();
+  if (!pickup || !dropoff) {
+    alert('Veuillez renseigner les adresses de départ et d\'arrivée.');
+    return;
+  }
+
+  var statusEl = document.getElementById('cc-launch-status');
+  statusEl.textContent = 'Lancement en cours…';
+  statusEl.className = 'cc-launch-status';
+
+  try {
+    var res = await fetch(API + '/api/admin/inbox/' + _inboxSelectedId + '/launch', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ pickupAddress: pickup, dropoffAddress: dropoff }),
+    });
+    if (!res.ok) {
+      statusEl.textContent = 'Erreur lors du lancement.';
+      statusEl.className = 'cc-launch-status error';
+      return;
+    }
+    statusEl.textContent = 'Course envoyée aux livreurs !';
+    statusEl.className = 'cc-launch-status success';
+
+    // Retirer la conversation de l'inbox après lancement
+    setTimeout(function () {
+      closeLaunchPanel();
+      _inboxSelectedId = null;
+      document.getElementById('cc-chat-empty').style.display = 'flex';
+      document.getElementById('cc-chat-view').style.display = 'none';
+      loadInbox();
+    }, 1500);
+  } catch {
+    statusEl.textContent = 'Erreur réseau.';
+    statusEl.className = 'cc-launch-status error';
+  }
+}
+
+function fmtTime(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  var now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+}
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }

@@ -56,6 +56,9 @@ export const env = {
   // FCM — optionnel (notifications push désactivées si absent)
   FCM_SERVICE_ACCOUNT: process.env.FCM_SERVICE_ACCOUNT || null,
 
+  // OpenAI — optionnel (transcription vocale désactivée si absent)
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY || null,
+
   // CORS — liste d'origines séparées par des virgules, ex: http://localhost:3000,https://admin.monapp.com
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())

@@ -146,6 +146,22 @@ export function emitIncomingCall(callInfo) {
   io.to(ADMINS_ROOM).emit('incoming_call', callInfo);
 }
 
+// ── Message texte WA → admin call center ─────────────────────────────────────
+export function emitIncomingText(delivery, message, clientAlias) {
+  if (!io) return;
+  io.to(ADMINS_ROOM).emit('incoming_text', {
+    deliveryId:  delivery.id,
+    clientAlias: clientAlias ?? delivery.alias,
+    message: {
+      id:        message.id,
+      type:      message.type,
+      content:   message.content,
+      meta:      message.meta,
+      createdAt: message.created_at,
+    },
+  });
+}
+
 export function emitNewDelivery(delivery) {
   emitNewOrder(delivery, { type: 'text', content: delivery.description, meta: null });
 }

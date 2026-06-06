@@ -428,3 +428,127 @@ input:focus, textarea:focus { outline: none; }
 .pac-item:hover { background: var(--bg) !important; }
 .pac-item-query { font-size: 14px !important; font-weight: 600 !important; color: var(--text-1) !important; }
 .pac-icon { display: none !important; }
+
+/* ================================================================
+   CALL CENTER — Inbox + Chat
+================================================================ */
+.cc-inbox-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr 0;
+  gap: 0;
+  height: calc(100vh - 72px);
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  border: 0.5px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: grid-template-columns 0.25s var(--ease);
+}
+.cc-inbox-layout.launch-open {
+  grid-template-columns: 320px 1fr 320px;
+}
+
+/* Sidebar conversations */
+.cc-inbox-sidebar {
+  border-right: 0.5px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.cc-inbox-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; border-bottom: 0.5px solid var(--border);
+  flex-shrink: 0;
+}
+.cc-inbox-list {
+  flex: 1; overflow-y: auto; padding: 8px 0;
+}
+.cc-inbox-empty {
+  padding: 24px 18px; text-align: center;
+  color: var(--text-3); font-size: 13px;
+}
+.cc-inbox-item {
+  padding: 14px 18px; cursor: pointer; border-bottom: 0.5px solid var(--border);
+  transition: background .15s;
+}
+.cc-inbox-item:hover  { background: var(--bg); }
+.cc-inbox-item.active { background: rgba(0,0,0,.04); }
+.cc-inbox-alias {
+  font-weight: 700; font-size: 14px; color: var(--text-1);
+  margin-bottom: 4px;
+}
+.cc-inbox-preview {
+  font-size: 12px; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cc-inbox-time { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.cc-inbox-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--red); color: #fff;
+  border-radius: 50%; width: 18px; height: 18px; font-size: 10px; font-weight: 700;
+  float: right; margin-top: 2px;
+}
+
+/* Chat panel */
+.cc-chat-panel {
+  display: flex; flex-direction: column; overflow: hidden; position: relative;
+  border-right: 0.5px solid var(--border);
+}
+.cc-chat-empty {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; color: var(--text-3);
+}
+.cc-chat-empty svg { width: 48px; height: 48px; fill: var(--text-3); }
+.cc-chat-empty div { font-size: 15px; }
+.cc-chat-view { display: flex; flex-direction: column; height: 100%; }
+.cc-chat-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 0.5px solid var(--border); flex-shrink: 0;
+}
+.cc-chat-client-name { font-weight: 700; font-size: 16px; color: var(--text-1); }
+.cc-messages {
+  flex: 1; overflow-y: auto; padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.cc-msg {
+  max-width: 70%; padding: 10px 14px; border-radius: 16px;
+  font-size: 14px; line-height: 1.45; word-break: break-word;
+}
+.cc-msg.client {
+  align-self: flex-start;
+  background: var(--bg); color: var(--text-1);
+  border-bottom-left-radius: 4px;
+}
+.cc-msg.admin {
+  align-self: flex-end;
+  background: var(--text-1); color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.cc-msg-time { font-size: 11px; opacity: .55; margin-top: 4px; }
+.cc-reply-bar {
+  display: flex; gap: 8px; padding: 12px 18px;
+  border-top: 0.5px solid var(--border); flex-shrink: 0;
+}
+.cc-reply-input {
+  flex: 1; border: 1.5px solid var(--border); border-radius: var(--radius-md);
+  padding: 10px 14px; font-size: 14px; font-family: inherit;
+  background: var(--bg); color: var(--text-1); outline: none;
+  transition: border-color .15s;
+}
+.cc-reply-input:focus { border-color: var(--text-1); }
+
+/* Launch panel */
+.cc-launch-panel {
+  padding: 20px 18px; display: flex; flex-direction: column;
+  gap: 8px; overflow-y: auto;
+}
+.cc-launch-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.cc-launch-status {
+  font-size: 13px; font-weight: 600; text-align: center;
+  padding: 8px; border-radius: var(--radius-sm); margin-top: 8px;
+}
+.cc-launch-status.success { background: rgba(52,199,89,.1); color: #1a7a35; }
+.cc-launch-status.error   { background: rgba(255,59,48,.1); color: #c0392b; }
+
+.btn-sm { padding: 8px 14px !important; font-size: 13px !important; }

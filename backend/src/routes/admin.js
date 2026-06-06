@@ -4,8 +4,9 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { emitNewOrder } from '../services/socket.js';
-import { createDelivery } from '../services/delivery.js';
+import { createDelivery, launchDelivery } from '../services/delivery.js';
 import { hashWaId, encryptWaId, decryptWaId } from '../services/pii-filter.js';
+import { sendText } from '../services/messaging.js';
 
 const router = Router();
 
@@ -294,6 +295,124 @@ router.get('/admin/transactions', requireAdmin, async (req, res) => {
 
     res.json({ transactions });
   } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : liste des conversations en attente (admin_queue) ────────────
+router.get('/admin/inbox', requireAdmin, async (req, res) => {
+  try {
+    const rows = await db('deliveries')
+      .join('clients', 'deliveries.client_id', 'clients.id')
+      .where('deliveries.status', 'admin_queue')
+      .whereNull('deliveries.archived_at')
+      .orderBy('deliveries.created_at', 'desc')
+      .select(
+        'deliveries.id',
+        'deliveries.created_at as createdAt',
+        'clients.alias as clientAlias',
+        'clients.wa_id_enc as waIdEnc'
+      );
+
+    const result = await Promise.all(rows.map(async (row) => {
+      const last = await db('messages')
+        .where({ delivery_id: row.id })
+        .orderBy('created_at', 'desc')
+        .first();
+      return {
+        id:          row.id,
+        clientAlias: row.clientAlias,
+        createdAt:   row.createdAt,
+        lastMessage: last ? { type: last.type, content: last.content, createdAt: last.created_at } : null,
+      };
+    }));
+
+    res.json({ inbox: result });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : messages d'une conversation admin_queue ─────────────────────
+router.get('/admin/inbox/:id/messages', requireAdmin, async (req, res) => {
+  try {
+    const delivery = await db('deliveries').where({ id: req.params.id }).first();
+    if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const messages = await db('messages')
+      .where({ delivery_id: req.params.id })
+      .orderBy('created_at', 'asc')
+      .select('id', 'sender_role', 'type', 'content', 'meta', 'created_at as createdAt');
+
+    res.json({ messages });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : répondre au client (via WhatsApp) ───────────────────────────
+router.post('/admin/inbox/:id/reply', requireAdmin, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || !text.trim()) return res.status(400).json({ error: 'TEXT_REQUIRED' });
+
+    const delivery = await db('deliveries')
+      .join('clients', 'deliveries.client_id', 'clients.id')
+      .where('deliveries.id', req.params.id)
+      .select('deliveries.*', 'clients.wa_id_enc as waIdEnc', 'clients.alias as clientAlias')
+      .first();
+    if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const rawWaId = decryptWaId(delivery.waIdEnc);
+
+    // Sauvegarder le message admin
+    const [message] = await db('messages')
+      .insert({ delivery_id: req.params.id, sender_role: 'admin', type: 'text', content: text.trim(), meta: null })
+      .returning('*');
+
+    // Envoyer via WhatsApp
+    await sendText(rawWaId, text.trim()).catch((err) => {
+      console.error('[admin/reply] WhatsApp erreur:', err.message);
+    });
+
+    res.json({ message: { id: message.id, content: message.content, createdAt: message.created_at } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : lancer une course (admin_queue → pending → livreurs) ─────────
+router.post('/admin/inbox/:id/launch', requireAdmin, async (req, res) => {
+  try {
+    const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng } = req.body;
+
+    const client = await db('deliveries')
+      .join('clients', 'deliveries.client_id', 'clients.id')
+      .where('deliveries.id', req.params.id)
+      .select('clients.alias as clientAlias')
+      .first();
+    if (!client) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const updated = await launchDelivery(req.params.id, {
+      pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng,
+    });
+
+    // Dernier message pour l'affichage côté livreur
+    const lastMsg = await db('messages')
+      .where({ delivery_id: req.params.id })
+      .orderBy('created_at', 'desc')
+      .first();
+
+    const initialMessage = lastMsg
+      ? { type: lastMsg.type, content: lastMsg.content, meta: lastMsg.meta }
+      : { type: 'text', content: pickupAddress ? `${pickupAddress} → ${dropoffAddress}` : 'Commande appel', meta: null };
+
+    emitNewOrder({ ...updated, alias: client.clientAlias }, initialMessage);
+
+    res.json({ delivery: { id: updated.id, status: updated.status } });
+  } catch (err) {
+    if (err.code === 'DELIVERY_NOT_FOUND') return res.status(404).json({ error: 'NOT_FOUND' });
+    if (err.code === 'INVALID_STATUS')     return res.status(409).json({ error: 'INVALID_STATUS' });
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
 });

@@ -1,11 +1,11 @@
 import db from '../config/db.js';
 import { emitOrderTaken, emitOrderAssigned } from './socket.js';
 
-// Retourne la delivery active (pending ou assigned) pour un client donné
+// Retourne la delivery active (pending, assigned ou admin_queue) pour un client donné
 export async function getActiveDelivery(clientId) {
   return db('deliveries')
     .where({ client_id: clientId })
-    .whereIn('status', ['pending', 'assigned'])
+    .whereIn('status', ['pending', 'assigned', 'admin_queue'])
     .orderBy('created_at', 'desc')
     .first();
 }
@@ -16,6 +16,44 @@ export async function createDelivery(clientId, description = null) {
     .insert({ client_id: clientId, status: 'pending', description })
     .returning('*');
   return delivery;
+}
+
+// Crée une delivery dans la file du call center (texte WA → admin)
+export async function createAdminQueueDelivery(clientId) {
+  const [delivery] = await db('deliveries')
+    .insert({ client_id: clientId, status: 'admin_queue' })
+    .returning('*');
+  return delivery;
+}
+
+// Passe une admin_queue delivery en pending avec les adresses et l'émet aux livreurs
+export async function launchDelivery(deliveryId, { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng }) {
+  const delivery = await db('deliveries').where({ id: deliveryId }).first();
+  if (!delivery) {
+    const err = new Error('Course introuvable');
+    err.code = 'DELIVERY_NOT_FOUND';
+    throw err;
+  }
+  if (delivery.status !== 'admin_queue') {
+    const err = new Error('La course n\'est pas en attente call center');
+    err.code = 'INVALID_STATUS';
+    throw err;
+  }
+
+  const [updated] = await db('deliveries')
+    .where({ id: deliveryId })
+    .update({
+      status: 'pending',
+      pickup_address: pickupAddress ?? null,
+      dropoff_address: dropoffAddress ?? null,
+      pickup_lat: pickupLat ?? null,
+      pickup_lng: pickupLng ?? null,
+      dropoff_lat: dropoffLat ?? null,
+      dropoff_lng: dropoffLng ?? null,
+    })
+    .returning('*');
+
+  return updated;
 }
 
 // Assignation atomique d'une course à un livreur

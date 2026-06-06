@@ -305,80 +305,88 @@
          PAGE CALL CENTER
     ════════════════════════════════════════════════════════ -->
     <div class="page" id="p-callcenter">
-      <div class="cc-grid">
+      <div class="cc-inbox-layout">
 
-        <!-- Formulaire commande -->
-        <div class="cc-form">
-          <div class="section-title" style="margin-bottom:16px">Nouvelle commande</div>
+        <!-- ── Colonne gauche : liste conversations ── -->
+        <div class="cc-inbox-sidebar">
+          <div class="cc-inbox-header">
+            <div class="section-title" style="margin-bottom:0">Conversations en attente</div>
+            <button class="btn btn-ghost btn-sm" onclick="loadInbox()">
+              <svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M17.65 6.35A7.96 7.96 0 0012 4C7.58 4 4 7.58 4 12s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+            </button>
+          </div>
+          <div class="cc-inbox-list" id="cc-inbox-list">
+            <div class="cc-inbox-empty">Chargement…</div>
+          </div>
+        </div>
 
-          <!-- Recherche client -->
-          <label class="field-label">Numéro client</label>
-          <div class="cc-search-row">
-            <div class="field-row" style="flex:1;margin-bottom:0">
-              <input type="tel" id="cc-phone" placeholder="+222 XX XX XX XX" />
+        <!-- ── Colonne droite : conversation sélectionnée ── -->
+        <div class="cc-chat-panel" id="cc-chat-panel">
+
+          <!-- État vide -->
+          <div class="cc-chat-empty" id="cc-chat-empty">
+            <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+            <div>Sélectionnez une conversation</div>
+          </div>
+
+          <!-- Vue conversation -->
+          <div class="cc-chat-view" id="cc-chat-view" style="display:none">
+
+            <!-- En-tête -->
+            <div class="cc-chat-topbar">
+              <div class="cc-chat-client-name" id="cc-chat-client-name">—</div>
+              <button class="btn btn-danger btn-sm" onclick="openLaunchPanel()">
+                <svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                Lancer la course
+              </button>
             </div>
-            <button class="btn btn-ghost" onclick="searchClient()">Chercher</button>
+
+            <!-- Messages -->
+            <div class="cc-messages" id="cc-messages"></div>
+
+            <!-- Saisie réponse -->
+            <div class="cc-reply-bar">
+              <input class="cc-reply-input" id="cc-reply-input"
+                     placeholder="Répondre au client…"
+                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply();}" />
+              <button class="btn btn-dark btn-sm" onclick="sendReply()">
+                <svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Panneau de lancement ── -->
+        <div class="cc-launch-panel" id="cc-launch-panel" style="display:none">
+          <div class="cc-launch-header">
+            <div class="section-title" style="margin-bottom:0">Lancer la course</div>
+            <button class="btn btn-ghost btn-sm" onclick="closeLaunchPanel()">✕</button>
           </div>
 
-          <!-- Client trouvé -->
-          <div class="cc-client-banner" id="cc-client-info">
-            <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
-            <span id="cc-client-name">—</span>
-          </div>
-
-          <!-- Type -->
-          <label class="field-label">Type de livraison</label>
-          <div class="cc-type-row">
-            <div class="filter-pill active" id="cc-type-restaurant"  onclick="selectType('restaurant')">🍔 Restaurant</div>
-            <div class="filter-pill"        id="cc-type-supermarche" onclick="selectType('supermarche')">🛒 Supermarché</div>
-            <div class="filter-pill"        id="cc-type-colis"       onclick="selectType('colis')">📦 Colis</div>
-          </div>
-
-          <!-- Adresses -->
-          <label class="field-label">Itinéraire</label>
+          <label class="field-label">Point de départ</label>
           <div class="cc-addr-row">
             <div class="addr-dot green"></div>
             <div class="field-row" style="flex:1;margin-bottom:0">
-              <input type="text" id="cc-depart" placeholder="Adresse de départ" />
+              <input type="text" id="cc-pickup" placeholder="Adresse de départ" />
             </div>
           </div>
-          <div class="cc-addr-row" style="margin-top:6px;margin-bottom:16px">
+
+          <label class="field-label" style="margin-top:10px">Point d'arrivée</label>
+          <div class="cc-addr-row">
             <div class="addr-dot red"></div>
             <div class="field-row" style="flex:1;margin-bottom:0">
-              <input type="text" id="cc-destination" placeholder="Adresse de destination" />
+              <input type="text" id="cc-dropoff" placeholder="Adresse de destination" />
             </div>
           </div>
-
-          <!-- Prix -->
-          <div class="cc-price-card">
-            <div>
-              <div class="cc-price-label">Prix estimé</div>
-              <div class="cc-price-sub" id="cc-prix-detail">Sélectionnez les adresses</div>
-            </div>
-            <div class="cc-price-value" id="cc-prix">— MRU</div>
-          </div>
-
-          <!-- Livreurs dispo -->
-          <div class="cc-livreurs-banner">
-            <div class="cc-dot-green"></div>
-            <span id="cc-nb-livreurs">Chargement…</span>
-          </div>
-
-          <!-- Note -->
-          <label class="field-label">Note pour le livreur (optionnel)</label>
-          <textarea class="textarea-field" rows="3" placeholder="Instructions spéciales…"></textarea>
 
           <button class="btn btn-dark"
                   style="width:100%;justify-content:center;margin-top:16px"
-                  onclick="createCommande()">
+                  onclick="launchCourse()">
             <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
-            Créer et publier la commande
+            Envoyer aux livreurs
           </button>
-        </div>
 
-        <!-- Carte -->
-        <div class="cc-map-wrap">
-          <div id="cc-map"></div>
+          <div class="cc-launch-status" id="cc-launch-status"></div>
         </div>
 
       </div>
