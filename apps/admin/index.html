@@ -3,609 +3,466 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vecto Admin</title>
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --brand: #ff6b35;
-      --bg: #0d0d0d;
-      --card: #1a1a1a;
-      --card2: #222;
-      --border: #2a2a2a;
-      --text: #f0f0f0;
-      --muted: #888;
-      --green: #4caf50;
-      --red: #f44336;
-    }
-    body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; min-height: 100vh; }
-
-    /* ── LOGIN ─────────────────────────────────────────────────── */
-    #login-screen {
-      display: flex; align-items: center; justify-content: center; min-height: 100vh;
-    }
-    .login-box {
-      background: var(--card); border-radius: 16px; padding: 40px; width: 360px;
-      border: 1px solid var(--border);
-    }
-    .login-box h1 { font-size: 24px; margin-bottom: 6px; }
-    .login-box p { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
-    label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
-    input {
-      width: 100%; background: var(--card2); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 15px; margin-bottom: 16px;
-    }
-    input:focus { outline: none; border-color: var(--brand); }
-    .btn {
-      width: 100%; background: var(--brand); color: #fff; border: none;
-      border-radius: 10px; padding: 12px; font-size: 15px; font-weight: 700;
-      cursor: pointer; transition: opacity .15s;
-    }
-    .btn:hover { opacity: .9; }
-    .btn:disabled { opacity: .5; cursor: default; }
-    .btn-outline {
-      background: transparent; border: 1px solid var(--brand); color: var(--brand);
-    }
-    .btn-sm {
-      width: auto; padding: 7px 14px; font-size: 13px; border-radius: 8px;
-    }
-    .btn-danger { background: var(--red); }
-    #login-error { color: var(--red); font-size: 13px; margin-top: 10px; display: none; }
-
-    /* ── APP ───────────────────────────────────────────────────── */
-    #app-screen { display: none; flex-direction: column; min-height: 100vh; }
-    header {
-      background: var(--card); border-bottom: 1px solid var(--border);
-      padding: 0 24px; height: 60px; display: flex; align-items: center; justify-content: space-between;
-      position: sticky; top: 0; z-index: 100;
-    }
-    .logo { font-size: 20px; font-weight: 800; color: var(--brand); }
-    .header-right { display: flex; align-items: center; gap: 16px; }
-    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); display: inline-block; }
-    .conn-dot.on { background: var(--green); }
-    .conn-label { font-size: 13px; color: var(--muted); }
-
-    nav {
-      background: var(--card); border-bottom: 1px solid var(--border);
-      display: flex; gap: 4px; padding: 0 20px;
-    }
-    .tab {
-      padding: 12px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
-      border-bottom: 2px solid transparent; color: var(--muted); background: none; border-top: none;
-      border-left: none; border-right: none;
-    }
-    .tab.active { color: var(--brand); border-bottom-color: var(--brand); }
-
-    .page { display: none; padding: 24px; max-width: 1100px; margin: 0 auto; width: 100%; }
-    .page.active { display: block; }
-
-    /* ── CALL ALERT ────────────────────────────────────────────── */
-    #call-alert {
-      display: none; background: #1a0d00; border: 1px solid var(--brand);
-      border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
-      flex-direction: row; align-items: center; gap: 16px;
-    }
-    #call-alert.visible { display: flex; }
-    .call-icon { font-size: 32px; animation: ring .6s infinite alternate; }
-    @keyframes ring { from { transform: rotate(-10deg); } to { transform: rotate(10deg); } }
-    .call-info { flex: 1; }
-    .call-info h3 { font-size: 16px; margin-bottom: 4px; }
-    .call-info p { color: var(--muted); font-size: 13px; }
-    .call-actions { display: flex; gap: 8px; }
-
-    /* ── ORDERS ────────────────────────────────────────────────── */
-    .section-title {
-      font-size: 16px; font-weight: 700; margin-bottom: 16px;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .badge {
-      background: var(--brand); color: #fff; border-radius: 20px;
-      font-size: 12px; font-weight: 700; padding: 2px 8px;
-    }
-    .orders-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;
-    }
-    .order-card {
-      background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
-    }
-    .order-card.new { border-color: var(--brand); animation: pulse-border .8s 3; }
-    @keyframes pulse-border {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,53,0); }
-      50% { box-shadow: 0 0 0 6px rgba(255,107,53,0.3); }
-    }
-    .order-alias { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
-    .order-time { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
-    .order-status {
-      display: inline-block; font-size: 11px; font-weight: 700;
-      padding: 3px 8px; border-radius: 6px; margin-bottom: 10px;
-    }
-    .status-pending { background: #2a1a00; color: #ff9800; }
-    .status-assigned { background: #0a1f0a; color: var(--green); }
-    .order-msg { font-size: 13px; color: #bbb; }
-    .order-audio {
-      background: #1a1a2e; border: 1px solid var(--brand); border-radius: 8px;
-      padding: 10px 14px; font-size: 13px; color: var(--brand); cursor: pointer;
-      display: inline-flex; align-items: center; gap: 8px; margin-top: 4px;
-    }
-    .order-audio:hover { background: #22224a; }
-    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
-    .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
-
-    /* ── BROADCAST MODAL ───────────────────────────────────────── */
-    .modal-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,.7); z-index: 200; align-items: center; justify-content: center;
-    }
-    .modal-overlay.visible { display: flex; }
-    .modal-box {
-      background: var(--card); border-radius: 16px; padding: 28px; width: 440px;
-      border: 1px solid var(--border);
-    }
-    .modal-box h2 { font-size: 18px; margin-bottom: 18px; }
-    textarea {
-      width: 100%; background: var(--card2); border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 14px;
-      resize: vertical; min-height: 100px; margin-bottom: 14px;
-    }
-    textarea:focus { outline: none; border-color: var(--brand); }
-    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
-
-    /* ── ARCHIVES ──────────────────────────────────────────────── */
-    .archives-list { display: flex; flex-direction: column; gap: 8px; }
-    .archive-row {
-      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-      padding: 14px 18px; display: flex; align-items: center; justify-content: space-between;
-      cursor: pointer; transition: border-color .15s;
-    }
-    .archive-row:hover { border-color: var(--brand); }
-    .archive-meta { display: flex; flex-direction: column; gap: 3px; }
-    .archive-alias { font-weight: 700; font-size: 14px; }
-    .archive-sub { font-size: 12px; color: var(--muted); }
-    .pagination { display: flex; gap: 8px; margin-top: 20px; justify-content: center; }
-
-    /* ── MESSAGES VIEWER ───────────────────────────────────────── */
-    #messages-overlay {
-      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.8);
-      z-index: 300; align-items: center; justify-content: center;
-    }
-    #messages-overlay.visible { display: flex; }
-    .messages-box {
-      background: var(--card); border-radius: 16px; width: 500px; max-height: 80vh;
-      display: flex; flex-direction: column; border: 1px solid var(--border);
-    }
-    .messages-header {
-      padding: 16px 20px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    .messages-header h3 { font-size: 16px; font-weight: 700; }
-    .close-btn {
-      background: none; border: none; color: var(--muted); font-size: 22px;
-      cursor: pointer; line-height: 1;
-    }
-    .close-btn:hover { color: var(--text); }
-    .messages-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-    .msg-bubble {
-      max-width: 80%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5;
-    }
-    .msg-client { background: #1a2a1a; align-self: flex-start; border-radius: 4px 12px 12px 12px; }
-    .msg-driver { background: #1a1a2e; align-self: flex-end; border-radius: 12px 4px 12px 12px; }
-    .msg-role { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-    .msg-time { font-size: 11px; color: var(--muted); margin-top: 4px; text-align: right; }
-    .msg-audio-btn {
-      background: transparent; border: 1px solid var(--brand); border-radius: 8px;
-      padding: 6px 12px; color: var(--brand); font-size: 13px; cursor: pointer;
-    }
-  </style>
+  <title>VECTO — Dashboard Admin</title>
+  <link rel="stylesheet" href="style_admin.css" />
 </head>
 <body>
 
-<!-- ── LOGIN ─────────────────────────────────────────────────────── -->
-<div id="login-screen">
-  <div class="login-box">
-    <h1>🛵 Vecto Admin</h1>
-    <p>Tableau de bord opérateur</p>
-    <label>Email</label>
-    <input type="email" id="login-email" value="admin@vecto.app" />
-    <label>Mot de passe</label>
-    <input type="password" id="login-password" value="admin123" />
-    <button class="btn" id="login-btn" onclick="doLogin()">Se connecter</button>
-    <p id="login-error">Identifiants incorrects</p>
+<!-- ================================================================
+     LOGIN
+================================================================ -->
+<div id="login-screen" class="login-overlay">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="login-logo">V</div>
+      <div class="login-brand-name">VECTO</div>
+      <div class="login-brand-sub">Tableau de bord administrateur</div>
+    </div>
+    <div id="login-error" class="login-error">Identifiants incorrects</div>
+    <label class="field-label" for="login-input">Identifiant</label>
+    <div class="field-row">
+      <input type="text" id="login-input" placeholder="admin ou operateur" />
+    </div>
+    <label class="field-label" for="password-input">Mot de passe</label>
+    <div class="field-row">
+      <input type="password" id="password-input" placeholder="••••••••"
+             onkeydown="if(event.key==='Enter') login()" />
+    </div>
+    <button class="btn btn-dark btn-cta" onclick="login()">Se connecter</button>
+    <div class="login-hint">
+      Admin&nbsp;: <strong>admin</strong> / <strong>1234</strong><br>
+      Opérateur&nbsp;: <strong>operateur</strong> / <strong>0000</strong>
+    </div>
   </div>
 </div>
 
-<!-- ── APP ───────────────────────────────────────────────────────── -->
-<div id="app-screen">
-  <header>
-    <span class="logo">🛵 Vecto</span>
-    <div class="header-right">
-      <span class="conn-dot" id="conn-dot"></span>
-      <span class="conn-label" id="conn-label">Déconnecté</span>
-      <button class="btn btn-sm btn-outline" onclick="doLogout()">Déconnexion</button>
-    </div>
-  </header>
+<!-- ================================================================
+     APP
+================================================================ -->
+<div id="app" class="dashboard">
 
-  <nav>
-    <button class="tab active" onclick="showTab('dashboard')">Dashboard</button>
-    <button class="tab" onclick="showTab('archives')">Archives</button>
-  </nav>
-
-  <!-- ── DASHBOARD ────────────────────────────────────────────── -->
-  <div class="page active" id="page-dashboard">
-    <!-- Call alert -->
-    <div id="call-alert">
-      <span class="call-icon">📞</span>
-      <div class="call-info">
-        <h3>Appel entrant</h3>
-        <p id="call-from">Numéro masqué</p>
-      </div>
-      <div class="call-actions">
-        <button class="btn btn-sm" onclick="openBroadcastModal()">Diffuser une course</button>
-        <button class="btn btn-sm btn-danger" onclick="dismissCall()">✕</button>
+  <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">V</div>
+      <div>
+        <div class="sidebar-name">VECTO</div>
+        <div class="sidebar-sub">Dashboard Admin</div>
       </div>
     </div>
 
-    <div class="section-title">
-      Courses actives <span class="badge" id="active-count">0</span>
-      <button class="btn btn-sm btn-outline" onclick="loadActiveOrders()">Actualiser</button>
+    <nav class="sidebar-nav">
+      <div class="nav-item" onclick="showPage('p-stats')">
+        <svg viewBox="0 0 24 24"><path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/></svg>
+        Statistiques
+      </div>
+      <div class="nav-item" onclick="showPage('p-commandes')">
+        <svg viewBox="0 0 24 24"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>
+        Commandes
+      </div>
+      <div class="nav-item" onclick="showPage('p-livreurs')">
+        <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+        Livreurs
+      </div>
+      <div class="nav-item" onclick="showPage('p-clients')">
+        <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+        Clients
+      </div>
+      <div class="nav-item" onclick="showPage('p-wallet')">
+        <svg viewBox="0 0 24 24"><path d="M21 18v1a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1h-9a2 2 0 00-2 2v8a2 2 0 002 2h9zm-9-2h10V8H12v8zm4-2.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg>
+        Wallets
+      </div>
+      <div class="nav-item" onclick="showPage('p-callcenter')">
+        <svg viewBox="0 0 24 24"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+        Call Center
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span class="sidebar-user" id="current-user-label">—</span>
+      <button class="btn-logout" onclick="logout()">Déconnexion</button>
     </div>
-    <div class="orders-grid" id="orders-grid">
-      <div class="empty-state"><div class="icon">📋</div><p>Aucune course active</p></div>
+  </aside>
+
+  <!-- ── MAIN ────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Topbar -->
+    <div class="main-topbar">
+      <div class="topbar-title" id="page-title">Statistiques</div>
     </div>
-  </div>
 
-  <!-- ── ARCHIVES ─────────────────────────────────────────────── -->
-  <div class="page" id="page-archives">
-    <div class="section-title">Archives</div>
-    <div class="archives-list" id="archives-list">
-      <div class="empty-state"><div class="icon">📁</div><p>Chargement…</p></div>
-    </div>
-    <div class="pagination" id="pagination"></div>
-  </div>
-</div>
+    <!-- ════════════════════════════════════════════════════════
+         PAGE STATISTIQUES
+    ════════════════════════════════════════════════════════ -->
+    <div class="page" id="p-stats">
 
-<!-- ── BROADCAST MODAL ───────────────────────────────────────────── -->
-<div class="modal-overlay" id="broadcast-modal">
-  <div class="modal-box">
-    <h2>📢 Diffuser une course</h2>
-    <label>Description de la course</label>
-    <textarea id="broadcast-desc" placeholder="Ex : Livraison urgente Bab El Bhar → Lac 2…"></textarea>
-    <div class="modal-actions">
-      <button class="btn btn-sm btn-outline" onclick="closeBroadcastModal()">Annuler</button>
-      <button class="btn btn-sm" id="broadcast-btn" onclick="doBroadcast()">Diffuser</button>
-    </div>
-  </div>
-</div>
+      <!-- KPIs -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(52,199,89,.1)">
+            <svg viewBox="0 0 24 24" style="fill:#34C759"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>
+          </div>
+          <div>
+            <div class="stat-value">124</div>
+            <div class="stat-label">Courses aujourd'hui</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(26,86,219,.1)">
+            <svg viewBox="0 0 24 24" style="fill:#1a56db"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+          </div>
+          <div>
+            <div class="stat-value">38</div>
+            <div class="stat-label">Livreurs actifs</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(255,149,0,.1)">
+            <svg viewBox="0 0 24 24" style="fill:#FF9500"><path d="M21 18v1a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1h-9a2 2 0 00-2 2v8a2 2 0 002 2h9zm-9-2h10V8H12v8zm4-2.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg>
+          </div>
+          <div>
+            <div class="stat-value">18 600</div>
+            <div class="stat-label">Revenus (MRU)</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(255,59,48,.1)">
+            <svg viewBox="0 0 24 24" style="fill:#FF3B30"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+          </div>
+          <div>
+            <div class="stat-value">2 184</div>
+            <div class="stat-label">Clients inscrits</div>
+          </div>
+        </div>
+      </div>
 
-<!-- ── MESSAGES OVERLAY ──────────────────────────────────────────── -->
-<div id="messages-overlay">
-  <div class="messages-box">
-    <div class="messages-header">
-      <h3 id="messages-title">Conversation</h3>
-      <button class="close-btn" onclick="closeMessages()">×</button>
-    </div>
-    <div class="messages-body" id="messages-body"></div>
-  </div>
-</div>
-
-<script>
-  const API = window.location.origin.replace(/:\d+$/, ':3000');
-  let token = localStorage.getItem('vecto_admin_token');
-  let socket = null;
-  let archivePage = 1;
-  let activeOrders = {};
-
-  // ── AUTH ─────────────────────────────────────────────────────────
-  async function doLogin() {
-    const btn = document.getElementById('login-btn');
-    const err = document.getElementById('login-error');
-    btn.disabled = true;
-    err.style.display = 'none';
-    try {
-      const res = await fetch(`${API}/api/admin/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: document.getElementById('login-email').value,
-          password: document.getElementById('login-password').value,
-        }),
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      token = data.token;
-      localStorage.setItem('vecto_admin_token', token);
-      showApp();
-    } catch {
-      err.style.display = 'block';
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  function doLogout() {
-    token = null;
-    localStorage.removeItem('vecto_admin_token');
-    if (socket) { socket.disconnect(); socket = null; }
-    document.getElementById('app-screen').style.display = 'none';
-    document.getElementById('login-screen').style.display = 'flex';
-  }
-
-  // ── APP INIT ─────────────────────────────────────────────────────
-  function showApp() {
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app-screen').style.display = 'flex';
-    initSocket();
-    loadActiveOrders();
-  }
-
-  if (token) {
-    // Verify token still valid
-    fetch(`${API}/api/admin/orders/active`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? showApp() : doLogout())
-      .catch(() => {});
-  }
-
-  // ── SOCKET ───────────────────────────────────────────────────────
-  function initSocket() {
-    socket = io(API, { auth: { token } });
-
-    socket.on('connect', () => {
-      document.getElementById('conn-dot').classList.add('on');
-      document.getElementById('conn-label').textContent = 'Connecté';
-    });
-
-    socket.on('disconnect', () => {
-      document.getElementById('conn-dot').classList.remove('on');
-      document.getElementById('conn-label').textContent = 'Déconnecté';
-    });
-
-    socket.on('new_order', (order) => {
-      activeOrders[order.deliveryId] = order;
-      renderOrders();
-      // Flash the new card
-      setTimeout(() => {
-        const el = document.querySelector(`[data-id="${order.deliveryId}"]`);
-        if (el) el.classList.add('new');
-      }, 50);
-    });
-
-    socket.on('order_taken', ({ deliveryId }) => {
-      if (activeOrders[deliveryId]) {
-        activeOrders[deliveryId]._status = 'assigned';
-        renderOrders();
-      }
-    });
-
-    socket.on('incoming_call', (call) => {
-      document.getElementById('call-from').textContent =
-        `Numéro : ${call.from ?? '***'}`;
-      document.getElementById('call-alert').classList.add('visible');
-    });
-  }
-
-  // ── ACTIVE ORDERS ────────────────────────────────────────────────
-  async function loadActiveOrders() {
-    try {
-      const res = await fetch(`${API}/api/admin/orders/active`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const { orders } = await res.json();
-      activeOrders = {};
-      for (const o of orders) {
-        activeOrders[o.id] = {
-          deliveryId: o.id,
-          clientAlias: o.clientAlias,
-          createdAt: o.createdAt,
-          _status: o.status,
-          message: {
-            type: o.initialMediaType ?? 'text',
-            content: o.initialMediaUrl ?? null,
-          },
-        };
-      }
-      renderOrders();
-    } catch {}
-  }
-
-  function renderOrders() {
-    const grid = document.getElementById('orders-grid');
-    const list = Object.values(activeOrders);
-    document.getElementById('active-count').textContent = list.length;
-
-    if (!list.length) {
-      grid.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Aucune course active</p></div>';
-      return;
-    }
-
-    grid.innerHTML = list.map(o => {
-      const status = o._status || 'pending';
-      const statusLabel = status === 'assigned' ? 'En cours' : 'En attente';
-      const statusClass = status === 'assigned' ? 'status-assigned' : 'status-pending';
-      const time = new Date(o.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-      const msgHtml = o.message?.type === 'audio' && o.message?.content
-        ? `<div class="order-audio" onclick="playAudio('${escHtml(o.message.content)}')">▶ Message vocal</div>`
-        : `<div class="order-msg">${escHtml(o.message?.content ?? '')}</div>`;
-
-      return `
-        <div class="order-card" data-id="${o.deliveryId}">
-          <div class="order-alias">${escHtml(o.clientAlias)}</div>
-          <div class="order-time">${time}</div>
-          <span class="order-status ${statusClass}">${statusLabel}</span>
-          ${msgHtml}
-        </div>`;
-    }).join('');
-  }
-
-  // ── CALL ALERT ───────────────────────────────────────────────────
-  function dismissCall() {
-    document.getElementById('call-alert').classList.remove('visible');
-  }
-
-  // ── BROADCAST ────────────────────────────────────────────────────
-  function openBroadcastModal() {
-    document.getElementById('broadcast-modal').classList.add('visible');
-    document.getElementById('broadcast-desc').focus();
-  }
-  function closeBroadcastModal() {
-    document.getElementById('broadcast-modal').classList.remove('visible');
-    document.getElementById('broadcast-desc').value = '';
-  }
-
-  async function doBroadcast() {
-    const desc = document.getElementById('broadcast-desc').value.trim();
-    if (!desc) return;
-    const btn = document.getElementById('broadcast-btn');
-    btn.disabled = true;
-    try {
-      const res = await fetch(`${API}/api/admin/broadcast`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ description: desc, mediaType: 'text' }),
-      });
-      if (!res.ok) throw new Error();
-      closeBroadcastModal();
-      dismissCall();
-    } catch {
-      alert('Erreur lors de la diffusion');
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
-  // ── ARCHIVES ─────────────────────────────────────────────────────
-  async function loadArchives(page = 1) {
-    archivePage = page;
-    const list = document.getElementById('archives-list');
-    list.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Chargement…</p></div>';
-    try {
-      const res = await fetch(`${API}/api/admin/archives?page=${page}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const { archives } = await res.json();
-
-      if (!archives.length) {
-        list.innerHTML = '<div class="empty-state"><div class="icon">📁</div><p>Aucune archive</p></div>';
-        document.getElementById('pagination').innerHTML = '';
-        return;
-      }
-
-      list.innerHTML = archives.map(a => {
-        const date = new Date(a.archivedAt).toLocaleString('fr-FR', {
-          day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-        });
-        return `
-          <div class="archive-row" onclick="openMessages('${a.id}', '${escHtml(a.clientAlias)}')">
-            <div class="archive-meta">
-              <span class="archive-alias">${escHtml(a.clientAlias)}</span>
-              <span class="archive-sub">Archivé le ${date}${a.driverName ? ` · ${escHtml(a.driverName)}` : ''}</span>
+      <!-- Charts row -->
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:20px">
+        <div class="section-card">
+          <div class="section-card-header">
+            <div class="section-title" style="margin-bottom:0">Courses par jour (7 jours)</div>
+          </div>
+          <div class="bar-chart">
+            <div class="bar-group"><div class="bar" style="height:55%"></div><div class="bar-label">Lun</div></div>
+            <div class="bar-group"><div class="bar" style="height:70%"></div><div class="bar-label">Mar</div></div>
+            <div class="bar-group"><div class="bar" style="height:48%"></div><div class="bar-label">Mer</div></div>
+            <div class="bar-group"><div class="bar" style="height:85%"></div><div class="bar-label">Jeu</div></div>
+            <div class="bar-group"><div class="bar" style="height:92%"></div><div class="bar-label">Ven</div></div>
+            <div class="bar-group"><div class="bar" style="height:100%"></div><div class="bar-label">Sam</div></div>
+            <div class="bar-group"><div class="bar" style="height:63%"></div><div class="bar-label">Dim</div></div>
+          </div>
+        </div>
+        <div class="section-card">
+          <div class="section-title">Types de livraison</div>
+          <div class="type-rows">
+            <div class="type-item">
+              <div class="type-label-row"><span>Restaurant</span><span class="type-pct">52%</span></div>
+              <div class="type-bar-wrap"><div class="type-bar" style="width:52%;background:var(--text-1)"></div></div>
             </div>
-            <span style="color:var(--muted);font-size:20px">›</span>
-          </div>`;
-      }).join('');
+            <div class="type-item">
+              <div class="type-label-row"><span>Colis</span><span class="type-pct">28%</span></div>
+              <div class="type-bar-wrap"><div class="type-bar" style="width:28%;background:var(--orange)"></div></div>
+            </div>
+            <div class="type-item">
+              <div class="type-label-row"><span>Supermarché</span><span class="type-pct">20%</span></div>
+              <div class="type-bar-wrap"><div class="type-bar" style="width:20%;background:var(--green)"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      const pages = document.getElementById('pagination');
-      pages.innerHTML = '';
-      if (page > 1) {
-        const prev = document.createElement('button');
-        prev.className = 'btn btn-sm btn-outline';
-        prev.textContent = '← Précédent';
-        prev.onclick = () => loadArchives(page - 1);
-        pages.appendChild(prev);
-      }
-      if (archives.length === 20) {
-        const next = document.createElement('button');
-        next.className = 'btn btn-sm btn-outline';
-        next.textContent = 'Suivant →';
-        next.onclick = () => loadArchives(page + 1);
-        pages.appendChild(next);
-      }
-    } catch {}
+      <!-- Recent orders -->
+      <div class="section-card">
+        <div class="section-title">Dernières commandes</div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th><th>Type</th><th>Client</th>
+              <th>Livreur</th><th>Prix</th><th>Statut</th>
+            </tr>
+          </thead>
+          <tbody id="stats-recent-tbody">
+            <tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px">Chargement…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         PAGE COMMANDES
+    ════════════════════════════════════════════════════════ -->
+    <div class="page" id="p-commandes">
+      <div class="page-actions">
+        <div class="filter-pills">
+          <div class="filter-pill active" onclick="filterCommandes('all', this)">Toutes</div>
+          <div class="filter-pill" onclick="filterCommandes('active', this)">En cours</div>
+          <div class="filter-pill" onclick="filterCommandes('done', this)">Livrées</div>
+          <div class="filter-pill" onclick="filterCommandes('cancelled', this)">Annulées</div>
+        </div>
+      </div>
+      <div class="section-card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th><th>Type</th><th>Client</th>
+              <th>Livreur</th><th>Prix</th><th>Statut</th><th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="commandes-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         PAGE LIVREURS
+    ════════════════════════════════════════════════════════ -->
+    <div class="page" id="p-livreurs">
+      <div class="page-actions">
+        <div></div>
+        <button class="btn btn-dark" onclick="showModal('modal-add-livreur')">
+          <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          Ajouter un livreur
+        </button>
+      </div>
+      <div class="section-card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Nom</th><th>Téléphone</th><th>Statut</th>
+              <th>Courses</th><th>Note</th><th>Wallet</th><th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="livreurs-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         PAGE CLIENTS
+    ════════════════════════════════════════════════════════ -->
+    <div class="page" id="p-clients">
+      <div class="page-actions">
+        <input class="search-input" id="client-search"
+               placeholder="Rechercher un client…" oninput="filterClients()" />
+      </div>
+      <div class="section-card">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Nom</th><th>Téléphone</th><th>Commandes</th>
+              <th>Dernière</th><th>Statut</th><th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="clients-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         PAGE WALLET
+    ════════════════════════════════════════════════════════ -->
+    <div class="page" id="p-wallet">
+      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(52,199,89,.1)">
+            <svg viewBox="0 0 24 24" style="fill:#34C759"><path d="M21 18v1a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1h-9a2 2 0 00-2 2v8a2 2 0 002 2h9zm-9-2h10V8H12v8zm4-2.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg>
+          </div>
+          <div>
+            <div class="stat-value">4 400 MRU</div>
+            <div class="stat-label">Total wallets livreurs</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(26,86,219,.1)">
+            <svg viewBox="0 0 24 24" style="fill:#1a56db"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+          </div>
+          <div>
+            <div class="stat-value">1 600 MRU</div>
+            <div class="stat-label">Rechargements (semaine)</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:rgba(255,149,0,.1)">
+            <svg viewBox="0 0 24 24" style="fill:#FF9500"><path d="M12 20l1.41-1.41L7.83 13H20v-2H7.83l5.58-5.59L12 4l-8 8z"/></svg>
+          </div>
+          <div>
+            <div class="stat-value">25 MRU</div>
+            <div class="stat-label">Commissions (semaine)</div>
+          </div>
+        </div>
+      </div>
+      <div class="section-card">
+        <div class="section-title">Historique des transactions</div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Livreur</th><th>Type</th><th>Fournisseur</th>
+              <th>Montant</th><th>Date</th><th>Statut</th>
+            </tr>
+          </thead>
+          <tbody id="wallet-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         PAGE CALL CENTER
+    ════════════════════════════════════════════════════════ -->
+    <div class="page" id="p-callcenter">
+      <div class="cc-grid">
+
+        <!-- Formulaire commande -->
+        <div class="cc-form">
+          <div class="section-title" style="margin-bottom:16px">Nouvelle commande</div>
+
+          <!-- Recherche client -->
+          <label class="field-label">Numéro client</label>
+          <div class="cc-search-row">
+            <div class="field-row" style="flex:1;margin-bottom:0">
+              <input type="tel" id="cc-phone" placeholder="+222 XX XX XX XX" />
+            </div>
+            <button class="btn btn-ghost" onclick="searchClient()">Chercher</button>
+          </div>
+
+          <!-- Client trouvé -->
+          <div class="cc-client-banner" id="cc-client-info">
+            <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+            <span id="cc-client-name">—</span>
+          </div>
+
+          <!-- Type -->
+          <label class="field-label">Type de livraison</label>
+          <div class="cc-type-row">
+            <div class="filter-pill active" id="cc-type-restaurant"  onclick="selectType('restaurant')">🍔 Restaurant</div>
+            <div class="filter-pill"        id="cc-type-supermarche" onclick="selectType('supermarche')">🛒 Supermarché</div>
+            <div class="filter-pill"        id="cc-type-colis"       onclick="selectType('colis')">📦 Colis</div>
+          </div>
+
+          <!-- Adresses -->
+          <label class="field-label">Itinéraire</label>
+          <div class="cc-addr-row">
+            <div class="addr-dot green"></div>
+            <div class="field-row" style="flex:1;margin-bottom:0">
+              <input type="text" id="cc-depart" placeholder="Adresse de départ" />
+            </div>
+          </div>
+          <div class="cc-addr-row" style="margin-top:6px;margin-bottom:16px">
+            <div class="addr-dot red"></div>
+            <div class="field-row" style="flex:1;margin-bottom:0">
+              <input type="text" id="cc-destination" placeholder="Adresse de destination" />
+            </div>
+          </div>
+
+          <!-- Prix -->
+          <div class="cc-price-card">
+            <div>
+              <div class="cc-price-label">Prix estimé</div>
+              <div class="cc-price-sub" id="cc-prix-detail">Sélectionnez les adresses</div>
+            </div>
+            <div class="cc-price-value" id="cc-prix">— MRU</div>
+          </div>
+
+          <!-- Livreurs dispo -->
+          <div class="cc-livreurs-banner">
+            <div class="cc-dot-green"></div>
+            <span id="cc-nb-livreurs">Chargement…</span>
+          </div>
+
+          <!-- Note -->
+          <label class="field-label">Note pour le livreur (optionnel)</label>
+          <textarea class="textarea-field" rows="3" placeholder="Instructions spéciales…"></textarea>
+
+          <button class="btn btn-dark"
+                  style="width:100%;justify-content:center;margin-top:16px"
+                  onclick="createCommande()">
+            <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+            Créer et publier la commande
+          </button>
+        </div>
+
+        <!-- Carte -->
+        <div class="cc-map-wrap">
+          <div id="cc-map"></div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ================================================================
+     MODAL — Confirmation
+================================================================ -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal">
+    <div class="modal-title" id="confirm-title">Confirmer l'action</div>
+    <div class="modal-message" id="confirm-message">Cette action est irréversible.</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-confirm')">Annuler</button>
+      <button class="btn btn-danger" id="confirm-btn">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     MODAL — Ajouter un livreur
+================================================================ -->
+<div class="modal-overlay" id="modal-add-livreur">
+  <div class="modal">
+    <div class="modal-title">Nouveau livreur</div>
+    <label class="field-label">Nom complet</label>
+    <div class="field-row"><input type="text" placeholder="Ex. Mohamed Ould Ahmed" /></div>
+    <label class="field-label">Téléphone</label>
+    <div class="field-row"><input type="tel" placeholder="+222 XX XX XX XX" /></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-livreur')">Annuler</button>
+      <button class="btn btn-dark" onclick="addLivreur()">Créer le compte</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     MODAL — Détail client
+================================================================ -->
+<div class="modal-overlay" id="modal-client-detail">
+  <div class="modal">
+    <div class="modal-title" id="client-detail-nom">—</div>
+    <div class="client-detail-grid">
+      <div class="client-detail-item">
+        <div class="cdi-label">Téléphone</div>
+        <div class="cdi-val" id="client-detail-tel">—</div>
+      </div>
+      <div class="client-detail-item">
+        <div class="cdi-label">Commandes</div>
+        <div class="cdi-val" id="client-detail-commandes">—</div>
+      </div>
+      <div class="client-detail-item">
+        <div class="cdi-label">Dernière commande</div>
+        <div class="cdi-val" id="client-detail-derniere">—</div>
+      </div>
+      <div class="client-detail-item">
+        <div class="cdi-label">Statut</div>
+        <div class="cdi-val" id="client-detail-statut">—</div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-client-detail')">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Google Maps (Call Center) — ajouter GOOGLE_MAPS_KEY sur Railway -->
+<script>
+  window.GOOGLE_MAPS_KEY = '';
+  if (window.GOOGLE_MAPS_KEY) {
+    var s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + window.GOOGLE_MAPS_KEY + '&libraries=places&language=fr&callback=Function.prototype';
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
   }
-
-  async function openMessages(deliveryId, alias) {
-    document.getElementById('messages-title').textContent = alias;
-    document.getElementById('messages-body').innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px">Chargement…</div>';
-    document.getElementById('messages-overlay').classList.add('visible');
-
-    try {
-      const res = await fetch(`${API}/api/admin/archives/${deliveryId}/messages`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const { messages } = await res.json();
-      const body = document.getElementById('messages-body');
-
-      if (!messages.length) {
-        body.innerHTML = '<div style="text-align:center;color:var(--muted)">Aucun message</div>';
-        return;
-      }
-
-      body.innerHTML = messages.map(m => {
-        const isClient = m.sender_role === 'client';
-        const cls = isClient ? 'msg-client' : 'msg-driver';
-        const role = isClient ? '👤 Client' : '🛵 Livreur';
-        const time = new Date(m.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
-        let content = '';
-        if (m.type === 'text') {
-          content = `<div>${escHtml(m.content ?? '')}</div>`;
-        } else if (m.type === 'audio') {
-          content = `<button class="msg-audio-btn" onclick="playAudio('${escHtml(m.content)}')">▶ Écouter</button>`;
-        } else if (m.type === 'image') {
-          content = `<img src="${escHtml(m.content)}" style="max-width:200px;border-radius:8px" />`;
-        } else if (m.type === 'location') {
-          const meta = m.meta ?? {};
-          content = `<div>📍 ${escHtml(meta.label ?? `${meta.lat}, ${meta.lng}`)}</div>`;
-        } else {
-          content = `<div style="color:var(--muted)">[${m.type}]</div>`;
-        }
-
-        return `
-          <div class="msg-bubble ${cls}">
-            <div class="msg-role">${role}</div>
-            ${content}
-            <div class="msg-time">${time}</div>
-          </div>`;
-      }).join('');
-
-      body.scrollTop = body.scrollHeight;
-    } catch {}
-  }
-
-  function closeMessages() {
-    document.getElementById('messages-overlay').classList.remove('visible');
-  }
-
-  // ── TABS ─────────────────────────────────────────────────────────
-  function showTab(name) {
-    document.querySelectorAll('.tab').forEach((t, i) => {
-      t.classList.toggle('active', ['dashboard', 'archives'][i] === name);
-    });
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById(`page-${name}`).classList.add('active');
-    if (name === 'archives') loadArchives(1);
-  }
-
-  // ── AUDIO ─────────────────────────────────────────────────────────
-  let currentAudio = null;
-  function playAudio(url) {
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-    currentAudio = new Audio(url);
-    currentAudio.play().catch(() => {});
-  }
-
-  // ── UTILS ─────────────────────────────────────────────────────────
-  function escHtml(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  // Enter to login
-  document.getElementById('login-password').addEventListener('keydown', e => {
-    if (e.key === 'Enter') doLogin();
-  });
 </script>
+<script src="app_admin.js"></script>
 </body>
 </html>
