@@ -4,7 +4,7 @@ import db from '../config/db.js';
 import { hashWaId, encryptWaId, sanitizeText } from '../services/pii-filter.js';
 import { downloadFromMeta, uploadToR2, extFromMime, getSignedMediaUrl } from '../services/media.js';
 import { getActiveDelivery, createAdminQueueDelivery } from '../services/delivery.js';
-import { emitClientMessage, emitIncomingCall, emitIncomingText } from '../services/socket.js';
+import { emitClientMessage, emitIncomingCall, emitIncomingText, emitNewOrder } from '../services/socket.js';
 import { notifyAssignedDriver } from '../services/fcm.js';
 import { sendText } from '../services/messaging.js';
 import { transcribeAndAnalyze, containsOffensiveWords } from '../services/transcription.js';
@@ -64,6 +64,8 @@ async function processPayload(body) {
 
 async function processMessage(msg) {
   const rawWaId = msg.from;
+  console.info(`[webhook] message reçu id=${msg.id} type=${msg.type} from=${rawWaId?.slice(-4)}`);
+
   const waHash  = hashWaId(rawWaId);
   const waEnc   = encryptWaId(rawWaId);
 
@@ -113,6 +115,7 @@ async function processMessage(msg) {
     const { isEmpty, isOffensive } = await transcribeAndAnalyze(audioBuffer, mimeType);
 
     if (isEmpty) {
+      console.info(`[webhook] audio vide (Whisper) → auto-réponse envoyée, pas de delivery créée`);
       sendText(rawWaId, 'Message vocal vide, veuillez réenvoyer votre demande.').catch(() => {});
       return;
     }
@@ -156,12 +159,18 @@ async function processMessage(msg) {
     }
 
     let delivery = existing?.status === 'admin_queue' ? existing : null;
-    if (!delivery) delivery = await createAdminQueueDelivery(client.id);
+    if (!delivery) {
+      delivery = await createAdminQueueDelivery(client.id);
+      console.info(`[webhook] delivery admin_queue créée id=${delivery.id} client=${client.alias}`);
+    } else {
+      console.info(`[webhook] delivery admin_queue existante id=${delivery.id} client=${client.alias}`);
+    }
 
     const [message] = await db('messages')
       .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'text', content: textBody, meta: null })
       .returning('*');
 
+    console.info(`[webhook] message texte sauvegardé id=${message.id} → emitIncomingText`);
     emitIncomingText(delivery, message, client.alias);
     return;
   }

@@ -8,12 +8,18 @@ const OFFENSIVE_WORDS = ['أمك', 'أبوك', 'نمشط', 'تينة', 'زب'];
  */
 export async function transcribeAndAnalyze(buffer, mimeType) {
   if (!env.OPENAI_API_KEY) {
-    console.warn('[transcription] OPENAI_API_KEY non configuré — audio transmis sans analyse');
+    console.warn('[transcription] OPENAI_API_KEY non configuré — audio transmis à l\'admin sans analyse');
+    return { text: '', isEmpty: false, isOffensive: false };
+  }
+
+  if (!buffer || buffer.length === 0) {
+    console.warn('[transcription] buffer audio null/vide — audio transmis à l\'admin sans analyse');
     return { text: '', isEmpty: false, isOffensive: false };
   }
 
   try {
     const ext = mimeType?.split('/')[1]?.split(';')[0] || 'ogg';
+    console.info(`[transcription] envoi Whisper buffer=${buffer.length}b mimeType=${mimeType}`);
     const formData = new FormData();
     formData.append('file', new Blob([buffer], { type: mimeType }), `audio.${ext}`);
     formData.append('model', 'whisper-1');
