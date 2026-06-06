@@ -81,6 +81,11 @@ function CoursesTab() {
     loadActiveCourses();
     registerFCMToken();
 
+    // Rechargement périodique en cas de socket déconnecté
+    const pollInterval = setInterval(() => {
+      if (!socketService.connected) loadAvailable();
+    }, 15000);
+
     const onNewOrder = (order: IncomingOrder) => {
       setIncomingOrder(order);
       upsertAvailable({
@@ -117,6 +122,7 @@ function CoursesTab() {
     return () => {
       socketService.off('new_order', onNewOrder);
       socketService.off('order_taken', onOrderTaken);
+      clearInterval(pollInterval);
     };
   }, []);
 
