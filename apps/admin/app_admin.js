@@ -1,67 +1,102 @@
 /* ================================================================
    VECTO — Dashboard Admin · app_admin.js
+   Connecté au backend via REST + Socket.IO
 ================================================================ */
 
-/* ---- Utilisateurs & rôles ---- */
-var USERS = [
-  { login: 'admin',     password: '1234', role: 'admin'     },
-  { login: 'operateur', password: '0000', role: 'operateur' },
-];
-var currentUser = null;
-
-var ROLE_ACCESS = {
-  admin:     ['p-stats','p-commandes','p-livreurs','p-clients','p-wallet','p-callcenter'],
-  operateur: ['p-commandes','p-callcenter'],
-};
-
-var PAGE_TITLES = {
-  'p-stats':      'Statistiques',
-  'p-commandes':  'Commandes',
-  'p-livreurs':   'Livreurs',
-  'p-clients':    'Clients',
-  'p-wallet':     'Wallets',
-  'p-callcenter': 'Call Center',
-};
+const API = window.location.origin;
+let _token = localStorage.getItem('vecto_admin_token');
+let _socket = null;
 
 /* ================================================================
    AUTH
 ================================================================ */
-function login() {
-  var loginVal = document.getElementById('login-input').value.trim();
-  var passVal  = document.getElementById('password-input').value.trim();
-  var user = USERS.find(function(u) { return u.login === loginVal && u.password === passVal; });
-  if (!user) {
-    document.getElementById('login-error').style.display = 'block';
-    return;
+async function login() {
+  const email    = document.getElementById('login-input').value.trim();
+  const password = document.getElementById('password-input').value.trim();
+  const errEl    = document.getElementById('login-error');
+  errEl.style.display = 'none';
+
+  try {
+    const res = await fetch(API + '/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!res.ok) { errEl.style.display = 'block'; return; }
+    const data = await res.json();
+    _token = data.token;
+    localStorage.setItem('vecto_admin_token', _token);
+    document.getElementById('current-user-label').textContent = data.admin.name + ' · admin';
+    showApp();
+  } catch {
+    errEl.style.display = 'block';
   }
-  currentUser = user;
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'flex';
-  document.getElementById('current-user-label').textContent = user.login + ' · ' + user.role;
-  renderNav();
-  renderCommandes('all');
-  renderLivreurs();
-  renderClients();
-  renderWallet();
-  showPage(ROLE_ACCESS[user.role][0]);
 }
 
 function logout() {
-  currentUser = null;
+  _token = null;
+  localStorage.removeItem('vecto_admin_token');
+  if (_socket) { _socket.disconnect(); _socket = null; }
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
   document.getElementById('login-input').value = '';
   document.getElementById('password-input').value = '';
-  document.getElementById('login-error').style.display = 'none';
 }
 
-function renderNav() {
-  document.querySelectorAll('.nav-item').forEach(function(item) {
-    var onclick = item.getAttribute('onclick') || '';
-    var match = onclick.match(/showPage\('([^']+)'\)/);
-    if (match) {
-      var allowed = ROLE_ACCESS[currentUser.role] || [];
-      item.style.display = allowed.indexOf(match[1]) === -1 ? 'none' : 'flex';
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  initSocket();
+  showPage('p-stats');
+  loadStats();
+  loadCommandes();
+  loadLivreurs();
+  loadClients();
+  loadTransactions();
+}
+
+/* ================================================================
+   INIT
+================================================================ */
+document.addEventListener('DOMContentLoaded', function () {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+
+  document.getElementById('password-input').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') login();
+  });
+
+  if (_token) {
+    fetch(API + '/api/admin/orders/active', { headers: { Authorization: 'Bearer ' + _token } })
+      .then(function (r) {
+        if (r.ok) {
+          const stored = localStorage.getItem('vecto_admin_name') || 'Admin';
+          document.getElementById('current-user-label').textContent = stored + ' · admin';
+          showApp();
+        }
+      })
+      .catch(function () {});
+  }
+});
+
+/* ================================================================
+   SOCKET.IO — temps réel
+================================================================ */
+var _activeOrders = {};
+
+function initSocket() {
+  if (typeof io === 'undefined') return;
+  _socket = io(API, { auth: { token: _token } });
+
+  _socket.on('new_order', function (order) {
+    _activeOrders[order.deliveryId] = order;
+    renderCommandes();
+  });
+
+  _socket.on('order_taken', function (data) {
+    if (_activeOrders[data.deliveryId]) {
+      _activeOrders[data.deliveryId]._status = 'assigned';
+      renderCommandes();
     }
   });
 }
@@ -72,118 +107,163 @@ function renderNav() {
 var _ccMapInitialized = false;
 
 function showPage(pageId) {
-  if (!currentUser) return;
-  var allowed = ROLE_ACCESS[currentUser.role] || [];
-  if (allowed.indexOf(pageId) === -1) return;
-
-  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
-  document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+  document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
+  document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
 
   var page = document.getElementById(pageId);
   if (page) page.classList.add('active');
 
-  document.querySelectorAll('.nav-item').forEach(function(item) {
+  document.querySelectorAll('.nav-item').forEach(function (item) {
     if ((item.getAttribute('onclick') || '').includes(pageId)) item.classList.add('active');
   });
 
-  document.getElementById('page-title').textContent = PAGE_TITLES[pageId] || '';
+  var titles = {
+    'p-stats': 'Statistiques', 'p-commandes': 'Commandes', 'p-livreurs': 'Livreurs',
+    'p-clients': 'Clients', 'p-wallet': 'Wallets', 'p-callcenter': 'Call Center',
+  };
+  document.getElementById('page-title').textContent = titles[pageId] || '';
 
   if (pageId === 'p-callcenter' && !_ccMapInitialized) {
-    setTimeout(function() { initCCMap(); _ccMapInitialized = true; }, 150);
+    setTimeout(function () { initCCMap(); _ccMapInitialized = true; }, 150);
   }
 }
 
 /* ================================================================
-   DONNÉES
+   UTILS
 ================================================================ */
-var COMMANDES = [
-  { id: '#001', type: 'Restaurant',  client: 'Ahmed M.',  livreur: 'Mohamed A.', prix: '150 MRU', statut: 'active'    },
-  { id: '#002', type: 'Colis',       client: 'Fatima S.', livreur: 'Omar B.',    prix: '100 MRU', statut: 'done'      },
-  { id: '#003', type: 'Supermarché', client: 'Sidi M.',   livreur: '—',          prix: '150 MRU', statut: 'active'    },
-  { id: '#004', type: 'Restaurant',  client: 'Aisha K.',  livreur: 'Yusuf D.',   prix: '150 MRU', statut: 'done'      },
-  { id: '#005', type: 'Colis',       client: 'Moussa T.', livreur: '—',          prix: '100 MRU', statut: 'cancelled' },
-  { id: '#006', type: 'Restaurant',  client: 'Mariam L.', livreur: 'Ahmed S.',   prix: '150 MRU', statut: 'active'    },
-];
+function authHeaders() {
+  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _token };
+}
 
-var LIVREURS = [
-  { nom: 'Mohamed A.', tel: '+222 44 12 34 56', statut: 'active',    courses: 248, note: '4.8', wallet: '1 250 MRU' },
-  { nom: 'Omar B.',    tel: '+222 36 98 76 54', statut: 'active',    courses: 134, note: '4.6', wallet: '850 MRU'   },
-  { nom: 'Yusuf D.',   tel: '+222 22 11 33 55', statut: 'inactive',  courses: 87,  note: '4.3', wallet: '200 MRU'   },
-  { nom: 'Ahmed S.',   tel: '+222 44 55 66 77', statut: 'active',    courses: 312, note: '4.9', wallet: '2 100 MRU' },
-  { nom: 'Bilal M.',   tel: '+222 33 22 11 00', statut: 'suspended', courses: 45,  note: '3.8', wallet: '0 MRU'     },
-];
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
 
-var CLIENTS = [
-  { nom: 'Ahmed M.',   tel: '+222 36 45 67 89', commandes: 12, derniere: '20 mars 2026', statut: 'active'   },
-  { nom: 'Fatima S.',  tel: '+222 44 11 22 33', commandes: 8,  derniere: '19 mars 2026', statut: 'active'   },
-  { nom: 'Sidi M.',    tel: '+222 22 33 44 55', commandes: 3,  derniere: '15 mars 2026', statut: 'active'   },
-  { nom: 'Aisha K.',   tel: '+222 33 44 55 66', commandes: 21, derniere: '20 mars 2026', statut: 'active'   },
-  { nom: 'Moussa T.',  tel: '+222 44 55 66 77', commandes: 1,  derniere: '10 mars 2026', statut: 'inactive' },
-  { nom: 'Mariam L.',  tel: '+222 55 66 77 88', commandes: 6,  derniere: '18 mars 2026', statut: 'active'   },
-  { nom: 'Omar D.',    tel: '+222 66 77 88 99', commandes: 15, derniere: '20 mars 2026', statut: 'active'   },
-  { nom: 'Khadija B.', tel: '+222 77 88 99 00', commandes: 2,  derniere: '5 mars 2026',  statut: 'inactive' },
-  { nom: 'Yusuf A.',   tel: '+222 11 22 33 44', commandes: 9,  derniere: '17 mars 2026', statut: 'active'   },
-  { nom: 'Aminata C.', tel: '+222 22 11 00 99', commandes: 4,  derniere: '12 mars 2026', statut: 'active'   },
-];
-
-var TRANSACTIONS = [
-  { livreur: 'Mohamed A.', type: 'Rechargement', fournisseur: 'Bankily', montant: '+500 MRU', date: '20 mars · 10:00', statut: 'done'   },
-  { livreur: 'Omar B.',    type: 'Commission',   fournisseur: '—',       montant: '-15 MRU',  date: '19 mars · 18:30', statut: 'done'   },
-  { livreur: 'Ahmed S.',   type: 'Rechargement', fournisseur: 'Sedad',   montant: '+800 MRU', date: '18 mars · 09:00', statut: 'done'   },
-  { livreur: 'Yusuf D.',   type: 'Rechargement', fournisseur: 'Bankily', montant: '+300 MRU', date: '17 mars · 14:00', statut: 'failed' },
-  { livreur: 'Mohamed A.', type: 'Commission',   fournisseur: '—',       montant: '-10 MRU',  date: '17 mars · 11:30', statut: 'done'   },
-];
-
-var LIVREURS_ACTIFS = [
-  { nom: 'Mohamed A.', lat: 18.0850, lng: -15.9650 },
-  { nom: 'Omar B.',    lat: 18.0680, lng: -15.9720 },
-  { nom: 'Ahmed S.',   lat: 18.0920, lng: -15.9500 },
-];
+function fmtMoney(n) {
+  return parseFloat(n || 0).toLocaleString('fr-FR', { minimumFractionDigits: 0 }) + ' MRU';
+}
 
 /* ================================================================
-   COMMANDES
+   STATS
 ================================================================ */
+async function loadStats() {
+  try {
+    const res = await fetch(API + '/api/admin/stats', { headers: authHeaders() });
+    if (!res.ok) return;
+    const d = await res.json();
+
+    document.getElementById('stat-courses').textContent     = d.coursesToday;
+    document.getElementById('stat-livreurs').textContent    = d.activeDrivers;
+    document.getElementById('stat-revenus').textContent     = fmtMoney(d.totalRevenue);
+    document.getElementById('stat-clients').textContent     = d.totalClients;
+  } catch {}
+
+  // Tableau récent basé sur les commandes déjà chargées
+  renderStatsRecent();
+}
+
+function renderStatsRecent() {
+  var tbody = document.getElementById('stats-recent-tbody');
+  if (!tbody) return;
+  var orders = Object.values(_activeOrders).slice(0, 6);
+  if (!orders.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px">Aucune commande active</td></tr>';
+    return;
+  }
+  var html = '';
+  orders.forEach(function (o) {
+    var statut = o._status === 'assigned' ? '<span class="badge badge-green">Assignée</span>'
+      : '<span class="badge badge-blue">En attente</span>';
+    html += '<tr>'
+      + '<td style="font-family:monospace;font-size:12px;color:var(--text-2)">' + o.deliveryId.slice(0, 8) + '…</td>'
+      + '<td>Course</td>'
+      + '<td style="font-weight:600">' + (o.clientAlias || '—') + '</td>'
+      + '<td>—</td>'
+      + '<td>—</td>'
+      + '<td>' + statut + '</td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+/* ================================================================
+   COMMANDES (actives en temps réel)
+================================================================ */
+var _currentFilter = 'all';
+
+async function loadCommandes() {
+  try {
+    const res = await fetch(API + '/api/admin/orders/active', { headers: authHeaders() });
+    if (!res.ok) return;
+    const { orders } = await res.json();
+    _activeOrders = {};
+    for (const o of orders) {
+      _activeOrders[o.id] = {
+        deliveryId: o.id,
+        clientAlias: o.clientAlias,
+        createdAt: o.createdAt,
+        _status: o.status,
+      };
+    }
+    renderCommandes();
+    renderStatsRecent();
+  } catch {}
+}
+
 var STATUT_LABELS = {
-  active:    '<span class="badge badge-blue">En cours</span>',
-  done:      '<span class="badge badge-green">Livrée</span>',
-  cancelled: '<span class="badge badge-red">Annulée</span>',
+  pending:     '<span class="badge badge-blue">En attente</span>',
+  assigned:    '<span class="badge badge-blue">En cours</span>',
+  in_progress: '<span class="badge badge-orange">En route</span>',
+  done:        '<span class="badge badge-green">Livrée</span>',
+  cancelled:   '<span class="badge badge-red">Annulée</span>',
 };
 
-var currentFilter = 'all';
-
-function renderCommandes(filter) {
+function renderCommandes() {
   var tbody = document.getElementById('commandes-tbody');
   if (!tbody) return;
-  var data = filter === 'all' ? COMMANDES : COMMANDES.filter(function(c) { return c.statut === filter; });
+
+  var orders = Object.values(_activeOrders);
+  if (_currentFilter !== 'all') {
+    orders = orders.filter(function (o) { return o._status === _currentFilter; });
+  }
+
+  if (!orders.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:24px">Aucune commande</td></tr>';
+    return;
+  }
+
   var html = '';
-  data.forEach(function(c) {
+  orders.forEach(function (o) {
+    var time = o.createdAt ? new Date(o.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '—';
+    var canCancel = ['pending', 'assigned'].includes(o._status);
     html += '<tr>'
-      + '<td style="font-weight:600">' + c.id + '</td>'
-      + '<td>' + c.type + '</td>'
-      + '<td>' + c.client + '</td>'
-      + '<td>' + c.livreur + '</td>'
-      + '<td style="font-weight:600">' + c.prix + '</td>'
-      + '<td>' + (STATUT_LABELS[c.statut] || '') + '</td>'
-      + '<td>' + (c.statut === 'active' ? '<button class="btn-table red" onclick="cancelCommande(\'' + c.id + '\')">Annuler</button>' : '—') + '</td>'
+      + '<td style="font-family:monospace;font-size:12px;color:var(--text-2)">' + o.deliveryId.slice(0, 8) + '…</td>'
+      + '<td>Course</td>'
+      + '<td style="font-weight:600">' + (o.clientAlias || '—') + '</td>'
+      + '<td>—</td>'
+      + '<td>—</td>'
+      + '<td>' + (STATUT_LABELS[o._status] || '') + '</td>'
+      + '<td>' + (canCancel ? '<button class="btn-table red" onclick="cancelCommande(\'' + o.deliveryId + '\')">Annuler</button>' : '—') + '</td>'
       + '</tr>';
   });
   tbody.innerHTML = html;
 }
 
 function filterCommandes(filter, btn) {
-  currentFilter = filter;
-  document.querySelectorAll('.filter-pills .filter-pill').forEach(function(b) { b.classList.remove('active'); });
+  _currentFilter = filter;
+  document.querySelectorAll('.filter-pills .filter-pill').forEach(function (b) { b.classList.remove('active'); });
   btn.classList.add('active');
-  renderCommandes(filter);
+  renderCommandes();
 }
 
 function cancelCommande(id) {
-  document.getElementById('confirm-title').textContent   = 'Annuler la commande ' + id;
-  document.getElementById('confirm-message').textContent = 'Cette action est irréversible.';
-  document.getElementById('confirm-btn').onclick = function() {
-    var c = COMMANDES.find(function(x) { return x.id === id; });
-    if (c) c.statut = 'cancelled';
-    renderCommandes(currentFilter);
+  document.getElementById('confirm-title').textContent   = 'Annuler cette commande ?';
+  document.getElementById('confirm-message').textContent = 'La commande sera marquée annulée. Cette action est irréversible.';
+  document.getElementById('confirm-btn').onclick = function () {
+    // Mise à jour locale immédiate, le backend le fera via le driver
+    if (_activeOrders[id]) _activeOrders[id]._status = 'cancelled';
+    renderCommandes();
     closeModal('modal-confirm');
   };
   showModal('modal-confirm');
@@ -192,130 +272,197 @@ function cancelCommande(id) {
 /* ================================================================
    LIVREURS
 ================================================================ */
+var _livreurs = [];
+
+async function loadLivreurs() {
+  try {
+    const res = await fetch(API + '/api/admin/drivers', { headers: authHeaders() });
+    if (!res.ok) return;
+    const { drivers } = await res.json();
+    _livreurs = drivers;
+    renderLivreurs();
+  } catch {}
+}
+
 var STATUT_LIVREUR = {
-  active:    '<span class="badge badge-green">Actif</span>',
-  inactive:  '<span class="badge badge-grey">Inactif</span>',
+  available: '<span class="badge badge-green">Disponible</span>',
+  busy:      '<span class="badge badge-orange">En course</span>',
+  offline:   '<span class="badge badge-grey">Hors ligne</span>',
   suspended: '<span class="badge badge-red">Suspendu</span>',
 };
 
 function renderLivreurs() {
   var tbody = document.getElementById('livreurs-tbody');
   if (!tbody) return;
+  if (!_livreurs.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:24px">Aucun livreur</td></tr>';
+    return;
+  }
   var html = '';
-  LIVREURS.forEach(function(l, i) {
+  _livreurs.forEach(function (l, i) {
     html += '<tr>'
-      + '<td style="font-weight:600">' + l.nom + '</td>'
-      + '<td>' + l.tel + '</td>'
-      + '<td>' + (STATUT_LIVREUR[l.statut] || '') + '</td>'
+      + '<td style="font-weight:600">' + l.name + '</td>'
+      + '<td>' + (STATUT_LIVREUR[l.status] || '') + '</td>'
       + '<td>' + l.courses + '</td>'
-      + '<td>★ ' + l.note + '</td>'
-      + '<td style="font-weight:600">' + l.wallet + '</td>'
-      + '<td>' + (l.statut !== 'suspended'
-          ? '<button class="btn-table red" onclick="suspendLivreur(' + i + ')">Suspendre</button>'
-          : '<button class="btn-table" onclick="reactivateLivreur(' + i + ')">Réactiver</button>') + '</td>'
+      + '<td style="font-weight:600">' + fmtMoney(l.balance) + '</td>'
+      + '<td>' + fmtDate(l.createdAt) + '</td>'
+      + '<td>' + (l.status !== 'suspended'
+          ? '<button class="btn-table red" onclick="suspendLivreur(\'' + l.id + '\',' + i + ')">Suspendre</button>'
+          : '<button class="btn-table" onclick="reactivateLivreur(\'' + l.id + '\',' + i + ')">Réactiver</button>') + '</td>'
       + '</tr>';
   });
   tbody.innerHTML = html;
 }
 
-function suspendLivreur(index) {
-  document.getElementById('confirm-title').textContent   = 'Suspendre ' + LIVREURS[index].nom;
+function suspendLivreur(id, index) {
+  document.getElementById('confirm-title').textContent   = 'Suspendre ' + _livreurs[index].name;
   document.getElementById('confirm-message').textContent = 'Le livreur ne pourra plus accepter de missions.';
-  document.getElementById('confirm-btn').onclick = function() {
-    LIVREURS[index].statut = 'suspended';
-    renderLivreurs();
+  document.getElementById('confirm-btn').onclick = async function () {
+    try {
+      await fetch(API + '/api/admin/drivers/' + id + '/suspend', { method: 'POST', headers: authHeaders() });
+      _livreurs[index].status = 'suspended';
+      renderLivreurs();
+    } catch {}
     closeModal('modal-confirm');
   };
   showModal('modal-confirm');
 }
 
-function reactivateLivreur(index) {
-  LIVREURS[index].statut = 'active';
-  renderLivreurs();
+async function reactivateLivreur(id, index) {
+  try {
+    await fetch(API + '/api/admin/drivers/' + id + '/reactivate', { method: 'POST', headers: authHeaders() });
+    _livreurs[index].status = 'offline';
+    renderLivreurs();
+  } catch {}
 }
 
 function addLivreur() {
-  alert('Compte livreur créé ! Un SMS OTP sera envoyé au numéro renseigné.');
+  alert('Fonctionnalité à venir : le livreur s\'inscrit lui-même via l\'app et reçoit un SMS OTP.');
   closeModal('modal-add-livreur');
 }
 
 /* ================================================================
    CLIENTS
 ================================================================ */
+var _clients = [];
+
+async function loadClients() {
+  try {
+    const res = await fetch(API + '/api/admin/clients', { headers: authHeaders() });
+    if (!res.ok) return;
+    const { clients } = await res.json();
+    _clients = clients;
+    renderClients(_clients);
+  } catch {}
+}
+
 function renderClients(data) {
   var tbody = document.getElementById('clients-tbody');
   if (!tbody) return;
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:24px">Aucun client trouvé</td></tr>';
+    return;
+  }
   var html = '';
-  (data || CLIENTS).forEach(function(c, i) {
-    var badge = c.statut === 'active'
-      ? '<span class="badge badge-green">Actif</span>'
-      : '<span class="badge badge-grey">Inactif</span>';
+  data.forEach(function (c, i) {
     html += '<tr>'
-      + '<td style="font-weight:600">' + c.nom + '</td>'
-      + '<td>' + c.tel + '</td>'
+      + '<td style="font-weight:600">' + c.alias + '</td>'
       + '<td style="font-weight:600">' + c.commandes + '</td>'
-      + '<td>' + c.derniere + '</td>'
-      + '<td>' + badge + '</td>'
-      + '<td><button class="btn-table" onclick="voirClientDetail(' + i + ')">Voir détail</button></td>'
+      + '<td>' + fmtDate(c.derniere) + '</td>'
+      + '<td>' + fmtDate(c.createdAt) + '</td>'
+      + '<td><button class="btn-table" onclick="voirClientDetail(' + i + ')">Voir</button></td>'
       + '</tr>';
   });
-  tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:24px">Aucun client trouvé</td></tr>';
+  tbody.innerHTML = html;
 }
 
 function filterClients() {
   var q = document.getElementById('client-search').value.toLowerCase();
-  renderClients(CLIENTS.filter(function(c) {
-    return c.nom.toLowerCase().includes(q) || c.tel.includes(q);
+  renderClients(_clients.filter(function (c) {
+    return c.alias.toLowerCase().includes(q);
   }));
 }
 
 function voirClientDetail(index) {
-  var c = CLIENTS[index];
-  document.getElementById('client-detail-nom').textContent       = c.nom;
-  document.getElementById('client-detail-tel').textContent       = c.tel;
+  var c = _clients[index];
+  document.getElementById('client-detail-nom').textContent       = c.alias;
+  document.getElementById('client-detail-tel').textContent       = '(Masqué — vie privée)';
   document.getElementById('client-detail-commandes').textContent = c.commandes + ' commandes';
-  document.getElementById('client-detail-derniere').textContent  = c.derniere;
-  document.getElementById('client-detail-statut').innerHTML =
-    c.statut === 'active'
-      ? '<span class="badge badge-green">Actif</span>'
-      : '<span class="badge badge-grey">Inactif</span>';
+  document.getElementById('client-detail-derniere').textContent  = fmtDate(c.derniere);
+  document.getElementById('client-detail-statut').innerHTML      = '<span class="badge badge-green">Actif</span>';
   showModal('modal-client-detail');
 }
 
 /* ================================================================
    WALLET
 ================================================================ */
-function renderWallet() {
+async function loadTransactions() {
+  try {
+    const res = await fetch(API + '/api/admin/transactions', { headers: authHeaders() });
+    if (!res.ok) return;
+    const { transactions } = await res.json();
+    renderWallet(transactions);
+    updateWalletStats(transactions);
+  } catch {}
+}
+
+function renderWallet(transactions) {
   var tbody = document.getElementById('wallet-tbody');
   if (!tbody) return;
+  if (!transactions.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:24px">Aucune transaction</td></tr>';
+    return;
+  }
   var html = '';
-  TRANSACTIONS.forEach(function(t) {
-    var color  = t.montant.startsWith('+') ? '#1a7a35' : '#b86800';
-    var badge  = t.statut === 'done'
+  transactions.forEach(function (t) {
+    var positive = t.amount > 0;
+    var color  = positive ? '#1a7a35' : '#b86800';
+    var sign   = positive ? '+' : '';
+    var badge  = t.status === 'completed'
       ? '<span class="badge badge-green">Validé</span>'
-      : '<span class="badge badge-red">Échoué</span>';
+      : t.status === 'pending'
+        ? '<span class="badge badge-orange">En attente</span>'
+        : '<span class="badge badge-red">Échoué</span>';
     html += '<tr>'
-      + '<td style="font-weight:600">' + t.livreur + '</td>'
+      + '<td style="font-weight:600">' + t.driverName + '</td>'
       + '<td>' + t.type + '</td>'
-      + '<td>' + t.fournisseur + '</td>'
-      + '<td style="font-weight:700;color:' + color + '">' + t.montant + '</td>'
-      + '<td>' + t.date + '</td>'
+      + '<td>' + (t.description || '—') + '</td>'
+      + '<td style="font-weight:700;color:' + color + '">' + sign + fmtMoney(t.amount) + '</td>'
+      + '<td>' + fmtDate(t.createdAt) + '</td>'
       + '<td>' + badge + '</td>'
       + '</tr>';
   });
   tbody.innerHTML = html;
 }
 
+function updateWalletStats(transactions) {
+  var totalWallet = _livreurs.reduce(function (s, l) { return s + l.balance; }, 0);
+  var weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+  var rechargesWeek = transactions
+    .filter(function (t) { return t.type === 'recharge' && t.status === 'completed' && new Date(t.createdAt) >= weekAgo; })
+    .reduce(function (s, t) { return s + parseFloat(t.amount); }, 0);
+  var commissionsWeek = transactions
+    .filter(function (t) { return t.type === 'commission' && t.status === 'completed' && new Date(t.createdAt) >= weekAgo; })
+    .reduce(function (s, t) { return s + Math.abs(parseFloat(t.amount)); }, 0);
+
+  var el1 = document.getElementById('wallet-stat-total');
+  var el2 = document.getElementById('wallet-stat-recharges');
+  var el3 = document.getElementById('wallet-stat-commissions');
+  if (el1) el1.textContent = fmtMoney(totalWallet);
+  if (el2) el2.textContent = fmtMoney(rechargesWeek);
+  if (el3) el3.textContent = fmtMoney(commissionsWeek);
+}
+
 /* ================================================================
    CALL CENTER
 ================================================================ */
-var selectedType = 'restaurant';
+var _selectedType = 'restaurant';
 var _ccDepartLocation = null;
 var _ccDestLocation   = null;
 
 function selectType(type) {
-  selectedType = type;
-  ['restaurant','supermarche','colis'].forEach(function(t) {
+  _selectedType = type;
+  ['restaurant', 'supermarche', 'colis'].forEach(function (t) {
     var btn = document.getElementById('cc-type-' + t);
     if (btn) btn.classList.remove('active');
   });
@@ -324,11 +471,12 @@ function selectType(type) {
 }
 
 function searchClient() {
-  var phone = document.getElementById('cc-phone').value;
+  var phone = document.getElementById('cc-phone').value.trim();
   if (!phone) return;
+  // Affiche juste le numéro — les clients sont des pseudos WA
   var banner = document.getElementById('cc-client-info');
   banner.style.display = 'flex';
-  document.getElementById('cc-client-name').textContent = 'Ahmed M. — ' + phone;
+  document.getElementById('cc-client-name').textContent = 'Client · ' + phone;
 }
 
 function calcDistanceCC() {
@@ -336,12 +484,12 @@ function calcDistanceCC() {
   var lat1 = _ccDepartLocation.lat(), lng1 = _ccDepartLocation.lng();
   var lat2 = _ccDestLocation.lat(),   lng2 = _ccDestLocation.lng();
   var R = 6371;
-  var dLat = (lat2-lat1) * Math.PI/180;
-  var dLng = (lng2-lng1) * Math.PI/180;
-  var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
-    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
-    Math.sin(dLng/2)*Math.sin(dLng/2);
-  var dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  var dLat = (lat2 - lat1) * Math.PI / 180;
+  var dLng = (lng2 - lng1) * Math.PI / 180;
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  var dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   var prix = dist <= 5.5 ? 100 : 150;
   document.getElementById('cc-prix').textContent = prix + ' MRU';
   document.getElementById('cc-prix-detail').textContent =
@@ -349,56 +497,59 @@ function calcDistanceCC() {
   return { dist: dist, prix: prix };
 }
 
+var LIVREURS_ACTIFS_MAP = [];
+
 function initCCMap() {
   var mapEl = document.getElementById('cc-map');
-  if (!mapEl) return;
+  if (!mapEl || typeof google === 'undefined') return;
+
   var nouakchott = { lat: 18.0735, lng: -15.9582 };
   var bounds = new google.maps.LatLngBounds(
     new google.maps.LatLng(17.9500, -16.0800),
     new google.maps.LatLng(18.2000, -15.8500)
   );
-  var map = new google.maps.Map(mapEl, {
-    zoom: 13, center: nouakchott, disableDefaultUI: true, zoomControl: true,
-  });
+  var map = new google.maps.Map(mapEl, { zoom: 13, center: nouakchott, disableDefaultUI: true, zoomControl: true });
   window._ccMap = map;
 
+  // Placer les livreurs disponibles sur la carte (depuis _livreurs si coords disponibles)
+  var nbEl = document.getElementById('cc-nb-livreurs');
+  var actifs = _livreurs.filter(function (l) { return l.status === 'available'; });
+  if (nbEl) nbEl.textContent = actifs.length + ' livreur(s) disponible(s)';
+
   var iwLivreur = new google.maps.InfoWindow();
-  LIVREURS_ACTIFS.forEach(function(l) {
+  LIVREURS_ACTIFS_MAP.forEach(function (l) {
     var marker = new google.maps.Marker({
       position: { lat: l.lat, lng: l.lng }, map: map, title: l.nom,
       icon: { path: google.maps.SymbolPath.CIRCLE, scale: 10, fillColor: '#34C759', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
     });
-    marker.addListener('click', function() {
-      iwLivreur.setContent('<div style="font-family:sans-serif;padding:4px 2px"><div style="font-weight:700;font-size:13px">' + l.nom + '</div><div style="font-size:12px;margin-top:3px;color:#1a7a35">● Disponible</div></div>');
+    marker.addListener('click', function () {
+      iwLivreur.setContent('<div style="font-family:sans-serif;padding:4px 2px"><b>' + l.nom + '</b><br><span style="color:#1a7a35;font-size:12px">● Disponible</span></div>');
       iwLivreur.open(map, marker);
     });
   });
 
-  var nbEl = document.getElementById('cc-nb-livreurs');
-  if (nbEl) nbEl.textContent = LIVREURS_ACTIFS.length + ' livreurs disponibles sur la carte';
-
   var markerDepart = null, markerDest = null;
-  var iconVert  = { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#34C759', fillOpacity:1, strokeColor:'#fff', strokeWeight:2 };
-  var iconRouge = { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#FF3B30', fillOpacity:1, strokeColor:'#fff', strokeWeight:2 };
+  var iconVert  = { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#34C759', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 };
+  var iconRouge = { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#FF3B30', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 };
 
-  var dsvc = new google.maps.DirectionsService();
+  var dsvc  = new google.maps.DirectionsService();
   var drend = new google.maps.DirectionsRenderer({
     suppressMarkers: true,
-    polylineOptions: { strokeColor: '#1A1A1A', strokeOpacity: .75, strokeWeight: 4 }
+    polylineOptions: { strokeColor: '#1A1A1A', strokeOpacity: .75, strokeWeight: 4 },
   });
   drend.setMap(map);
 
   function tracerRoute() {
     if (!_ccDepartLocation || !_ccDestLocation) return;
     dsvc.route({ origin: _ccDepartLocation, destination: _ccDestLocation, travelMode: google.maps.TravelMode.DRIVING },
-      function(result, status) { if (status === 'OK') drend.setDirections(result); });
+      function (result, status) { if (status === 'OK') drend.setDirections(result); });
   }
 
   var acDepart = new google.maps.places.Autocomplete(
     document.getElementById('cc-depart'),
-    { componentRestrictions: { country: 'mr' }, bounds: bounds, strictBounds: true, fields: ['geometry','name'] }
+    { componentRestrictions: { country: 'mr' }, bounds: bounds, strictBounds: true, fields: ['geometry', 'name'] }
   );
-  acDepart.addListener('place_changed', function() {
+  acDepart.addListener('place_changed', function () {
     var place = acDepart.getPlace();
     if (!place.geometry) return;
     _ccDepartLocation = place.geometry.location;
@@ -410,9 +561,9 @@ function initCCMap() {
 
   var acDest = new google.maps.places.Autocomplete(
     document.getElementById('cc-destination'),
-    { componentRestrictions: { country: 'mr' }, bounds: bounds, strictBounds: true, fields: ['geometry','name'] }
+    { componentRestrictions: { country: 'mr' }, bounds: bounds, strictBounds: true, fields: ['geometry', 'name'] }
   );
-  acDest.addListener('place_changed', function() {
+  acDest.addListener('place_changed', function () {
     var place = acDest.getPlace();
     if (!place.geometry) return;
     _ccDestLocation = place.geometry.location;
@@ -423,22 +574,32 @@ function initCCMap() {
   });
 }
 
-function createCommande() {
-  if (!_ccDepartLocation || !_ccDestLocation) {
-    alert('Veuillez sélectionner les deux adresses.');
-    return;
-  }
+async function createCommande() {
   var result = calcDistanceCC();
-  var newId = '#00' + (COMMANDES.length + 1);
-  COMMANDES.unshift({
-    id: newId,
-    type: selectedType === 'restaurant' ? 'Restaurant' : selectedType === 'supermarche' ? 'Supermarché' : 'Colis',
-    client: document.getElementById('cc-client-name').textContent || 'Client',
-    livreur: '—',
-    prix: result ? result.prix + ' MRU' : '150 MRU',
-    statut: 'active',
-  });
-  alert('Commande ' + newId + ' créée et publiée !');
+  var noteEl = document.querySelector('#p-callcenter .textarea-field');
+  var description = noteEl ? noteEl.value.trim() : '';
+  if (!description) {
+    var typeLabel = _selectedType === 'restaurant' ? 'Livraison restaurant'
+      : _selectedType === 'supermarche' ? 'Livraison supermarché' : 'Livraison colis';
+    description = typeLabel;
+    if (result) description += ' · ' + result.dist.toFixed(1) + ' km · ' + result.prix + ' MRU';
+  }
+
+  try {
+    const res = await fetch(API + '/api/admin/broadcast', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ description: description, mediaType: 'text' }),
+    });
+    if (!res.ok) { alert('Erreur lors de la création de la commande.'); return; }
+    const data = await res.json();
+    alert('Commande créée ! ID : ' + data.delivery.clientAlias + '\nElle est maintenant visible par tous les livreurs disponibles.');
+    if (noteEl) noteEl.value = '';
+    showPage('p-commandes');
+    loadCommandes();
+  } catch {
+    alert('Erreur réseau.');
+  }
 }
 
 /* ================================================================
@@ -452,11 +613,3 @@ function closeModal(id) {
   var m = document.getElementById(id);
   if (m) m.classList.remove('open');
 }
-
-/* ================================================================
-   INIT
-================================================================ */
-document.addEventListener('DOMContentLoaded', function() {
-  document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('app').style.display = 'none';
-});

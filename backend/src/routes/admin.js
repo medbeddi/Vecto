@@ -106,6 +106,147 @@ router.get('/admin/archives/:id/messages', requireAdmin, async (req, res) => {
   }
 });
 
+// ── Stats KPIs ───────────────────────────────────────────────────────────────
+router.get('/admin/stats', requireAdmin, async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [coursesToday] = await db('deliveries')
+      .where('created_at', '>=', today)
+      .count('id as count');
+
+    const [activeDrivers] = await db('drivers')
+      .whereIn('status', ['available', 'busy'])
+      .where('suspended', false)
+      .count('id as count');
+
+    const [totalClients] = await db('clients').count('id as count');
+
+    const revenueRow = await db('wallet_transactions')
+      .where('type', 'commission')
+      .where('status', 'completed')
+      .sum('amount as total')
+      .first();
+
+    res.json({
+      coursesToday: parseInt(coursesToday.count, 10),
+      activeDrivers: parseInt(activeDrivers.count, 10),
+      totalClients: parseInt(totalClients.count, 10),
+      totalRevenue: parseFloat(revenueRow?.total ?? 0),
+    });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Livreurs ─────────────────────────────────────────────────────────────────
+router.get('/admin/drivers', requireAdmin, async (req, res) => {
+  try {
+    const drivers = await db('drivers')
+      .leftJoin('wallets', 'drivers.id', 'wallets.driver_id')
+      .orderBy('drivers.created_at', 'desc')
+      .select(
+        'drivers.id', 'drivers.name', 'drivers.status', 'drivers.suspended',
+        'drivers.created_at as createdAt',
+        db.raw('COALESCE(wallets.balance, 0) as balance')
+      );
+
+    const counts = await db('deliveries')
+      .whereIn('status', ['done'])
+      .whereNotNull('driver_id')
+      .groupBy('driver_id')
+      .select('driver_id', db.raw('COUNT(*) as total'));
+
+    const countMap = {};
+    for (const c of counts) countMap[c.driver_id] = parseInt(c.total, 10);
+
+    const result = drivers.map(d => ({
+      id: d.id,
+      name: d.name,
+      status: d.suspended ? 'suspended' : d.status,
+      courses: countMap[d.id] ?? 0,
+      balance: parseFloat(d.balance),
+      createdAt: d.createdAt,
+    }));
+
+    res.json({ drivers: result });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+router.post('/admin/drivers/:id/suspend', requireAdmin, async (req, res) => {
+  try {
+    await db('drivers').where({ id: req.params.id }).update({ suspended: true, status: 'offline' });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+router.post('/admin/drivers/:id/reactivate', requireAdmin, async (req, res) => {
+  try {
+    await db('drivers').where({ id: req.params.id }).update({ suspended: false });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Clients ───────────────────────────────────────────────────────────────────
+router.get('/admin/clients', requireAdmin, async (req, res) => {
+  try {
+    const clients = await db('clients')
+      .orderBy('clients.created_at', 'desc')
+      .select('clients.id', 'clients.alias', 'clients.created_at as createdAt');
+
+    const counts = await db('deliveries')
+      .whereNotNull('client_id')
+      .groupBy('client_id')
+      .select('client_id', db.raw('COUNT(*) as total'), db.raw('MAX(created_at) as lastAt'));
+
+    const countMap = {};
+    for (const c of counts) countMap[c.client_id] = { total: parseInt(c.total, 10), lastAt: c.lastAt };
+
+    const result = clients.map(c => ({
+      id: c.id,
+      alias: c.alias,
+      commandes: countMap[c.id]?.total ?? 0,
+      derniere: countMap[c.id]?.lastAt ?? null,
+      createdAt: c.createdAt,
+    }));
+
+    res.json({ clients: result });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Transactions wallet ───────────────────────────────────────────────────────
+router.get('/admin/transactions', requireAdmin, async (req, res) => {
+  try {
+    const transactions = await db('wallet_transactions')
+      .join('wallets', 'wallet_transactions.wallet_id', 'wallets.id')
+      .join('drivers', 'wallets.driver_id', 'drivers.id')
+      .orderBy('wallet_transactions.created_at', 'desc')
+      .limit(100)
+      .select(
+        'wallet_transactions.id',
+        'wallet_transactions.amount',
+        'wallet_transactions.type',
+        'wallet_transactions.description',
+        'wallet_transactions.status',
+        'wallet_transactions.created_at as createdAt',
+        'drivers.name as driverName'
+      );
+
+    res.json({ transactions });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 // ── Broadcast depuis appel : admin crée un ordre et l'envoie à tous les livreurs
 router.post('/admin/broadcast', requireAdmin, async (req, res) => {
   try {
