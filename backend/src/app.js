@@ -81,6 +81,24 @@ app.use('/admin', express.static(path.join(__dirname, '../../apps/admin')));
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));
 
+// ─── Privacy policy (requis par Meta pour publication) ────────────────────────
+app.get('/privacy', (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>Politique de confidentialité — Vecto</title>
+<style>body{font-family:sans-serif;max-width:700px;margin:60px auto;padding:0 20px;color:#333;line-height:1.7}h1{color:#1a1a1a}h2{margin-top:2em}</style></head>
+<body><h1>Politique de confidentialité</h1>
+<p>Dernière mise à jour : ${new Date().toLocaleDateString('fr-FR')}</p>
+<h2>Données collectées</h2>
+<p>Vecto collecte uniquement les données nécessaires à la prestation du service de livraison : numéro WhatsApp (chiffré), messages de commande, et position GPS des livreurs pendant leur service.</p>
+<h2>Utilisation des données</h2>
+<p>Les données sont utilisées exclusivement pour mettre en relation les clients et les livreurs. Aucune donnée n'est vendue ou partagée avec des tiers.</p>
+<h2>Conservation</h2>
+<p>Les données sont conservées pendant la durée nécessaire à la prestation du service et supprimées sur demande.</p>
+<h2>Contact</h2>
+<p>Pour toute question : <a href="mailto:medronaldo8@gmail.com">medronaldo8@gmail.com</a></p>
+</body></html>`);
+});
+
 // ─── Gestion des erreurs globales ─────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
   console.error('[app] erreur non gérée:', err.message);
