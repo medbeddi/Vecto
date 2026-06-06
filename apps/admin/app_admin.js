@@ -103,6 +103,24 @@ function initSocket() {
     }
   });
 
+  // Mise à jour GPS livreur en temps réel
+  _socket.on('driver_location', function (data) {
+    _trackingDrivers[data.driverId] = Object.assign(_trackingDrivers[data.driverId] || {}, {
+      driverId: data.driverId, name: data.name, lat: data.lat, lng: data.lng,
+    });
+    updateTrackingMarker(_trackingDrivers[data.driverId]);
+    renderTrackingList();
+  });
+
+  // Positions initiales de tous les livreurs
+  _socket.on('drivers_locations', function (list) {
+    list.forEach(function (d) {
+      _trackingDrivers[d.driverId] = d;
+      updateTrackingMarker(d);
+    });
+    renderTrackingList();
+  });
+
   // Nouveau message texte WA → call center
   _socket.on('incoming_text', function (data) {
     // Mettre à jour l'inbox si la page est active
@@ -143,6 +161,7 @@ function showPage(pageId) {
   var titles = {
     'p-stats': 'Statistiques', 'p-commandes': 'Commandes', 'p-livreurs': 'Livreurs',
     'p-clients': 'Clients', 'p-wallet': 'Wallets', 'p-callcenter': 'Call Center',
+    'p-tracking': 'Tracking Livreurs',
   };
   document.getElementById('page-title').textContent = titles[pageId] || '';
 
@@ -151,6 +170,12 @@ function showPage(pageId) {
     if (!_ccMapInitialized && window.GOOGLE_MAPS_KEY) {
       setTimeout(function () { initCCMap(); _ccMapInitialized = true; }, 150);
     }
+  }
+  if (pageId === 'p-tracking') {
+    setTimeout(function () {
+      initTrackingMap();
+      loadTrackingDrivers();
+    }, 100);
   }
 }
 
@@ -834,6 +859,8 @@ async function launchCourse() {
   if (!_inboxSelectedId) return;
   var pickup  = (document.getElementById('cc-pickup').value || '').trim();
   var dropoff = (document.getElementById('cc-dropoff').value || '').trim();
+  var priceRaw = (document.getElementById('cc-price').value || '').trim();
+  var price = priceRaw ? parseFloat(priceRaw) : null;
   if (!pickup || !dropoff) {
     alert('Veuillez renseigner les adresses de départ et d\'arrivée.');
     return;
@@ -847,7 +874,7 @@ async function launchCourse() {
     var res = await fetch(API + '/api/admin/inbox/' + _inboxSelectedId + '/launch', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ pickupAddress: pickup, dropoffAddress: dropoff }),
+      body: JSON.stringify({ pickupAddress: pickup, dropoffAddress: dropoff, price: price }),
     });
     if (!res.ok) {
       statusEl.textContent = 'Erreur lors du lancement.';
@@ -883,4 +910,103 @@ function fmtTime(iso) {
 
 function escHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ================================================================
+   TRACKING — Carte GPS des livreurs
+================================================================ */
+var _trackingMap      = null;
+var _trackingMarkers  = {};  // driverId → L.Marker
+var _trackingDrivers  = {};  // driverId → { name, status, lat, lng, lastSeen }
+var _trackingSelected = null;
+
+function initTrackingMap() {
+  if (_trackingMap) return;
+  var mapEl = document.getElementById('tracking-map');
+  if (!mapEl || typeof L === 'undefined') return;
+
+  // Centré sur Nouakchott, Mauritanie par défaut
+  _trackingMap = L.map('tracking-map').setView([18.08, -15.97], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19,
+  }).addTo(_trackingMap);
+}
+
+function trackingIcon(status) {
+  var color = status === 'available' ? '#34C759' : status === 'busy' ? '#FF9500' : '#AEAEB2';
+  return L.divIcon({
+    className: '',
+    html: '<div style="background:' + color + ';width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
+
+function updateTrackingMarker(driver) {
+  if (!_trackingMap) return;
+  if (_trackingMarkers[driver.driverId]) {
+    _trackingMarkers[driver.driverId]
+      .setLatLng([driver.lat, driver.lng])
+      .setIcon(trackingIcon(driver.status || 'available'))
+      .getPopup()?.setContent('<b>' + escHtml(driver.name) + '</b><br>Statut : ' + (driver.status || '—'));
+  } else {
+    var marker = L.marker([driver.lat, driver.lng], { icon: trackingIcon(driver.status || 'available') })
+      .addTo(_trackingMap)
+      .bindPopup('<b>' + escHtml(driver.name) + '</b><br>Statut : ' + (driver.status || '—'));
+    _trackingMarkers[driver.driverId] = marker;
+  }
+}
+
+function renderTrackingList() {
+  var list = document.getElementById('tracking-list');
+  if (!list) return;
+  var search = (document.getElementById('tracking-search')?.value || '').toLowerCase();
+  var drivers = Object.values(_trackingDrivers).filter(function (d) {
+    return !search || d.name.toLowerCase().includes(search);
+  });
+
+  if (!drivers.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">'
+      + (search ? 'Aucun résultat' : 'Aucun livreur en ligne') + '</div>';
+    return;
+  }
+
+  list.innerHTML = drivers.map(function (d) {
+    var dotClass = d.status === 'busy' ? 'busy' : d.lat ? 'online' : 'offline';
+    var statusLabel = d.status === 'available' ? 'Disponible' : d.status === 'busy' ? 'En course' : 'Hors ligne';
+    var active = _trackingSelected === d.driverId ? ' active' : '';
+    return '<div class="tracking-item' + active + '" onclick="focusDriver(\'' + d.driverId + '\')">'
+      + '<div class="tracking-dot ' + dotClass + '"></div>'
+      + '<div><div class="tracking-item-name">' + escHtml(d.name) + '</div>'
+      + '<div class="tracking-item-status">' + statusLabel + '</div></div>'
+      + '</div>';
+  }).join('');
+}
+
+function filterTrackingList() {
+  renderTrackingList();
+}
+
+function focusDriver(driverId) {
+  _trackingSelected = driverId;
+  var d = _trackingDrivers[driverId];
+  if (d && d.lat && _trackingMap) {
+    _trackingMap.setView([d.lat, d.lng], 15);
+    _trackingMarkers[driverId]?.openPopup();
+  }
+  renderTrackingList();
+}
+
+async function loadTrackingDrivers() {
+  try {
+    var res = await fetch(API + '/api/admin/drivers/locations', { headers: authHeaders() });
+    if (!res.ok) return;
+    var data = await res.json();
+    (data.drivers || []).forEach(function (d) {
+      _trackingDrivers[d.id] = { driverId: d.id, name: d.name, status: d.status, lat: d.lat, lng: d.lng, lastSeen: d.lastSeen };
+      updateTrackingMarker(_trackingDrivers[d.id]);
+    });
+    renderTrackingList();
+  } catch {}
 }

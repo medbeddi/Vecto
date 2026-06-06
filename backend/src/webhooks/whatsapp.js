@@ -3,9 +3,9 @@ import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { hashWaId, encryptWaId, sanitizeText } from '../services/pii-filter.js';
 import { downloadFromMeta, uploadToR2, extFromMime, getSignedMediaUrl } from '../services/media.js';
-import { getActiveDelivery, createDelivery, createAdminQueueDelivery } from '../services/delivery.js';
-import { emitNewOrder, emitClientMessage, emitIncomingCall, emitIncomingText } from '../services/socket.js';
-import { notifyAvailableDrivers, notifyAssignedDriver } from '../services/fcm.js';
+import { getActiveDelivery, createAdminQueueDelivery } from '../services/delivery.js';
+import { emitClientMessage, emitIncomingCall, emitIncomingText } from '../services/socket.js';
+import { notifyAssignedDriver } from '../services/fcm.js';
 import { sendText } from '../services/messaging.js';
 import { transcribeAndAnalyze, containsOffensiveWords } from '../services/transcription.js';
 
@@ -120,9 +120,9 @@ async function processMessage(msg) {
       sendText(rawWaId, 'Attention : votre message contient des termes inappropriés. Merci de rester respectueux.').catch(() => {});
     }
 
-    // Créer ou récupérer la delivery pending
-    let delivery = existing?.status === 'pending' ? existing : null;
-    if (!delivery) delivery = await createDelivery(client.id);
+    // Créer ou récupérer la delivery admin_queue (tout passe par l'admin d'abord)
+    let delivery = existing?.status === 'admin_queue' ? existing : null;
+    if (!delivery) delivery = await createAdminQueueDelivery(client.id);
 
     // Upload R2 avec le vrai deliveryId
     let signedUrl = null;
@@ -142,13 +142,8 @@ async function processMessage(msg) {
     const [message] = await db('messages')
       .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'audio', content: signedUrl, meta: audioMeta })
       .returning('*');
-    message.alias = client.alias;
 
-    if (delivery.status === 'pending') {
-      const deliveryWithAlias = { ...delivery, alias: client.alias };
-      emitNewOrder(deliveryWithAlias, message);
-      notifyAvailableDrivers(deliveryWithAlias).catch(() => {});
-    }
+    emitIncomingText(delivery, message, client.alias);
     return;
   }
 

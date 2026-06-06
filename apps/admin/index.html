@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VECTO — Dashboard Admin</title>
   <link rel="stylesheet" href="style_admin.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
 
@@ -70,6 +71,10 @@
       <div class="nav-item" onclick="showPage('p-callcenter')">
         <svg viewBox="0 0 24 24"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
         Call Center
+      </div>
+      <div class="nav-item" onclick="showPage('p-tracking')">
+        <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+        Tracking
       </div>
     </nav>
 
@@ -363,7 +368,12 @@
             <button class="btn btn-ghost btn-sm" onclick="closeLaunchPanel()">✕</button>
           </div>
 
-          <label class="field-label">Point de départ</label>
+          <label class="field-label">Prix de la livraison (MRU)</label>
+          <div class="field-row" style="margin-bottom:0">
+            <input type="number" id="cc-price" placeholder="Ex: 150" min="0" step="5" />
+          </div>
+
+          <label class="field-label" style="margin-top:12px">Point de départ</label>
           <div class="cc-addr-row">
             <div class="addr-dot green"></div>
             <div class="field-row" style="flex:1;margin-bottom:0">
@@ -387,6 +397,32 @@
           </button>
 
           <div class="cc-launch-status" id="cc-launch-status"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════
+         PAGE TRACKING
+    ════════════════════════════════════════════════════════ -->
+    <div class="page" id="p-tracking">
+      <div class="tracking-layout">
+
+        <!-- Barre de recherche + liste -->
+        <div class="tracking-sidebar">
+          <div class="tracking-search-wrap">
+            <input class="search-input" id="tracking-search"
+                   placeholder="Rechercher un livreur…"
+                   oninput="filterTrackingList()" />
+          </div>
+          <div class="tracking-list" id="tracking-list">
+            <div style="padding:20px;text-align:center;color:var(--text-3);font-size:13px">Chargement…</div>
+          </div>
+        </div>
+
+        <!-- Carte -->
+        <div class="tracking-map-wrap">
+          <div id="tracking-map"></div>
         </div>
 
       </div>
@@ -475,6 +511,7 @@
 </div>
 
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- Google Maps (Call Center) — ajouter GOOGLE_MAPS_KEY sur Railway -->
 <script>
   window.GOOGLE_MAPS_KEY = '';

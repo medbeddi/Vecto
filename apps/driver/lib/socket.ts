@@ -32,6 +32,9 @@ type NewOrderPayload = {
   deliveryId: string;
   clientAlias: string;
   createdAt: string;
+  pickupAddress?: string | null;
+  dropoffAddress?: string | null;
+  price?: number | null;
   message: { type: string; content: string | null; meta: any };
 };
 
@@ -92,6 +95,10 @@ class SocketService {
     meta?: object
   ) {
     this._socket?.emit('driver_message', { deliveryId, type, content, meta });
+  }
+
+  sendLocation(lat: number, lng: number) {
+    this._socket?.emit('driver_location', { lat, lng });
   }
 
   on<K extends keyof EventMap>(event: K, handler: EventMap[K]) {

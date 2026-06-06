@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { relayDriverMessage } from './relay.js';
+import db from '../config/db.js';
 
 let io = null;
 const DRIVERS_ROOM = 'room:drivers';
@@ -36,6 +37,18 @@ export function initSocket(httpServer) {
     // ── Admin ────────────────────────────────────────────────────────────────
     if (socket.data.admin) {
       socket.join(ADMINS_ROOM);
+      // Envoyer les positions actuelles de tous les livreurs dès la connexion
+      db('drivers')
+        .whereNotNull('last_lat')
+        .whereNotNull('last_lng')
+        .select('id', 'name', 'last_lat', 'last_lng', 'last_seen', 'status')
+        .then((rows) => {
+          socket.emit('drivers_locations', rows.map((r) => ({
+            driverId: r.id, name: r.name,
+            lat: r.last_lat, lng: r.last_lng,
+            lastSeen: r.last_seen, status: r.status,
+          })));
+        }).catch(() => {});
       socket.on('disconnect', () => {});
       return;
     }
@@ -50,7 +63,8 @@ export function initSocket(httpServer) {
     }
 
     // ── Livreur ──────────────────────────────────────────────────────────────
-    const driverId = socket.data.driver?.id;
+    const driverId   = socket.data.driver?.id;
+    const driverName = socket.data.driver?.name;
     socket.join(DRIVERS_ROOM);
 
     socket.on('join_room', ({ deliveryId }) => {
@@ -65,6 +79,15 @@ export function initSocket(httpServer) {
       } catch (err) {
         socket.emit('relay_error', { deliveryId, code: err.code ?? 'RELAY_FAILED' });
       }
+    });
+
+    // Mise à jour GPS du livreur → stocker en DB + diffuser aux admins
+    socket.on('driver_location', async ({ lat, lng }) => {
+      if (!driverId || typeof lat !== 'number' || typeof lng !== 'number') return;
+      try {
+        await db('drivers').where({ id: driverId }).update({ last_lat: lat, last_lng: lng, last_seen: db.fn.now() });
+        io.to(ADMINS_ROOM).emit('driver_location', { driverId, name: driverName, lat, lng });
+      } catch {}
     });
 
     socket.on('disconnect', () => {});
@@ -82,9 +105,12 @@ export function getIO() {
 export function emitNewOrder(delivery, initialMessage) {
   if (!io) return;
   const payload = {
-    deliveryId:  delivery.id,
-    clientAlias: delivery.alias,
-    createdAt:   delivery.created_at,
+    deliveryId:      delivery.id,
+    clientAlias:     delivery.alias,
+    createdAt:       delivery.created_at,
+    pickupAddress:   delivery.pickup_address  ?? null,
+    dropoffAddress:  delivery.dropoff_address ?? null,
+    price:           delivery.price           ?? null,
     message: {
       type:    initialMessage.type,
       content: initialMessage.content,

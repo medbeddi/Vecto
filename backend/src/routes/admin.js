@@ -384,7 +384,7 @@ router.post('/admin/inbox/:id/reply', requireAdmin, async (req, res) => {
 // ── Call Center : lancer une course (admin_queue → pending → livreurs) ─────────
 router.post('/admin/inbox/:id/launch', requireAdmin, async (req, res) => {
   try {
-    const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng } = req.body;
+    const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price } = req.body;
 
     const client = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
@@ -394,7 +394,7 @@ router.post('/admin/inbox/:id/launch', requireAdmin, async (req, res) => {
     if (!client) return res.status(404).json({ error: 'NOT_FOUND' });
 
     const updated = await launchDelivery(req.params.id, {
-      pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng,
+      pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price,
     });
 
     // Dernier message pour l'affichage côté livreur
@@ -413,6 +413,26 @@ router.post('/admin/inbox/:id/launch', requireAdmin, async (req, res) => {
   } catch (err) {
     if (err.code === 'DELIVERY_NOT_FOUND') return res.status(404).json({ error: 'NOT_FOUND' });
     if (err.code === 'INVALID_STATUS')     return res.status(409).json({ error: 'INVALID_STATUS' });
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Tracking : positions GPS des livreurs ─────────────────────────────────────
+router.get('/admin/drivers/locations', requireAdmin, async (req, res) => {
+  try {
+    const drivers = await db('drivers')
+      .whereNotNull('last_lat')
+      .whereNotNull('last_lng')
+      .where('suspended', false)
+      .select('id', 'name', 'status', 'last_lat', 'last_lng', 'last_seen');
+
+    res.json({
+      drivers: drivers.map((d) => ({
+        id: d.id, name: d.name, status: d.status,
+        lat: d.last_lat, lng: d.last_lng, lastSeen: d.last_seen,
+      })),
+    });
+  } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
 });

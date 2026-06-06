@@ -11,6 +11,9 @@ export type Delivery = {
   status?: 'pending' | 'assigned' | 'in_progress' | 'done' | 'cancelled';
   initialMediaType?: string | null;
   initialMediaUrl?: string | null;
+  pickupAddress?: string | null;
+  dropoffAddress?: string | null;
+  price?: number | null;
 };
 
 export type MessageType = 'text' | 'audio' | 'image' | 'location';

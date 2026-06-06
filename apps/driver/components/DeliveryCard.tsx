@@ -141,8 +141,30 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props)
         </Text>
       </View>
 
-      {/* Texte si message texte */}
-      {delivery.description && delivery.initialMediaType !== 'audio' ? (
+      {/* Prix si défini */}
+      {delivery.price != null && (
+        <View style={styles.priceBadge}>
+          <Text style={styles.priceText}>{delivery.price} MRU</Text>
+        </View>
+      )}
+
+      {/* Itinéraire si défini */}
+      {(delivery.pickupAddress || delivery.dropoffAddress) ? (
+        <View style={styles.routeBox}>
+          {delivery.pickupAddress ? (
+            <View style={styles.routeRow}>
+              <View style={[styles.routeDot, { backgroundColor: '#34C759' }]} />
+              <Text style={styles.routeText} numberOfLines={1}>{delivery.pickupAddress}</Text>
+            </View>
+          ) : null}
+          {delivery.dropoffAddress ? (
+            <View style={styles.routeRow}>
+              <View style={[styles.routeDot, { backgroundColor: '#FF3B30' }]} />
+              <Text style={styles.routeText} numberOfLines={1}>{delivery.dropoffAddress}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : delivery.description && delivery.initialMediaType !== 'audio' ? (
         <Text style={styles.desc} numberOfLines={2}>{delivery.description}</Text>
       ) : null}
 
@@ -230,6 +252,17 @@ const styles = StyleSheet.create({
   waveBarActive: { backgroundColor: PRIMARY },
   waveDur: { fontSize: 12, fontWeight: '600', color: TEXT2, flexShrink: 0 },
   desc: { fontSize: 14, color: TEXT2, lineHeight: 20 },
+  priceBadge: {
+    backgroundColor: '#E8F5E9', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 6, alignSelf: 'flex-start',
+  },
+  priceText: { color: '#1a7a35', fontSize: 18, fontWeight: '800' },
+  routeBox: {
+    backgroundColor: '#F5F5F7', borderRadius: 10, padding: 10, gap: 8,
+  },
+  routeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  routeDot: { width: 9, height: 9, borderRadius: 5, flexShrink: 0 },
+  routeText: { flex: 1, fontSize: 13, color: TEXT, fontWeight: '500' },
   // Boutons
   actions: { flexDirection: 'row', gap: 10 },
   btnRefuse: {

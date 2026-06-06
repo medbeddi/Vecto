@@ -16,6 +16,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Notifications from 'expo-notifications';
+import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import { useAuthStore } from '../store/auth.store';
 import { useDeliveriesStore } from '../store/deliveries.store';
@@ -35,6 +36,9 @@ type IncomingOrder = {
   deliveryId: string;
   clientAlias: string;
   createdAt: string;
+  pickupAddress?: string | null;
+  dropoffAddress?: string | null;
+  price?: number | null;
   message: { type: string; content: string | null; meta: any };
 };
 
@@ -80,6 +84,7 @@ function CoursesTab() {
     loadAvailable();
     loadActiveCourses();
     registerFCMToken();
+    startLocationTracking();
 
     // Rechargement périodique en cas de socket déconnecté
     const pollInterval = setInterval(() => {
@@ -96,6 +101,9 @@ function CoursesTab() {
         description: order.message.content ?? '',
         initialMediaType: order.message.type,
         initialMediaUrl: order.message.type === 'audio' ? order.message.content : null,
+        pickupAddress: order.pickupAddress,
+        dropoffAddress: order.dropoffAddress,
+        price: order.price,
       });
       if (order.message.type === 'audio' && order.message.content) {
         playAudio(order.message.content);
@@ -125,6 +133,23 @@ function CoursesTab() {
       clearInterval(pollInterval);
     };
   }, []);
+
+  const startLocationTracking = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      // Envoyer la position toutes les 30 secondes
+      const sendLocation = async () => {
+        try {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          socketService.sendLocation(loc.coords.latitude, loc.coords.longitude);
+        } catch {}
+      };
+      await sendLocation();
+      const locInterval = setInterval(sendLocation, 30000);
+      return () => clearInterval(locInterval);
+    } catch {}
+  };
 
   const playAudio = async (url: string) => {
     try {
@@ -186,6 +211,29 @@ function CoursesTab() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>🛵 Nouvelle course</Text>
             <Text style={styles.modalAlias}>{incomingOrder?.clientAlias}</Text>
+
+            {incomingOrder?.price != null && (
+              <View style={styles.modalPriceBadge}>
+                <Text style={styles.modalPriceText}>{incomingOrder.price} MRU</Text>
+              </View>
+            )}
+
+            {(incomingOrder?.pickupAddress || incomingOrder?.dropoffAddress) && (
+              <View style={styles.modalRoute}>
+                {incomingOrder.pickupAddress ? (
+                  <View style={styles.modalRouteRow}>
+                    <View style={[styles.routeDot, { backgroundColor: '#34C759' }]} />
+                    <Text style={styles.modalRouteText} numberOfLines={1}>{incomingOrder.pickupAddress}</Text>
+                  </View>
+                ) : null}
+                {incomingOrder.dropoffAddress ? (
+                  <View style={styles.modalRouteRow}>
+                    <View style={[styles.routeDot, { backgroundColor: '#FF3B30' }]} />
+                    <Text style={styles.modalRouteText} numberOfLines={1}>{incomingOrder.dropoffAddress}</Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
 
             {incomingOrder?.message.type === 'audio' ? (
               <TouchableOpacity
@@ -838,6 +886,17 @@ const styles = StyleSheet.create({
     borderRadius: 12, paddingVertical: 14, alignItems: 'center',
   },
   playBtnText: { color: PRIMARY, fontSize: 15, fontWeight: '600' },
+  modalPriceBadge: {
+    backgroundColor: '#E8F5E9', borderRadius: 20,
+    paddingHorizontal: 20, paddingVertical: 8, alignSelf: 'center',
+  },
+  modalPriceText: { color: '#1a7a35', fontSize: 22, fontWeight: '800' },
+  modalRoute: {
+    backgroundColor: '#F5F5F7', borderRadius: 12, padding: 12, gap: 8,
+  },
+  modalRouteRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  routeDot: { width: 10, height: 10, borderRadius: 5 },
+  modalRouteText: { flex: 1, fontSize: 13, color: TEXT, fontWeight: '500' },
   modalActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   dismissBtn: {
     flex: 1, paddingVertical: 14, borderRadius: 12,
