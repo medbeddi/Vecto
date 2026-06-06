@@ -1,12 +1,23 @@
 import rateLimit from 'express-rate-limit';
 
+const isDev = process.env.NODE_ENV !== 'production';
+
 const json = (res, _req, _next) =>
   res.status(429).json({ error: 'RATE_LIMIT_EXCEEDED' });
 
-// Tentatives de login : 10 par 15 minutes par IP
+// Tentatives de login (par IP) — plus souple en dev pour éviter les blocages pendant les tests
 export const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: isDev ? 100 : 15,
+  handler: json,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Envoi d'OTP — toujours strict même en dev (anti-spam)
+export const otpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 30 : 5,
   handler: json,
   standardHeaders: true,
   legacyHeaders: false,

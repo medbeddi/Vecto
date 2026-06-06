@@ -14,17 +14,22 @@ import { Icon } from '../components/Icon';
 import { StatusBar } from 'expo-status-bar';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store/auth.store';
-import { PRIMARY, BG, CARD, TEXT, TEXT2, BORDER, BRAND } from '../lib/config';
+import { PRIMARY, BG, TEXT, TEXT2, BORDER, BRAND } from '../lib/config';
+import CountryPicker, { COUNTRIES, type Country } from '../components/CountryPicker';
 import type { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Password'>;
 
-export default function PasswordScreen({ route, navigation }: Props) {
-  const { phone } = route.params;
+export default function PasswordScreen({ navigation }: Props) {
+  const [country, setCountry] = useState<Country>(COUNTRIES[0]);
+  const [local, setLocal] = useState('');
   const [password, setPassword] = useState('');
   const [secure, setSecure] = useState(true);
 
-  const { loginWithPassword, isLoading, error, clearError } = useAuthStore();
+  const { loginWithPassword, sendOtp, isLoading, error, clearError } = useAuthStore();
+
+  const phone = `${country.dial}${local.replace(/\D/g, '')}`;
+  const isValid = local.replace(/\D/g, '').length >= 6 && password.length >= 1;
 
   useEffect(() => {
     if (error) {
@@ -34,17 +39,32 @@ export default function PasswordScreen({ route, navigation }: Props) {
   }, [error]);
 
   const handleLogin = async () => {
-    if (!password || isLoading) return;
+    if (!isValid || isLoading) return;
     try {
       await loginWithPassword(phone, password);
     } catch {}
   };
 
   const handleForgot = () => {
+    if (isLoading || local.replace(/\D/g, '').length < 6) {
+      Alert.alert('Numéro requis', 'Entrez d\'abord votre numéro de téléphone.');
+      return;
+    }
     Alert.alert(
       'Mot de passe oublié',
-      'Contactez l\'administrateur pour réinitialiser votre mot de passe.',
-      [{ text: 'OK' }]
+      `Envoyer un code de vérification au ${phone} ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Envoyer le code',
+          onPress: async () => {
+            try {
+              await sendOtp(phone);
+              navigation.navigate('OTP', { phone, mode: 'reset' });
+            } catch {}
+          },
+        },
+      ]
     );
   };
 
@@ -59,15 +79,28 @@ export default function PasswordScreen({ route, navigation }: Props) {
         <Text style={styles.backText}>←</Text>
       </TouchableOpacity>
 
-      <View style={styles.card}>
-        <Text style={styles.title}>Mot de passe</Text>
-        <Text style={styles.sub}>Numéro enregistré</Text>
-        <Text style={styles.phone}>{phone}</Text>
+      <View style={styles.form}>
+        <Text style={styles.title}>Se connecter</Text>
+        <Text style={styles.sub}>Entrez votre numéro et mot de passe</Text>
+
+        <View style={styles.inputRow}>
+          <CountryPicker selected={country} onSelect={setCountry} light />
+          <TextInput
+            style={styles.input}
+            placeholder="XX XX XX XX"
+            placeholderTextColor={TEXT2}
+            keyboardType="phone-pad"
+            value={local}
+            onChangeText={setLocal}
+            returnKeyType="next"
+            editable={!isLoading}
+          />
+        </View>
 
         <View style={styles.inputWrap}>
           <TextInput
-            style={styles.input}
-            placeholder="Votre mot de passe"
+            style={styles.inputFlex}
+            placeholder="Mot de passe"
             placeholderTextColor={TEXT2}
             secureTextEntry={secure}
             value={password}
@@ -85,9 +118,9 @@ export default function PasswordScreen({ route, navigation }: Props) {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity
-          style={[styles.btn, (!password || isLoading) && styles.btnOff]}
+          style={[styles.btn, (!isValid || isLoading) && styles.btnOff]}
           onPress={handleLogin}
-          disabled={!password || isLoading}
+          disabled={!isValid || isLoading}
           activeOpacity={0.8}
         >
           {isLoading
@@ -99,36 +132,46 @@ export default function PasswordScreen({ route, navigation }: Props) {
         <TouchableOpacity onPress={handleForgot} disabled={isLoading}>
           <Text style={styles.forgot}>Mot de passe oublié ?</Text>
         </TouchableOpacity>
+
+        <View style={styles.divider} />
+
+        <TouchableOpacity onPress={() => navigation.replace('Register')} disabled={isLoading}>
+          <Text style={styles.switchText}>Pas encore de compte ? <Text style={styles.switchLink}>Créer un compte</Text></Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BG, justifyContent: 'center', paddingHorizontal: 24 },
+  root: { flex: 1, backgroundColor: BG, justifyContent: 'center', paddingHorizontal: 28 },
   back: { position: 'absolute', top: 56, left: 24, padding: 8 },
   backText: { fontSize: 22, color: TEXT },
-  card: {
-    backgroundColor: CARD, borderRadius: 20, padding: 28, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, gap: 14,
-  },
+  form: { gap: 14 },
   title: { fontSize: 24, fontWeight: '800', color: TEXT },
-  sub: { fontSize: 14, color: TEXT2 },
-  phone: { fontSize: 15, fontWeight: '700', color: TEXT },
+  sub: { fontSize: 13, color: TEXT2, lineHeight: 20 },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1.5, borderColor: BORDER, borderRadius: 12, overflow: 'hidden',
+    backgroundColor: '#FAFAFA',
+  },
   inputWrap: {
-    flexDirection: 'row', alignItems: 'center', width: '100%',
+    flexDirection: 'row', alignItems: 'center',
     borderWidth: 1.5, borderColor: BORDER, borderRadius: 12,
     backgroundColor: '#FAFAFA', overflow: 'hidden',
   },
-  input: { flex: 1, paddingVertical: 14, paddingHorizontal: 14, color: TEXT, fontSize: 16 },
+  input: { flex: 1, paddingVertical: 14, paddingHorizontal: 12, color: TEXT, fontSize: 16 },
+  inputFlex: { flex: 1, paddingVertical: 14, paddingHorizontal: 14, color: TEXT, fontSize: 16 },
   eyeBtn: { paddingHorizontal: 12 },
   error: { color: BRAND, fontSize: 13, textAlign: 'center' },
   btn: {
     backgroundColor: PRIMARY, borderRadius: 12,
-    paddingVertical: 16, alignItems: 'center', width: '100%', marginTop: 4,
+    paddingVertical: 16, alignItems: 'center', marginTop: 4,
   },
   btnOff: { opacity: 0.4 },
   btnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  forgot: { color: TEXT2, fontSize: 13, textDecorationLine: 'underline' },
+  forgot: { color: TEXT2, fontSize: 13, textDecorationLine: 'underline', textAlign: 'center' },
+  divider: { height: 1, backgroundColor: BORDER, marginVertical: 4 },
+  switchText: { color: TEXT2, fontSize: 13, textAlign: 'center' },
+  switchLink: { color: PRIMARY, fontWeight: '700' },
 });

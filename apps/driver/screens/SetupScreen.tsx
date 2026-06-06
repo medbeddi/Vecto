@@ -14,7 +14,7 @@ import { StatusBar } from 'expo-status-bar';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store/auth.store';
 import { Icon } from '../components/Icon';
-import { PRIMARY, BG, CARD, TEXT, TEXT2, BORDER, BRAND } from '../lib/config';
+import { PRIMARY, BG, TEXT, TEXT2, BORDER, BRAND } from '../lib/config';
 import type { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Setup'>;
@@ -55,7 +55,7 @@ export default function SetupScreen({ route, navigation }: Props) {
       </TouchableOpacity>
 
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
+        <View style={styles.form}>
           <Text style={styles.title}>Créer votre compte</Text>
           <Text style={styles.sub}>Renseignez votre nom et choisissez un mot de passe</Text>
 
@@ -142,11 +142,7 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 80 },
   back: { position: 'absolute', top: 56, left: 24, padding: 8, zIndex: 10 },
   backText: { fontSize: 22, color: TEXT },
-  card: {
-    backgroundColor: CARD, borderRadius: 20, padding: 28,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, gap: 16,
-  },
+  form: { gap: 16 },
   title: { fontSize: 22, fontWeight: '800', color: TEXT, textAlign: 'center' },
   sub: { fontSize: 13, color: TEXT2, textAlign: 'center', lineHeight: 20 },
   field: { gap: 6 },

@@ -1,5 +1,5 @@
 import Svg, {
-  Path, Circle, Line, Polyline, Rect, G, Ellipse,
+  Path, Circle, Line, Polyline, Rect, G, Ellipse, Polygon,
 } from 'react-native-svg';
 
 type IconName =

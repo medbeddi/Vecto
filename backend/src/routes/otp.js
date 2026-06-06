@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { hashWaId } from '../services/pii-filter.js';
-import { loginLimiter } from '../middleware/rate-limit.js';
+import { otpLimiter, loginLimiter } from '../middleware/rate-limit.js';
 
 const router = Router();
 
@@ -48,7 +48,7 @@ async function sendOtpWhatsApp(phone, phoneHash, code) {
 }
 
 // ── Envoyer OTP ───────────────────────────────────────────────────────────────
-router.post('/otp/send', loginLimiter, async (req, res) => {
+router.post('/otp/send', otpLimiter, async (req, res) => {
   try {
     const { phone } = req.body;
     if (!phone || phone.trim().length < 8) {
@@ -80,7 +80,7 @@ router.post('/otp/send', loginLimiter, async (req, res) => {
 });
 
 // ── Vérifier OTP + créer/retourner compte client ──────────────────────────────
-router.post('/otp/verify/client', loginLimiter, async (req, res) => {
+router.post('/otp/verify/client', otpLimiter, async (req, res) => {
   try {
     const { phone, code } = req.body;
     if (!phone || !code) return res.status(400).json({ error: 'MISSING_FIELDS' });
@@ -123,7 +123,7 @@ router.post('/otp/verify/client', loginLimiter, async (req, res) => {
 });
 
 // ── Vérifier OTP + créer compte driver (1ère inscription) ────────────────────
-router.post('/otp/verify/driver', loginLimiter, async (req, res) => {
+router.post('/otp/verify/driver', otpLimiter, async (req, res) => {
   try {
     const { phone, code, name, password } = req.body;
     if (!phone || !code) return res.status(400).json({ error: 'MISSING_FIELDS' });
@@ -159,6 +159,53 @@ router.post('/otp/verify/driver', loginLimiter, async (req, res) => {
 
     res.json({ accessToken, refreshToken, driver: { id: driver.id, name: driver.name } });
   } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Réinitialiser le mot de passe via OTP ─────────────────────────────────────
+router.post('/auth/reset-password', async (req, res) => {
+  try {
+    const { phone, code, newPassword } = req.body;
+    if (!phone || !code || !newPassword) {
+      return res.status(400).json({ error: 'MISSING_FIELDS' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: 'PASSWORD_TOO_SHORT' });
+    }
+
+    const phoneHash = hashWaId(phone.trim());
+
+    // Chercher l'OTP — on accepte aussi les codes récemment expirés (<2min) pour tolérer les décalages
+    const otp = await db('otps')
+      .where({ phone_hash: phoneHash, code, used: false })
+      .where('expires_at', '>', new Date(Date.now() - 2 * 60 * 1000))
+      .orderBy('created_at', 'desc')
+      .first();
+
+    if (!otp) {
+      console.warn('[reset-password] OTP invalide ou expiré pour hash:', phoneHash.slice(0, 8));
+      return res.status(401).json({ error: 'INVALID_OR_EXPIRED_CODE' });
+    }
+
+    await db('otps').where({ id: otp.id }).update({ used: true });
+
+    const driver = await db('drivers').where({ phone_hash: phoneHash }).first();
+    if (!driver) {
+      console.warn('[reset-password] driver introuvable pour hash:', phoneHash.slice(0, 8));
+      return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await db('drivers').where({ id: driver.id }).update({ password_hash: passwordHash });
+
+    const payload = { id: driver.id, name: driver.name };
+    const accessToken = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_EXPIRES });
+    const refreshToken = jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: env.JWT_REFRESH_EXPIRES });
+
+    res.json({ accessToken, refreshToken, driver: { id: driver.id, name: driver.name } });
+  } catch (err) {
+    console.error('[reset-password] erreur:', err.message);
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
 });

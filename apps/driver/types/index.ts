@@ -35,9 +35,10 @@ export type Message = {
 
 export type RootStackParamList = {
   Login: undefined;
-  OTP: { phone: string };
-  Password: { phone: string };
+  Register: undefined;
+  OTP: { phone: string; mode?: 'register' | 'reset' };
   Setup: { phone: string; code: string };
+  ResetPassword: { phone: string; code: string };
   Main: undefined;
   Chat: { delivery: Delivery };
 };

@@ -12,16 +12,17 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store/auth.store';
-import { PRIMARY, BG, CARD, TEXT, TEXT2, BORDER, BRAND } from '../lib/config';
+import { PRIMARY, BG, TEXT, TEXT2, BORDER, BRAND } from '../lib/config';
 import type { RootStackParamList } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OTP'>;
+
 
 const RESEND_DELAY = 60;
 const CODE_LENGTH = 4;
 
 export default function OTPScreen({ route, navigation }: Props) {
-  const { phone } = route.params;
+  const { phone, mode = 'register' } = route.params;
   const [digits, setDigits] = useState(Array(CODE_LENGTH).fill(''));
   const [resendTimer, setResendTimer] = useState(RESEND_DELAY);
   const inputs = useRef<(TextInput | null)[]>([]);
@@ -54,7 +55,11 @@ export default function OTPScreen({ route, navigation }: Props) {
 
   const handleNext = () => {
     if (!isComplete) return;
-    navigation.navigate('Setup', { phone, code });
+    if (mode === 'reset') {
+      navigation.navigate('ResetPassword', { phone, code });
+    } else {
+      navigation.navigate('Setup', { phone, code });
+    }
   };
 
   const handleResend = async () => {
@@ -82,8 +87,8 @@ export default function OTPScreen({ route, navigation }: Props) {
       </TouchableOpacity>
 
       {/* Card */}
-      <View style={styles.card}>
-        <Text style={styles.title}>Vérification</Text>
+      <View style={styles.form}>
+        <Text style={styles.title}>{mode === 'reset' ? 'Réinitialisation' : 'Vérification'}</Text>
         <Text style={styles.sub}>Code envoyé au <Text style={styles.phone}>{phone}</Text></Text>
 
         <View style={styles.digitRow}>
@@ -128,11 +133,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG, justifyContent: 'center', paddingHorizontal: 24 },
   back: { position: 'absolute', top: 56, left: 24, padding: 8 },
   backText: { fontSize: 22, color: TEXT },
-  card: {
-    backgroundColor: CARD, borderRadius: 20, padding: 28, alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 12, elevation: 3, gap: 12,
-  },
+  form: { alignItems: 'center', gap: 12 },
   title: { fontSize: 24, fontWeight: '800', color: TEXT },
   sub: { fontSize: 14, color: TEXT2 },
   phone: { fontSize: 15, fontWeight: '700', color: TEXT },
@@ -143,7 +144,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAFAFA',
     color: TEXT, fontSize: 26, fontWeight: '800', textAlign: 'center',
   },
-  digitBoxFilled: { borderColor: PRIMARY, backgroundColor: CARD },
+  digitBoxFilled: { borderColor: PRIMARY, backgroundColor: '#fff' },
   error: { color: BRAND, fontSize: 13, textAlign: 'center' },
   btn: {
     backgroundColor: PRIMARY, borderRadius: 12,

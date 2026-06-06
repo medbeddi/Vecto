@@ -18,6 +18,7 @@ type AuthState = {
   loginWithPassword: (phone: string, password: string) => Promise<void>;
   sendOtp: (phone: string) => Promise<void>;
   verifyOtp: (phone: string, code: string, name: string, password: string) => Promise<void>;
+  resetPassword: (phone: string, code: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   clearError: () => void;
 };
@@ -75,9 +76,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       await socketService.connect();
       set({ driver: data.driver, phone, isLoading: false });
     } catch (err) {
-      const msg = err instanceof ApiError && err.code === 'INVALID_CREDENTIALS'
-        ? 'Mot de passe incorrect.'
-        : 'Erreur de connexion. Réessayez.';
+      let msg = 'Erreur de connexion. Réessayez.';
+      if (err instanceof ApiError) {
+        if (err.code === 'INVALID_CREDENTIALS') msg = 'Numéro ou mot de passe incorrect.';
+        else if (err.status === 429) msg = 'Trop de tentatives. Réessayez dans 15 minutes.';
+      }
       set({ error: msg, isLoading: false });
       throw err;
     }
@@ -91,15 +94,20 @@ export const useAuthStore = create<AuthState>((set) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone }),
       });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new ApiError(data.error ?? 'SEND_FAILED', res.status);
+      const data = await res.json();
+      if (!res.ok) throw new ApiError(data.error ?? 'SEND_FAILED', res.status);
+      // En dev, le backend retourne le code directement pour faciliter les tests
+      if (data.code) {
+        const { Alert } = await import('react-native');
+        Alert.alert('Code OTP (dev)', `Votre code : ${data.code}`);
       }
       set({ isLoading: false });
     } catch (err) {
-      const msg = err instanceof ApiError && err.code === 'INVALID_PHONE'
-        ? 'Numéro de téléphone invalide'
-        : 'Impossible d\'envoyer le code. Vérifiez votre réseau.';
+      let msg = 'Impossible d\'envoyer le code. Vérifiez votre réseau.';
+      if (err instanceof ApiError) {
+        if (err.code === 'INVALID_PHONE') msg = 'Numéro de téléphone invalide';
+        else if (err.status === 429) msg = 'Trop de tentatives. Réessayez dans 15 minutes.';
+      }
       set({ error: msg, isLoading: false });
       throw err;
     }
@@ -128,6 +136,38 @@ export const useAuthStore = create<AuthState>((set) => ({
         else if (err.code === 'PASSWORD_REQUIRED') msg = 'Mot de passe requis (6 caractères min).';
         else if (err.code === 'NAME_REQUIRED') msg = 'Nom requis pour créer un compte.';
       }
+      set({ error: msg, isLoading: false });
+      throw err;
+    }
+  },
+
+  resetPassword: async (phone, code, newPassword) => {
+    set({ isLoading: true, error: null });
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, code, newPassword }),
+      });
+      let data: Record<string, unknown> = {};
+      try { data = await res.json(); } catch { /* empty body */ }
+      if (!res.ok) throw new ApiError((data.error as string) ?? 'RESET_FAILED', res.status);
+
+      await storage.setTokens(data.accessToken as string, data.refreshToken as string);
+      await storage.setDriver(data.driver as import('../types').Driver);
+      await storage.setPhone(phone);
+      await socketService.connect();
+      set({ driver: data.driver as import('../types').Driver, phone, isLoading: false });
+    } catch (err) {
+      let msg = 'Erreur de réinitialisation. Réessayez.';
+      if (err instanceof ApiError) {
+        if (err.code === 'INVALID_OR_EXPIRED_CODE') msg = 'Code incorrect ou expiré.';
+        else if (err.code === 'PASSWORD_TOO_SHORT') msg = 'Mot de passe trop court (6 caractères min).';
+        else if (err.code === 'DRIVER_NOT_FOUND') msg = 'Compte introuvable.';
+        else if (err.status === 429) msg = 'Trop de tentatives. Réessayez dans 15 minutes.';
+        else msg = `Erreur : ${err.code} (${err.status})`;
+      }
+      console.warn('[resetPassword] échec:', err instanceof ApiError ? `${err.code} ${err.status}` : String(err));
       set({ error: msg, isLoading: false });
       throw err;
     }
