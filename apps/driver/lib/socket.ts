@@ -3,6 +3,31 @@ import { API_BASE } from './config';
 import { storage } from './storage';
 import type { Delivery, Message } from '../types';
 
+async function getFreshToken(): Promise<string | null> {
+  try {
+    const token = await storage.getAccessToken();
+    if (!token) return null;
+    // Vérifie expiry sans lib externe — le payload JWT est en base64
+    const [, payload] = token.split('.');
+    const { exp } = JSON.parse(atob(payload));
+    if (exp * 1000 > Date.now() + 60_000) return token; // valide > 1 min
+    // Token bientôt expiré — refresh
+    const rt = await storage.getRefreshToken();
+    if (!rt) return null;
+    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: rt }),
+    });
+    if (!res.ok) return null;
+    const { accessToken } = await res.json();
+    await storage.setTokens(accessToken, rt);
+    return accessToken;
+  } catch {
+    return null;
+  }
+}
+
 type NewOrderPayload = {
   deliveryId: string;
   clientAlias: string;
@@ -24,24 +49,31 @@ class SocketService {
   async connect(): Promise<void> {
     if (this._socket?.connected) return;
 
-    const token = await storage.getAccessToken();
+    const token = await getFreshToken();
     if (!token) throw new Error('AUTH_REQUIRED');
 
     this._socket = io(API_BASE, {
       auth: { token: `Bearer ${token}` },
       transports: ['polling', 'websocket'],
       reconnection: true,
-      reconnectionAttempts: 15,
+      reconnectionAttempts: 20,
       reconnectionDelay: 2000,
-      reconnectionDelayMax: 10000,
+      reconnectionDelayMax: 15000,
     });
 
     this._socket.on('connect', () =>
       console.info('[socket] connecté sid=' + this._socket?.id)
     );
-    this._socket.on('connect_error', (err) =>
-      console.warn('[socket] erreur:', err.message)
-    );
+
+    // Si le token expire pendant la session, refresh et reconnecte
+    this._socket.on('connect_error', async (err) => {
+      console.warn('[socket] erreur:', err.message);
+      if (err.message === 'AUTH_INVALID' || err.message === 'AUTH_REQUIRED') {
+        this._socket?.disconnect();
+        this._socket = null;
+        try { await this.connect(); } catch {}
+      }
+    });
   }
 
   disconnect() {
