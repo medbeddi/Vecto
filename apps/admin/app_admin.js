@@ -1020,9 +1020,12 @@ function openLaunchPanel() {
   document.getElementById('cc-launch-panel').style.display = 'flex';
   document.querySelector('.cc-inbox-layout').classList.add('launch-open');
   populateLaunchAudios();
+  // Attendre la fin de la transition CSS (250ms) avant de créer la carte
   setTimeout(function () {
     initMiniMap();
-    setTimeout(function () { if (_miniMap) _miniMap.invalidateSize(); }, 200);
+    // Deuxième invalidation pour s'assurer que le tile layer est correctement chargé
+    setTimeout(function () { if (_miniMap) _miniMap.invalidateSize(true); }, 100);
+    setTimeout(function () { if (_miniMap) _miniMap.invalidateSize(true); }, 500);
   }, 300);
 }
 
@@ -1040,11 +1043,22 @@ var _miniMapDebounce = null;
 function initMiniMap() {
   var el = document.getElementById('cc-mini-map');
   if (!el || typeof L === 'undefined') return;
-  if (_miniMapReady) return;
 
-  _miniMap = L.map('cc-mini-map', { zoomControl: true, attributionControl: false })
+  // Détruire l'instance précédente pour éviter les problèmes de rendu
+  if (_miniMap) {
+    try { _miniMap.remove(); } catch {}
+    _miniMap = null; _miniMarkerA = null; _miniMarkerB = null; _miniPolyline = null;
+  }
+  _miniMapReady = false;
+
+  // S'assurer que le conteneur a une taille définie
+  el.style.minHeight = '150px';
+  el.style.position  = 'relative';
+  el.style.zIndex    = '0';
+
+  _miniMap = L.map(el, { zoomControl: true, attributionControl: false })
     .setView([18.0735, -15.9582], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(_miniMap);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(_miniMap);
   _miniMapReady = true;
 }
 
@@ -1195,13 +1209,10 @@ async function launchCourse() {
     statusEl.textContent = 'Course envoyée aux livreurs !';
     statusEl.className = 'cc-launch-status success';
 
-    // Retirer la conversation de l'inbox après lancement
+    // Fermer le panneau après lancement — garder la conversation visible
     setTimeout(function () {
       closeLaunchPanel();
-      _inboxSelectedId = null;
       _forwardedAudioUrl = null;
-      document.getElementById('cc-chat-empty').style.display = 'flex';
-      document.getElementById('cc-chat-view').style.display = 'none';
       loadInbox();
     }, 1500);
   } catch {

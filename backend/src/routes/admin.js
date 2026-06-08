@@ -443,6 +443,7 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
 
     const updated = await launchDelivery(req.params.id, {
       pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price,
+      forwardedAudioUrl,
     });
 
     // Dernier message pour l'affichage côté livreur
