@@ -1020,13 +1020,9 @@ function openLaunchPanel() {
   document.getElementById('cc-launch-panel').style.display = 'flex';
   document.querySelector('.cc-inbox-layout').classList.add('launch-open');
   populateLaunchAudios();
-  // Attendre la fin de la transition CSS (250ms) avant de créer la carte
-  setTimeout(function () {
-    initMiniMap();
-    // Deuxième invalidation pour s'assurer que le tile layer est correctement chargé
-    setTimeout(function () { if (_miniMap) _miniMap.invalidateSize(true); }, 100);
-    setTimeout(function () { if (_miniMap) _miniMap.invalidateSize(true); }, 500);
-  }, 300);
+  // Réinitialiser l'iframe carte sur Nouakchott à chaque ouverture
+  var mapFrame = document.getElementById('cc-mini-map');
+  if (mapFrame) mapFrame.src = 'https://www.openstreetmap.org/export/embed.html?bbox=-16.1,17.8,-15.5,18.3&layer=mapnik';
 }
 
 function closeLaunchPanel() {
@@ -1035,40 +1031,17 @@ function closeLaunchPanel() {
   if (_launchIsRecording) stopLaunchRecording();
 }
 
-/* ── Mini-carte Leaflet dans le panneau de lancement ─────────────────── */
-var _miniMap = null, _miniMarkerA = null, _miniMarkerB = null, _miniPolyline = null;
-var _miniMapReady = false;
-var _miniMapDebounce = null;
-
-function initMiniMap() {
-  var el = document.getElementById('cc-mini-map');
-  if (!el || typeof L === 'undefined') return;
-
-  // Détruire l'instance précédente pour éviter les problèmes de rendu
-  if (_miniMap) {
-    try { _miniMap.remove(); } catch {}
-    _miniMap = null; _miniMarkerA = null; _miniMarkerB = null; _miniPolyline = null;
-  }
-  _miniMapReady = false;
-
-  // S'assurer que le conteneur a une taille définie
-  el.style.minHeight = '150px';
-  el.style.position  = 'relative';
-  el.style.zIndex    = '0';
-
-  _miniMap = L.map(el, { zoomControl: true, attributionControl: false })
-    .setView([18.0735, -15.9582], 12);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(_miniMap);
-  _miniMapReady = true;
-}
+/* ── Mini-carte OSM iframe dans le panneau de lancement ──────────────── */
+var _mmDebounce = null;
 
 function debounceMiniMap() {
-  clearTimeout(_miniMapDebounce);
-  _miniMapDebounce = setTimeout(updateMiniMap, 900);
+  clearTimeout(_mmDebounce);
+  _mmDebounce = setTimeout(updateMiniMap, 900);
 }
 
 async function updateMiniMap() {
-  if (!_miniMapReady) { initMiniMap(); if (!_miniMapReady) return; }
+  var iframe  = document.getElementById('cc-mini-map');
+  if (!iframe) return;
   var pickup  = (document.getElementById('cc-pickup')?.value  || '').trim();
   var dropoff = (document.getElementById('cc-dropoff')?.value || '').trim();
   if (!pickup && !dropoff) return;
@@ -1082,30 +1055,23 @@ async function updateMiniMap() {
     return null;
   }
 
-  var dotA = pickup  ? await geocode(pickup)  : null;
-  var dotB = dropoff ? await geocode(dropoff) : null;
+  var ptA = pickup  ? await geocode(pickup)  : null;
+  var ptB = dropoff ? await geocode(dropoff) : null;
+  if (!ptA && !ptB) return;
 
-  var greenIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#34C759;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [14,14], iconAnchor: [7,7] });
-  var redIcon   = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#FF3B30;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [14,14], iconAnchor: [7,7] });
-
-  if (dotA) {
-    if (_miniMarkerA) { _miniMarkerA.setLatLng(dotA); }
-    else { _miniMarkerA = L.marker(dotA, { icon: greenIcon }).addTo(_miniMap); }
+  var src;
+  var pad = 0.04;
+  if (ptA && ptB) {
+    var minLat = Math.min(ptA[0], ptB[0]) - pad;
+    var maxLat = Math.max(ptA[0], ptB[0]) + pad;
+    var minLng = Math.min(ptA[1], ptB[1]) - pad;
+    var maxLng = Math.max(ptA[1], ptB[1]) + pad;
+    src = 'https://www.openstreetmap.org/export/embed.html?bbox=' + minLng + ',' + minLat + ',' + maxLng + ',' + maxLat + '&layer=mapnik';
+  } else {
+    var pt = ptA || ptB;
+    src = 'https://www.openstreetmap.org/export/embed.html?bbox=' + (pt[1]-pad) + ',' + (pt[0]-pad) + ',' + (pt[1]+pad) + ',' + (pt[0]+pad) + '&layer=mapnik&marker=' + pt[0] + ',' + pt[1];
   }
-  if (dotB) {
-    if (_miniMarkerB) { _miniMarkerB.setLatLng(dotB); }
-    else { _miniMarkerB = L.marker(dotB, { icon: redIcon }).addTo(_miniMap); }
-  }
-
-  if (dotA && dotB) {
-    if (_miniPolyline) { _miniPolyline.setLatLngs([dotA, dotB]); }
-    else { _miniPolyline = L.polyline([dotA, dotB], { color: '#1A1A1A', weight: 3, opacity: 0.7, dashArray: '6 4' }).addTo(_miniMap); }
-    _miniMap.fitBounds([dotA, dotB], { padding: [24, 24] });
-  } else if (dotA) {
-    _miniMap.setView(dotA, 14);
-  } else if (dotB) {
-    _miniMap.setView(dotB, 14);
-  }
+  iframe.src = src;
 }
 
 /* ── Enregistrement vocal admin ───────────────────────────────────────── */
