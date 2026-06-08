@@ -26,14 +26,15 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "cdn.socket.io", "maps.googleapis.com", "maps.gstatic.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "cdn.socket.io", "unpkg.com", "maps.googleapis.com", "maps.gstatic.com"],
       scriptSrcAttr: ["'unsafe-inline'"],
       connectSrc: ["'self'", "wss:", "ws:", "https:"],
-      styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com", "unpkg.com"],
       fontSrc: ["'self'", "fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "https:", "*.googleapis.com", "*.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:", "*.openstreetmap.org", "*.googleapis.com", "*.gstatic.com"],
       mediaSrc: ["'self'", "https:", "blob:"],
       workerSrc: ["blob:"],
+      frameSrc: ["https://www.openstreetmap.org"],
     },
   },
 }));

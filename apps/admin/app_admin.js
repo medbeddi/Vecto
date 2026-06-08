@@ -1020,9 +1020,8 @@ function openLaunchPanel() {
   document.getElementById('cc-launch-panel').style.display = 'flex';
   document.querySelector('.cc-inbox-layout').classList.add('launch-open');
   populateLaunchAudios();
-  // Réinitialiser l'iframe carte sur Nouakchott à chaque ouverture
-  var mapFrame = document.getElementById('cc-mini-map');
-  if (mapFrame) mapFrame.src = 'https://www.openstreetmap.org/export/embed.html?bbox=-16.1,17.8,-15.5,18.3&layer=mapnik';
+  // Initialiser/rafraîchir la mini-carte après la fin de la transition CSS (250ms)
+  setTimeout(initMiniMap, 300);
 }
 
 function closeLaunchPanel() {
@@ -1031,8 +1030,28 @@ function closeLaunchPanel() {
   if (_launchIsRecording) stopLaunchRecording();
 }
 
-/* ── Mini-carte OSM iframe dans le panneau de lancement ──────────────── */
-var _mmDebounce = null;
+/* ── Mini-carte Leaflet dans le panneau de lancement ─────────────────── */
+var _miniMap          = null;
+var _mmPickupMarker   = null;
+var _mmDropoffMarker  = null;
+var _mmDebounce       = null;
+
+function initMiniMap() {
+  var el = document.getElementById('cc-mini-map');
+  if (!el) return;
+  if (_miniMap) {
+    _miniMap.invalidateSize(true);
+    _miniMap.setView([18.0735, -15.9582], 12);
+    return;
+  }
+  if (typeof L === 'undefined') return;
+  _miniMap = L.map('cc-mini-map', { zoomControl: false, attributionControl: false })
+              .setView([18.0735, -15.9582], 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+  }).addTo(_miniMap);
+  setTimeout(function () { _miniMap.invalidateSize(true); }, 100);
+}
 
 function debounceMiniMap() {
   clearTimeout(_mmDebounce);
@@ -1040,8 +1059,7 @@ function debounceMiniMap() {
 }
 
 async function updateMiniMap() {
-  var iframe  = document.getElementById('cc-mini-map');
-  if (!iframe) return;
+  if (!_miniMap) return;
   var pickup  = (document.getElementById('cc-pickup')?.value  || '').trim();
   var dropoff = (document.getElementById('cc-dropoff')?.value || '').trim();
   if (!pickup && !dropoff) return;
@@ -1059,19 +1077,23 @@ async function updateMiniMap() {
   var ptB = dropoff ? await geocode(dropoff) : null;
   if (!ptA && !ptB) return;
 
-  var src;
-  var pad = 0.04;
+  if (_mmPickupMarker)  { _miniMap.removeLayer(_mmPickupMarker);  _mmPickupMarker  = null; }
+  if (_mmDropoffMarker) { _miniMap.removeLayer(_mmDropoffMarker); _mmDropoffMarker = null; }
+
+  var greenIcon = L.divIcon({ className: '', iconSize: [14, 14], iconAnchor: [7, 7],
+    html: '<div style="width:14px;height:14px;border-radius:50%;background:#34C759;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>' });
+  var redIcon   = L.divIcon({ className: '', iconSize: [14, 14], iconAnchor: [7, 7],
+    html: '<div style="width:14px;height:14px;border-radius:50%;background:#FF3B30;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>' });
+
+  if (ptA) _mmPickupMarker  = L.marker(ptA, { icon: greenIcon }).addTo(_miniMap);
+  if (ptB) _mmDropoffMarker = L.marker(ptB, { icon: redIcon   }).addTo(_miniMap);
+
   if (ptA && ptB) {
-    var minLat = Math.min(ptA[0], ptB[0]) - pad;
-    var maxLat = Math.max(ptA[0], ptB[0]) + pad;
-    var minLng = Math.min(ptA[1], ptB[1]) - pad;
-    var maxLng = Math.max(ptA[1], ptB[1]) + pad;
-    src = 'https://www.openstreetmap.org/export/embed.html?bbox=' + minLng + ',' + minLat + ',' + maxLng + ',' + maxLat + '&layer=mapnik';
+    _miniMap.fitBounds(L.latLngBounds([ptA, ptB]).pad(0.35));
   } else {
-    var pt = ptA || ptB;
-    src = 'https://www.openstreetmap.org/export/embed.html?bbox=' + (pt[1]-pad) + ',' + (pt[0]-pad) + ',' + (pt[1]+pad) + ',' + (pt[0]+pad) + '&layer=mapnik&marker=' + pt[0] + ',' + pt[1];
+    _miniMap.setView(ptA || ptB, 14);
   }
-  iframe.src = src;
+  _miniMap.invalidateSize(true);
 }
 
 /* ── Enregistrement vocal admin ───────────────────────────────────────── */
