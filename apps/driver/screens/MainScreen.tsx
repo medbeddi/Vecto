@@ -27,9 +27,9 @@ import {
   PRIMARY, BG, CARD, BORDER, TEXT, TEXT2, SURFACE, BRAND,
 } from '../lib/config';
 import { Icon } from '../components/Icon';
-import type { Delivery, RootStackParamList } from '../types';
+import type { Delivery, CCMessage, RootStackParamList } from '../types';
 
-type Tab = 'courses' | 'chats' | 'profil';
+type Tab = 'courses' | 'chats' | 'admin' | 'profil';
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
 type IncomingOrder = {
@@ -52,15 +52,33 @@ Notifications.setNotificationHandler({
 
 export default function MainScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('courses');
+  const [adminUnread, setAdminUnread] = useState(0);
+
+  useEffect(() => {
+    const onCCMsg = () => {
+      setActiveTab((t) => {
+        if (t !== 'admin') setAdminUnread((n) => n + 1);
+        return t;
+      });
+    };
+    socketService.on('cc_message', onCCMsg);
+    return () => socketService.off('cc_message', onCCMsg);
+  }, []);
+
+  const handleTabSelect = (t: Tab) => {
+    setActiveTab(t);
+    if (t === 'admin') setAdminUnread(0);
+  };
 
   return (
     <View style={styles.root}>
       <View style={styles.content}>
         {activeTab === 'courses' && <CoursesTab />}
         {activeTab === 'chats' && <ChatsTab />}
+        {activeTab === 'admin' && <AdminChatTab />}
         {activeTab === 'profil' && <ProfilTab />}
       </View>
-      <BottomTabBar active={activeTab} onSelect={setActiveTab} />
+      <BottomTabBar active={activeTab} onSelect={handleTabSelect} adminUnread={adminUnread} />
     </View>
   );
 }
@@ -402,6 +420,140 @@ function ChatsTab() {
     </View>
   );
 }
+
+// ─── Onglet Admin — chat direct avec le call center ──────────────────────────
+
+function AdminChatTab() {
+  const [messages, setMessages] = useState<CCMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const flatRef = useRef<FlatList<CCMessage>>(null);
+
+  useEffect(() => {
+    api<{ messages: CCMessage[] }>('/api/drivers/cc-chat')
+      .then((d) => setMessages(d.messages ?? []))
+      .catch(() => {});
+
+    const onMsg = (msg: CCMessage) => setMessages((prev) => [...prev, msg]);
+    socketService.on('cc_message', onMsg);
+    return () => socketService.off('cc_message', onMsg);
+  }, []);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text) return;
+    setSending(true);
+    setInput('');
+    try {
+      const { message } = await api<{ message: CCMessage }>('/api/drivers/cc-chat', {
+        method: 'POST', body: { content: text },
+      });
+      setMessages((prev) => [...prev, message]);
+    } catch {} finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: BG }}>
+      <View style={styles.header}>
+        <Text style={styles.headerBrand}>Centre d'appels</Text>
+      </View>
+
+      {messages.length === 0 ? (
+        <View style={styles.empty}>
+          <Icon name="chat" size={52} color={TEXT2} strokeWidth={1.5} />
+          <Text style={styles.emptyText}>Aucun message</Text>
+          <Text style={styles.emptyHint}>Le call center peut vous contacter ici</Text>
+        </View>
+      ) : (
+        <FlatList
+          ref={flatRef}
+          data={messages}
+          keyExtractor={(m) => m.id}
+          contentContainerStyle={adminChat.list}
+          onContentSizeChange={() => flatRef.current?.scrollToEnd({ animated: false })}
+          renderItem={({ item }) => {
+            const isAdmin = item.senderRole === 'admin';
+            return (
+              <View style={[adminChat.row, isAdmin ? adminChat.rowIn : adminChat.rowOut]}>
+                {isAdmin && (
+                  <View style={adminChat.avatar}>
+                    <Text style={adminChat.avatarText}>CC</Text>
+                  </View>
+                )}
+                <View style={[adminChat.bubble, isAdmin ? adminChat.bubbleIn : adminChat.bubbleOut]}>
+                  <Text style={isAdmin ? adminChat.textIn : adminChat.textOut}>{item.content}</Text>
+                  <Text style={adminChat.time}>
+                    {new Date(item.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </View>
+              </View>
+            );
+          }}
+        />
+      )}
+
+      <View style={adminChat.inputRow}>
+        <TextInput
+          style={adminChat.input}
+          value={input}
+          onChangeText={setInput}
+          placeholder="Répondre au centre d'appels…"
+          placeholderTextColor={TEXT2}
+          returnKeyType="send"
+          onSubmitEditing={send}
+        />
+        <TouchableOpacity
+          style={[adminChat.sendBtn, (!input.trim() || sending) && { opacity: 0.4 }]}
+          onPress={send}
+          disabled={!input.trim() || sending}
+          activeOpacity={0.75}
+        >
+          {sending
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <Icon name="send" size={18} color="#fff" strokeWidth={2} />
+          }
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const adminChat = StyleSheet.create({
+  list: { padding: 14, gap: 10 },
+  row: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  rowIn: { justifyContent: 'flex-start' },
+  rowOut: { justifyContent: 'flex-end' },
+  avatar: {
+    width: 30, height: 30, borderRadius: 15,
+    backgroundColor: PRIMARY, justifyContent: 'center', alignItems: 'center',
+    flexShrink: 0,
+  },
+  avatarText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  bubble: {
+    maxWidth: '75%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, gap: 4,
+  },
+  bubbleIn: { backgroundColor: CARD, borderBottomLeftRadius: 4 },
+  bubbleOut: { backgroundColor: PRIMARY, borderBottomRightRadius: 4 },
+  textIn: { color: TEXT, fontSize: 15, lineHeight: 20 },
+  textOut: { color: '#fff', fontSize: 15, lineHeight: 20 },
+  time: { fontSize: 11, color: 'rgba(128,128,128,0.8)', alignSelf: 'flex-end' },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderTopWidth: 0.5, borderTopColor: BORDER, backgroundColor: CARD,
+  },
+  input: {
+    flex: 1, backgroundColor: BG, borderRadius: 22,
+    paddingHorizontal: 16, paddingVertical: 11,
+    fontSize: 15, color: TEXT, borderWidth: 0.5, borderColor: BORDER,
+  },
+  sendBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: PRIMARY, justifyContent: 'center', alignItems: 'center',
+  },
+});
 
 // ─── Onglet Profil — avec sous-pages ─────────────────────────────────────────
 
@@ -768,10 +920,13 @@ function HistoryView({ onBack }: { onBack: () => void }) {
 
 // ─── Bottom Tab Bar ──────────────────────────────────────────────────────────
 
-function BottomTabBar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) => void }) {
-  const tabs: { key: Tab; icon: 'scooter' | 'chat' | 'person' }[] = [
+function BottomTabBar({
+  active, onSelect, adminUnread,
+}: { active: Tab; onSelect: (t: Tab) => void; adminUnread: number }) {
+  const tabs: { key: Tab; icon: 'scooter' | 'chat' | 'headset' | 'person' }[] = [
     { key: 'courses', icon: 'scooter' },
     { key: 'chats',   icon: 'chat' },
+    { key: 'admin',   icon: 'headset' },
     { key: 'profil',  icon: 'person' },
   ];
 
@@ -780,6 +935,7 @@ function BottomTabBar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) =>
       <View style={styles.tabBar}>
         {tabs.map((t) => {
           const isActive = active === t.key;
+          const showBadge = t.key === 'admin' && adminUnread > 0;
           return (
             <TouchableOpacity
               key={t.key}
@@ -787,12 +943,19 @@ function BottomTabBar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) =>
               onPress={() => onSelect(t.key)}
               activeOpacity={0.7}
             >
-              <Icon
-                name={t.icon}
-                size={22}
-                color={isActive ? '#fff' : 'rgba(255,255,255,0.45)'}
-                strokeWidth={isActive ? 2 : 1.5}
-              />
+              <View style={{ position: 'relative' }}>
+                <Icon
+                  name={t.icon}
+                  size={22}
+                  color={isActive ? '#fff' : 'rgba(255,255,255,0.45)'}
+                  strokeWidth={isActive ? 2 : 1.5}
+                />
+                {showBadge && (
+                  <View style={tabBadgeStyle.dot}>
+                    <Text style={tabBadgeStyle.text}>{adminUnread > 9 ? '9+' : adminUnread}</Text>
+                  </View>
+                )}
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -800,6 +963,16 @@ function BottomTabBar({ active, onSelect }: { active: Tab; onSelect: (t: Tab) =>
     </View>
   );
 }
+
+const tabBadgeStyle = StyleSheet.create({
+  dot: {
+    position: 'absolute', top: -5, right: -7,
+    minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: '#FF3B30', justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  text: { color: '#fff', fontSize: 9, fontWeight: '800' },
+});
 
 // ─── FCM ────────────────────────────────────────────────────────────────────
 

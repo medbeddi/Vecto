@@ -4,7 +4,7 @@ import Svg, {
 
 type IconName =
   | 'chevron-left' | 'chevron-right' | 'chevron-down'
-  | 'scooter' | 'chat' | 'person' | 'phone'
+  | 'scooter' | 'chat' | 'person' | 'phone' | 'headset'
   | 'image' | 'location' | 'mic' | 'send'
   | 'play' | 'pause'
   | 'check' | 'check-circle'
@@ -62,6 +62,13 @@ export function Icon({ name, size = 24, color = '#1A1A1A', strokeWidth = 1.75 }:
     ),
 
     // ─── Chat header ──────────────────────────────────────────────────────────
+    'headset': (
+      <G {...s}>
+        <Path d="M3 18v-6a9 9 0 0118 0v6" />
+        <Path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3z" />
+        <Path d="M3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z" />
+      </G>
+    ),
     'phone': (
       <G {...s}>
         <Path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.11 1.18 2 2 0 012.11 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.09a16 16 0 006 6l.45-.45a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z" transform="scale(0.92) translate(1.3,1.3)" />

@@ -152,6 +152,17 @@ function initSocket() {
     renderTrackingList();
   });
 
+  // Réponse livreur → CC
+  _socket.on('driver_reply_to_cc', function (data) {
+    if (_ccActiveTab === 'drivers' && _selectedDriverId === data.driverId) {
+      appendDriverChatMessage(data.message);
+    } else {
+      _driverChatUnread++;
+      var badge = document.getElementById('cc-driver-unread-badge');
+      if (badge) { badge.textContent = _driverChatUnread; badge.style.display = 'inline-flex'; }
+    }
+  });
+
   // Nouveau message texte WA → call center
   _socket.on('incoming_text', function (data) {
     // Mettre à jour l'inbox si la page est active
@@ -176,6 +187,10 @@ function initSocket() {
 /* ================================================================
    NAVIGATION
 ================================================================ */
+var _ccActiveTab = 'clients';
+var _selectedDriverId = null;
+var _selectedDriverName = null;
+var _driverChatUnread = 0;
 var _ccMapInitialized = false;
 
 function showPage(pageId) {
@@ -197,10 +212,7 @@ function showPage(pageId) {
   document.getElementById('page-title').textContent = titles[pageId] || '';
 
   if (pageId === 'p-callcenter') {
-    loadInbox();
-    if (!_ccMapInitialized && window.GOOGLE_MAPS_KEY) {
-      setTimeout(function () { initCCMap(); _ccMapInitialized = true; }, 150);
-    }
+    showCCTab(_ccActiveTab);
   }
   if (pageId === 'p-tracking') {
     setTimeout(function () {
@@ -208,6 +220,120 @@ function showPage(pageId) {
       loadTrackingDrivers();
     }, 100);
   }
+}
+
+/* ================================================================
+   CALL CENTER — onglets Clients / Livreurs
+================================================================ */
+
+function showCCTab(tab) {
+  _ccActiveTab = tab;
+  var clientsPanel = document.getElementById('cc-clients-panel');
+  var driversPanel = document.getElementById('cc-drivers-panel');
+  var tabClients   = document.getElementById('cc-tab-clients');
+  var tabDrivers   = document.getElementById('cc-tab-drivers');
+  if (!clientsPanel) return;
+
+  clientsPanel.style.display = tab === 'clients' ? '' : 'none';
+  driversPanel.style.display = tab === 'drivers' ? '' : 'none';
+  tabClients.classList.toggle('active', tab === 'clients');
+  tabDrivers.classList.toggle('active', tab === 'drivers');
+
+  if (tab === 'clients') {
+    loadInbox();
+  } else {
+    loadDriversChatList();
+    _driverChatUnread = 0;
+    var badge = document.getElementById('cc-driver-unread-badge');
+    if (badge) badge.style.display = 'none';
+  }
+}
+
+function loadDriversChatList() {
+  fetch(API + '/api/admin/drivers', { headers: { 'Authorization': 'Bearer ' + _token } })
+    .then(function (r) { return r.json(); })
+    .then(function (data) { renderDriversChatList(data.drivers || []); })
+    .catch(function () {});
+}
+
+function renderDriversChatList(drivers) {
+  var list = document.getElementById('cc-drivers-list');
+  if (!list) return;
+  if (!drivers.length) {
+    list.innerHTML = '<div class="cc-inbox-empty">Aucun livreur enregistré</div>';
+    return;
+  }
+  list.innerHTML = drivers.map(function (d) {
+    var dot = d.status === 'available' ? '🟢' : d.status === 'busy' ? '🔴' : '⚫';
+    var statusLabel = d.status === 'available' ? 'Disponible' : d.status === 'busy' ? 'En course' : 'Hors ligne';
+    var isActive = d.id === _selectedDriverId;
+    return '<div class="cc-inbox-item' + (isActive ? ' active' : '') + '" onclick="selectDriverChat(\'' + d.id + '\',\'' + (d.name || '').replace(/'/g, "\\'") + '\')">'
+      + '<div class="cc-inbox-alias">' + escHtml(d.name) + '</div>'
+      + '<div class="cc-inbox-preview">' + dot + ' ' + statusLabel + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function selectDriverChat(driverId, driverName) {
+  _selectedDriverId  = driverId;
+  _selectedDriverName = driverName;
+  document.getElementById('cc-driver-chat-empty').style.display = 'none';
+  document.getElementById('cc-driver-chat-view').style.display  = 'flex';
+  document.getElementById('cc-driver-chat-name').textContent    = driverName;
+  loadDriversChatList();
+  loadDriverChatMessages(driverId);
+}
+
+function loadDriverChatMessages(driverId) {
+  fetch(API + '/api/admin/driver-chat/' + driverId, { headers: { 'Authorization': 'Bearer ' + _token } })
+    .then(function (r) { return r.json(); })
+    .then(function (data) { renderDriverChatMessages(data.messages || []); })
+    .catch(function () {});
+}
+
+function renderDriverChatMessages(messages) {
+  var container = document.getElementById('cc-driver-messages');
+  if (!container) return;
+  container.innerHTML = messages.map(function (m) {
+    var isOut = m.senderRole === 'admin';
+    return '<div class="cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in') + '">'
+      + '<div class="cc-msg-bubble ' + (isOut ? 'cc-msg-bubble-out' : 'cc-msg-bubble-in') + '">'
+      + '<div class="cc-msg-text">' + escHtml(m.content) + '</div>'
+      + '<div class="cc-msg-time">' + fmtTime(m.createdAt) + '</div>'
+      + '</div></div>';
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendDriverChatMessage(msg) {
+  var container = document.getElementById('cc-driver-messages');
+  if (!container) return;
+  var isOut = msg.senderRole === 'admin';
+  var div = document.createElement('div');
+  div.className = 'cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in');
+  div.innerHTML = '<div class="cc-msg-bubble ' + (isOut ? 'cc-msg-bubble-out' : 'cc-msg-bubble-in') + '">'
+    + '<div class="cc-msg-text">' + escHtml(msg.content) + '</div>'
+    + '<div class="cc-msg-time">' + fmtTime(msg.createdAt) + '</div>'
+    + '</div>';
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function sendDriverChatMsg() {
+  var input   = document.getElementById('cc-driver-reply-input');
+  var content = input ? input.value.trim() : '';
+  if (!content || !_selectedDriverId) return;
+  input.value = '';
+  try {
+    var res = await fetch(API + '/api/admin/driver-chat/' + _selectedDriverId, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ content: content }),
+    });
+    if (!res.ok) return;
+    var data = await res.json();
+    appendDriverChatMessage(data.message);
+  } catch {}
 }
 
 /* ================================================================
@@ -896,8 +1022,8 @@ function openLaunchPanel() {
   populateLaunchAudios();
   setTimeout(function () {
     initMiniMap();
-    setTimeout(function () { if (_miniMap) _miniMap.invalidateSize(); }, 150);
-  }, 200);
+    setTimeout(function () { if (_miniMap) _miniMap.invalidateSize(); }, 200);
+  }, 300);
 }
 
 function closeLaunchPanel() {

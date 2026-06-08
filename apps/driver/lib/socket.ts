@@ -44,6 +44,7 @@ type EventMap = {
   client_message: (data: Message) => void;
   delivery_cancelled: (data: { deliveryId: string }) => void;
   relay_error: (data: { deliveryId: string; code: string }) => void;
+  cc_message: (data: { id: string; senderRole: string; content: string; createdAt: string }) => void;
 };
 
 class SocketService {

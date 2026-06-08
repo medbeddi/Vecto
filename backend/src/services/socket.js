@@ -66,6 +66,7 @@ export function initSocket(httpServer) {
     const driverId   = socket.data.driver?.id;
     const driverName = socket.data.driver?.name;
     socket.join(DRIVERS_ROOM);
+    socket.join(`driver:${driverId}`);
 
     socket.on('join_room', ({ deliveryId }) => {
       if (!deliveryId) return;
@@ -190,4 +191,16 @@ export function emitIncomingText(delivery, message, clientAlias) {
 
 export function emitNewDelivery(delivery) {
   emitNewOrder(delivery, { type: 'text', content: delivery.description, meta: null });
+}
+
+// ── CC → Livreur (message direct) ────────────────────────────────────────────
+export function emitCCMessageToDriver(driverId, message) {
+  if (!io) return;
+  io.to(`driver:${driverId}`).emit('cc_message', message);
+}
+
+// ── Livreur → CC (réponse) ────────────────────────────────────────────────────
+export function emitDriverReplyToCC(driverId, driverName, message) {
+  if (!io) return;
+  io.to(ADMINS_ROOM).emit('driver_reply_to_cc', { driverId, driverName, message });
 }

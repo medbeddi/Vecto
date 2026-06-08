@@ -314,7 +314,18 @@
          PAGE CALL CENTER
     ════════════════════════════════════════════════════════ -->
     <div class="page" id="p-callcenter">
-      <div class="cc-inbox-layout">
+
+      <!-- Onglets Clients / Livreurs -->
+      <div class="cc-tabs">
+        <button class="cc-tab active" id="cc-tab-clients" onclick="showCCTab('clients')">Clients</button>
+        <button class="cc-tab" id="cc-tab-drivers" onclick="showCCTab('drivers')">
+          Livreurs
+          <span id="cc-driver-unread-badge" class="cc-inbox-badge" style="display:none;float:none;margin-left:6px">0</span>
+        </button>
+      </div>
+
+      <!-- Panel Clients -->
+      <div class="cc-inbox-layout" id="cc-clients-panel">
 
         <!-- ── Colonne gauche : liste conversations ── -->
         <div class="cc-inbox-sidebar">
@@ -435,8 +446,49 @@
           <div class="cc-launch-status" id="cc-launch-status"></div>
         </div>
 
-      </div>
-    </div>
+      </div><!-- /cc-clients-panel -->
+
+      <!-- Panel Livreurs -->
+      <div class="cc-inbox-layout" id="cc-drivers-panel" style="display:none">
+
+        <!-- Colonne gauche : liste livreurs -->
+        <div class="cc-inbox-sidebar">
+          <div class="cc-inbox-header">
+            <div class="section-title" style="margin-bottom:0">Livreurs actifs</div>
+            <button class="btn btn-ghost btn-sm" onclick="loadDriversChatList()">
+              <svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M17.65 6.35A7.96 7.96 0 0012 4C7.58 4 4 7.58 4 12s3.58 8 8 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+            </button>
+          </div>
+          <div class="cc-inbox-list" id="cc-drivers-list">
+            <div class="cc-inbox-empty">Chargement…</div>
+          </div>
+        </div>
+
+        <!-- Colonne droite : chat avec le livreur sélectionné -->
+        <div class="cc-chat-panel" id="cc-driver-chat-panel">
+          <div class="cc-chat-empty" id="cc-driver-chat-empty">
+            <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+            <div>Sélectionnez un livreur</div>
+          </div>
+          <div class="cc-chat-view" id="cc-driver-chat-view" style="display:none">
+            <div class="cc-chat-topbar">
+              <div class="cc-chat-client-name" id="cc-driver-chat-name">—</div>
+            </div>
+            <div class="cc-messages" id="cc-driver-messages"></div>
+            <div class="cc-reply-bar">
+              <input class="cc-reply-input" id="cc-driver-reply-input"
+                     placeholder="Envoyer un message au livreur…"
+                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendDriverChatMsg();}" />
+              <button class="btn btn-dark btn-sm" onclick="sendDriverChatMsg()">
+                <svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /cc-drivers-panel -->
+
+    </div><!-- /p-callcenter -->
 
     <!-- ════════════════════════════════════════════════════════
          PAGE UTILISATEURS

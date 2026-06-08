@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
-import { emitNewOrder } from '../services/socket.js';
+import { emitNewOrder, emitCCMessageToDriver, emitDriverReplyToCC } from '../services/socket.js';
 import { createDelivery, launchDelivery } from '../services/delivery.js';
 import { hashWaId, encryptWaId, decryptWaId } from '../services/pii-filter.js';
 import { sendText, sendAudio } from '../services/messaging.js';
@@ -579,6 +579,41 @@ router.delete('/admin/users/:id', requireAdmin, async (req, res) => {
     const deleted = await db('admins').where({ id: req.params.id }).delete();
     if (!deleted) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Chat CC ↔ Livreur ─────────────────────────────────────────────────────────
+
+router.get('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) => {
+  try {
+    const messages = await db('cc_driver_messages')
+      .where({ driver_id: req.params.driverId })
+      .orderBy('created_at', 'asc')
+      .select('id', 'sender_role as senderRole', 'content', 'created_at as createdAt');
+    await db('cc_driver_messages')
+      .where({ driver_id: req.params.driverId, read_by_admin: false })
+      .update({ read_by_admin: true });
+    res.json({ messages });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+router.post('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content?.trim()) return res.status(400).json({ error: 'EMPTY_MESSAGE' });
+    const driver = await db('drivers').where({ id: req.params.driverId }).first('id', 'name');
+    if (!driver) return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
+    const [msg] = await db('cc_driver_messages')
+      .insert({ driver_id: req.params.driverId, sender_role: 'admin', content: content.trim() })
+      .returning('id', 'sender_role', 'content', 'created_at');
+    emitCCMessageToDriver(req.params.driverId, {
+      id: msg.id, senderRole: msg.sender_role, content: msg.content, createdAt: msg.created_at,
+    });
+    res.json({ message: { id: msg.id, senderRole: msg.sender_role, content: msg.content, createdAt: msg.created_at } });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }

@@ -36,6 +36,13 @@ export type Message = {
   createdAt: string;
 };
 
+export type CCMessage = {
+  id: string;
+  senderRole: 'admin' | 'driver';
+  content: string;
+  createdAt: string;
+};
+
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
