@@ -1043,126 +1043,176 @@ function closeLaunchPanel() {
   if (_launchIsRecording) stopLaunchRecording();
 }
 
-/* ── Mini-carte + Carte plein écran ──────────────────────────────────── */
-var _miniMap          = null;
+/* ── Maps (Google Maps en priorité, Leaflet en fallback) ─────────────── */
+var _useGoogleMaps    = false;
+var _googleMiniMap    = null;
+var _googleFullMap    = null;
+var _leafletMiniMap   = null;
+var _leafletFullMap   = null;
 var _mmPickupMarker   = null;
 var _mmDropoffMarker  = null;
-var _mmDebounce       = null;
-var _mmPickupCoords   = null;
-var _mmDropoffCoords  = null;
-var _fullscreenMap    = null;
 var _fsPickupMarker   = null;
 var _fsDropoffMarker  = null;
+var _mmPickupCoords   = null;   // [lat, lng]
+var _mmDropoffCoords  = null;   // [lat, lng]
+var _mmDebounce       = null;
 var _googlePlacesReady = false;
-
 var _MAP_TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
-function _makeGreenIcon() {
-  return L.divIcon({ className: '', iconSize: [14, 14], iconAnchor: [7, 7],
-    html: '<div style="width:14px;height:14px;border-radius:50%;background:#34C759;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>' });
-}
-function _makeRedIcon() {
-  return L.divIcon({ className: '', iconSize: [14, 14], iconAnchor: [7, 7],
-    html: '<div style="width:14px;height:14px;border-radius:50%;background:#FF3B30;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>' });
+function _gll(coords) { return coords ? { lat: coords[0], lng: coords[1] } : null; }
+
+function _gMarkerIcon(color) {
+  return { path: google.maps.SymbolPath.CIRCLE, scale: 9,
+           fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2.5 };
 }
 
-function _applyMarkersToMap(map, ptA, ptB, pickupRef, dropoffRef) {
-  if (!map) return { pickup: null, dropoff: null };
-  if (pickupRef)  map.removeLayer(pickupRef);
-  if (dropoffRef) map.removeLayer(dropoffRef);
-  var newPickup  = ptA ? L.marker(ptA, { icon: _makeGreenIcon() }).addTo(map) : null;
-  var newDropoff = ptB ? L.marker(ptB, { icon: _makeRedIcon()   }).addTo(map) : null;
-  if (ptA && ptB) map.fitBounds(L.latLngBounds([ptA, ptB]).pad(0.35));
-  else if (ptA || ptB) map.setView(ptA || ptB, 14);
-  map.invalidateSize(true);
-  return { pickup: newPickup, dropoff: newDropoff };
+function _fitGoogle(map, ptA, ptB) {
+  if (!map) return;
+  if (ptA && ptB) {
+    var b = new google.maps.LatLngBounds();
+    b.extend(_gll(ptA)); b.extend(_gll(ptB));
+    map.fitBounds(b, { top: 40, right: 40, bottom: 40, left: 40 });
+  } else if (ptA || ptB) { map.setCenter(_gll(ptA || ptB)); map.setZoom(14); }
 }
 
+/* ── Rafraîchir les marqueurs sur tous les cartes actives ────────── */
 function refreshMapMarkers() {
-  if (typeof L === 'undefined') return;
   var ptA = _mmPickupCoords;
   var ptB = _mmDropoffCoords;
 
-  var r1 = _applyMarkersToMap(_miniMap, ptA, ptB, _mmPickupMarker, _mmDropoffMarker);
-  _mmPickupMarker  = r1.pickup;
-  _mmDropoffMarker = r1.dropoff;
-
-  var r2 = _applyMarkersToMap(_fullscreenMap, ptA, ptB, _fsPickupMarker, _fsDropoffMarker);
-  _fsPickupMarker  = r2.pickup;
-  _fsDropoffMarker = r2.dropoff;
-
-  // Mettre à jour l'affichage des adresses dans le modal
-  var addrEl = document.getElementById('map-modal-addr-display');
-  if (addrEl) {
-    var pickup  = (document.getElementById('cc-pickup')?.value  || '').trim();
-    var dropoff = (document.getElementById('cc-dropoff')?.value || '').trim();
-    addrEl.innerHTML = (pickup  ? '<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#34C759;margin-right:3px"></span>' + pickup  + '</span>' : '') +
-                       (dropoff ? '<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#FF3B30;margin-right:3px"></span>' + dropoff + '</span>' : '');
+  if (_useGoogleMaps) {
+    // Mini-map Google
+    if (_mmPickupMarker)  _mmPickupMarker.setMap(null);
+    if (_mmDropoffMarker) _mmDropoffMarker.setMap(null);
+    _mmPickupMarker  = (ptA && _googleMiniMap) ? new google.maps.Marker({ position: _gll(ptA), map: _googleMiniMap, icon: _gMarkerIcon('#34C759') }) : null;
+    _mmDropoffMarker = (ptB && _googleMiniMap) ? new google.maps.Marker({ position: _gll(ptB), map: _googleMiniMap, icon: _gMarkerIcon('#FF3B30') }) : null;
+    _fitGoogle(_googleMiniMap, ptA, ptB);
+    // Fullscreen Google
+    if (_fsPickupMarker)  _fsPickupMarker.setMap(null);
+    if (_fsDropoffMarker) _fsDropoffMarker.setMap(null);
+    _fsPickupMarker  = (ptA && _googleFullMap) ? new google.maps.Marker({ position: _gll(ptA), map: _googleFullMap, icon: _gMarkerIcon('#34C759') }) : null;
+    _fsDropoffMarker = (ptB && _googleFullMap) ? new google.maps.Marker({ position: _gll(ptB), map: _googleFullMap, icon: _gMarkerIcon('#FF3B30') }) : null;
+    _fitGoogle(_googleFullMap, ptA, ptB);
+  } else if (typeof L !== 'undefined') {
+    var mkG = function() { return L.divIcon({ className:'', iconSize:[14,14], iconAnchor:[7,7], html:'<div style="width:14px;height:14px;border-radius:50%;background:#34C759;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>' }); };
+    var mkR = function() { return L.divIcon({ className:'', iconSize:[14,14], iconAnchor:[7,7], html:'<div style="width:14px;height:14px;border-radius:50%;background:#FF3B30;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>' }); };
+    var _applyL = function(map, pA, pB, mA, mB) {
+      if (!map) return { a: null, b: null };
+      if (mA) map.removeLayer(mA); if (mB) map.removeLayer(mB);
+      var nA = pA ? L.marker(pA, { icon: mkG() }).addTo(map) : null;
+      var nB = pB ? L.marker(pB, { icon: mkR() }).addTo(map) : null;
+      if (pA && pB) map.fitBounds(L.latLngBounds([pA, pB]).pad(0.35));
+      else if (pA || pB) map.setView(pA || pB, 14);
+      map.invalidateSize(true);
+      return { a: nA, b: nB };
+    };
+    var r1 = _applyL(_leafletMiniMap, ptA, ptB, _mmPickupMarker, _mmDropoffMarker);
+    _mmPickupMarker = r1.a; _mmDropoffMarker = r1.b;
+    var r2 = _applyL(_leafletFullMap, ptA, ptB, _fsPickupMarker, _fsDropoffMarker);
+    _fsPickupMarker = r2.a; _fsDropoffMarker = r2.b;
   }
 }
 
+/* ── Init mini-carte ─────────────────────────────────────────────── */
 function initMiniMap() {
   var el = document.getElementById('cc-mini-map');
-  if (!el || typeof L === 'undefined') return;
-  if (_miniMap) {
-    _miniMap.invalidateSize(true);
-    if (_mmPickupCoords || _mmDropoffCoords) refreshMapMarkers();
-    else _miniMap.setView([18.0735, -15.9582], 12);
-    return;
+  if (!el) return;
+  if (_useGoogleMaps && window.google) {
+    if (_googleMiniMap) {
+      google.maps.event.trigger(_googleMiniMap, 'resize');
+      if (_mmPickupCoords || _mmDropoffCoords) refreshMapMarkers();
+      else _googleMiniMap.setCenter({ lat: 18.0735, lng: -15.9582 });
+    } else {
+      _googleMiniMap = new google.maps.Map(el, {
+        center: { lat: 18.0735, lng: -15.9582 }, zoom: 12,
+        disableDefaultUI: true, gestureHandling: 'none',
+      });
+      if (_mmPickupCoords || _mmDropoffCoords) setTimeout(refreshMapMarkers, 300);
+    }
+  } else if (typeof L !== 'undefined') {
+    if (_leafletMiniMap) {
+      _leafletMiniMap.invalidateSize(true);
+      if (_mmPickupCoords || _mmDropoffCoords) refreshMapMarkers();
+      else _leafletMiniMap.setView([18.0735, -15.9582], 12);
+    } else {
+      _leafletMiniMap = L.map(el, { zoomControl: false, attributionControl: false }).setView([18.0735, -15.9582], 12);
+      L.tileLayer(_MAP_TILES, { maxZoom: 19 }).addTo(_leafletMiniMap);
+      setTimeout(function() { _leafletMiniMap.invalidateSize(true); }, 100);
+    }
   }
-  _miniMap = L.map('cc-mini-map', { zoomControl: false, attributionControl: false })
-              .setView([18.0735, -15.9582], 12);
-  L.tileLayer(_MAP_TILES, { maxZoom: 19 }).addTo(_miniMap);
-  setTimeout(function () { _miniMap.invalidateSize(true); }, 100);
 }
 
-/* ── Google Maps Places autocomplete (si clé configurée) ─────────── */
+/* ── Google Maps + Places ────────────────────────────────────────── */
 function onGoogleMapsReady() {
-  setTimeout(initGooglePlaces, 200);
+  _useGoogleMaps = true;
+  setTimeout(function() {
+    initGooglePlaces();
+    // Réinitialiser la mini-carte en Google Maps au prochain openLaunchPanel
+    _googleMiniMap = null;
+    _mmPickupMarker = null; _mmDropoffMarker = null;
+  }, 150);
+}
+
+function _attachPlaces(inputEl, onSelect) {
+  if (!inputEl || inputEl._acDone) return;
+  inputEl._acDone = true;
+  var ac = new google.maps.places.Autocomplete(inputEl,
+    { componentRestrictions: { country: 'mr' }, fields: ['geometry', 'formatted_address'] });
+  ac.addListener('place_changed', function() {
+    var p = ac.getPlace();
+    if (p && p.geometry) onSelect([p.geometry.location.lat(), p.geometry.location.lng()], p.formatted_address || inputEl.value);
+  });
 }
 
 function initGooglePlaces() {
   if (!window.google || !google.maps || !google.maps.places) return;
   _googlePlacesReady = true;
-  var opts = { componentRestrictions: { country: 'mr' }, fields: ['geometry', 'formatted_address'] };
-
-  var acPickup = new google.maps.places.Autocomplete(document.getElementById('cc-pickup'), opts);
-  acPickup.addListener('place_changed', function () {
-    var p = acPickup.getPlace();
-    if (p && p.geometry) {
-      _mmPickupCoords = [p.geometry.location.lat(), p.geometry.location.lng()];
-      refreshMapMarkers();
-    }
+  _attachPlaces(document.getElementById('cc-pickup'), function(coords, addr) {
+    _mmPickupCoords = coords;
+    var mpi = document.getElementById('modal-pickup-input'); if (mpi) mpi.value = addr || document.getElementById('cc-pickup').value;
+    refreshMapMarkers();
   });
-
-  var acDropoff = new google.maps.places.Autocomplete(document.getElementById('cc-dropoff'), opts);
-  acDropoff.addListener('place_changed', function () {
-    var p = acDropoff.getPlace();
-    if (p && p.geometry) {
-      _mmDropoffCoords = [p.geometry.location.lat(), p.geometry.location.lng()];
-      refreshMapMarkers();
-    }
+  _attachPlaces(document.getElementById('cc-dropoff'), function(coords, addr) {
+    _mmDropoffCoords = coords;
+    var mdi = document.getElementById('modal-dropoff-input'); if (mdi) mdi.value = addr || document.getElementById('cc-dropoff').value;
+    refreshMapMarkers();
   });
+}
+
+function _initModalPlaces() {
+  if (!window.google || !google.maps || !google.maps.places) return;
+  _attachPlaces(document.getElementById('modal-pickup-input'), function(coords, addr) {
+    _mmPickupCoords = coords;
+    document.getElementById('cc-pickup').value = addr || document.getElementById('modal-pickup-input').value;
+    refreshMapMarkers();
+  });
+  _attachPlaces(document.getElementById('modal-dropoff-input'), function(coords, addr) {
+    _mmDropoffCoords = coords;
+    document.getElementById('cc-dropoff').value = addr || document.getElementById('modal-dropoff-input').value;
+    refreshMapMarkers();
+  });
+  // Sync frappe vers champs principaux
+  var mpi = document.getElementById('modal-pickup-input');
+  var mdi = document.getElementById('modal-dropoff-input');
+  if (mpi && !mpi._syncDone) { mpi._syncDone = true; mpi.addEventListener('input', function() { document.getElementById('cc-pickup').value = this.value; if (!this.value.trim()) { _mmPickupCoords = null; refreshMapMarkers(); } }); }
+  if (mdi && !mdi._syncDone) { mdi._syncDone = true; mdi.addEventListener('input', function() { document.getElementById('cc-dropoff').value = this.value; if (!this.value.trim()) { _mmDropoffCoords = null; refreshMapMarkers(); } }); }
 }
 
 /* ── Geocodage Nominatim (fallback sans Google Maps) ─────────────── */
 function debounceMiniMap() {
-  // Effacer le marqueur si le champ est vidé
   var pickup  = (document.getElementById('cc-pickup')?.value  || '').trim();
   var dropoff = (document.getElementById('cc-dropoff')?.value || '').trim();
   if (!pickup  && _mmPickupCoords)  { _mmPickupCoords  = null; refreshMapMarkers(); }
   if (!dropoff && _mmDropoffCoords) { _mmDropoffCoords = null; refreshMapMarkers(); }
-  if (_googlePlacesReady) return; // Places gère le géocodage
+  if (_googlePlacesReady) return;
   clearTimeout(_mmDebounce);
   _mmDebounce = setTimeout(updateMiniMap, 700);
 }
 
 async function updateMiniMap() {
-  if (!_miniMap) return;
   var pickup  = (document.getElementById('cc-pickup')?.value  || '').trim();
   var dropoff = (document.getElementById('cc-dropoff')?.value || '').trim();
   if (!pickup && !dropoff) return;
-
   async function geocode(addr) {
     try {
       var r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(addr + ', Mauritanie'));
@@ -1171,7 +1221,6 @@ async function updateMiniMap() {
     } catch {}
     return null;
   }
-
   if (pickup)  _mmPickupCoords  = await geocode(pickup);  else _mmPickupCoords  = null;
   if (dropoff) _mmDropoffCoords = await geocode(dropoff); else _mmDropoffCoords = null;
   refreshMapMarkers();
@@ -1179,26 +1228,50 @@ async function updateMiniMap() {
 
 /* ── Modal carte plein écran ─────────────────────────────────────── */
 function openMapModal() {
+  var pickup  = (document.getElementById('cc-pickup')?.value  || '').trim();
+  var dropoff = (document.getElementById('cc-dropoff')?.value || '').trim();
+  var mpi = document.getElementById('modal-pickup-input');
+  var mdi = document.getElementById('modal-dropoff-input');
+  if (mpi) mpi.value = pickup;
+  if (mdi) mdi.value = dropoff;
+
   document.getElementById('modal-map-fullscreen').style.display = 'flex';
-  if (!_fullscreenMap) {
-    setTimeout(function () {
+
+  setTimeout(function() {
+    if (_useGoogleMaps && window.google) {
       var el = document.getElementById('cc-map-fullscreen');
-      if (!el || typeof L === 'undefined') return;
-      _fullscreenMap = L.map('cc-map-fullscreen', { zoomControl: true, attributionControl: true })
-                        .setView([18.0735, -15.9582], 12);
-      L.tileLayer(_MAP_TILES, {
-        maxZoom: 19,
-        attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors © <a href="https://carto.com">CARTO</a>',
-      }).addTo(_fullscreenMap);
-      _fullscreenMap.invalidateSize(true);
-      refreshMapMarkers();
-    }, 80);
-  } else {
-    setTimeout(function () {
-      _fullscreenMap.invalidateSize(true);
-      refreshMapMarkers();
-    }, 80);
-  }
+      if (!el) return;
+      if (_googleFullMap) {
+        google.maps.event.trigger(_googleFullMap, 'resize');
+        if (_mmPickupCoords || _mmDropoffCoords) refreshMapMarkers();
+        else _googleFullMap.setCenter({ lat: 18.0735, lng: -15.9582 });
+      } else {
+        _googleFullMap = new google.maps.Map(el, {
+          center: { lat: 18.0735, lng: -15.9582 }, zoom: 12,
+        });
+        _initModalPlaces();
+        if (_mmPickupCoords || _mmDropoffCoords) setTimeout(refreshMapMarkers, 300);
+      }
+      _initModalPlaces();
+    } else if (typeof L !== 'undefined') {
+      var el2 = document.getElementById('cc-map-fullscreen');
+      if (!el2) return;
+      if (_leafletFullMap) {
+        _leafletFullMap.invalidateSize(true);
+        if (_mmPickupCoords || _mmDropoffCoords) refreshMapMarkers();
+      } else {
+        _leafletFullMap = L.map(el2, { zoomControl: true, attributionControl: true }).setView([18.0735, -15.9582], 12);
+        L.tileLayer(_MAP_TILES, { maxZoom: 19, attribution: '© OpenStreetMap contributors © CARTO' }).addTo(_leafletFullMap);
+        _leafletFullMap.invalidateSize(true);
+        if (_mmPickupCoords || _mmDropoffCoords) setTimeout(refreshMapMarkers, 300);
+      }
+      // Sync champs modaux → principaux pour Nominatim
+      var mpi2 = document.getElementById('modal-pickup-input');
+      var mdi2 = document.getElementById('modal-dropoff-input');
+      if (mpi2 && !mpi2._syncDone) { mpi2._syncDone = true; mpi2.addEventListener('input', function() { document.getElementById('cc-pickup').value = this.value; debounceMiniMap(); }); }
+      if (mdi2 && !mdi2._syncDone) { mdi2._syncDone = true; mdi2.addEventListener('input', function() { document.getElementById('cc-dropoff').value = this.value; debounceMiniMap(); }); }
+    }
+  }, 80);
 }
 
 function cancelMapModal() {
@@ -1206,6 +1279,10 @@ function cancelMapModal() {
 }
 
 function confirmMapModal() {
+  var mpi = document.getElementById('modal-pickup-input');
+  var mdi = document.getElementById('modal-dropoff-input');
+  if (mpi && mpi.value.trim()) document.getElementById('cc-pickup').value  = mpi.value;
+  if (mdi && mdi.value.trim()) document.getElementById('cc-dropoff').value = mdi.value;
   document.getElementById('modal-map-fullscreen').style.display = 'none';
 }
 

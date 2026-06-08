@@ -658,11 +658,23 @@
 <div class="modal-overlay" id="modal-map-fullscreen" style="display:none">
   <div class="map-modal-card">
     <div class="map-modal-header">
-      <div>
-        <div class="map-modal-title">Carte — Trajet</div>
-        <div class="map-modal-addr" id="map-modal-addr-display" style="margin-top:4px"></div>
+      <div class="map-modal-title">Carte — Trajet</div>
+      <button class="btn btn-ghost btn-sm" onclick="cancelMapModal()">✕</button>
+    </div>
+    <!-- Barres de recherche dans le modal -->
+    <div class="map-modal-search">
+      <div class="cc-addr-row" style="padding:0">
+        <div class="addr-dot green"></div>
+        <div class="field-row" style="flex:1;margin-bottom:0">
+          <input type="text" id="modal-pickup-input" placeholder="Point de départ" />
+        </div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="cancelMapModal()" style="flex-shrink:0">✕</button>
+      <div class="cc-addr-row" style="padding:0;margin-top:8px">
+        <div class="addr-dot red"></div>
+        <div class="field-row" style="flex:1;margin-bottom:0">
+          <input type="text" id="modal-dropoff-input" placeholder="Point d'arrivée" />
+        </div>
+      </div>
     </div>
     <div id="cc-map-fullscreen"></div>
     <div class="map-modal-footer">
