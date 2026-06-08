@@ -5,6 +5,7 @@
 
 const API = window.location.origin;
 let _token = localStorage.getItem('vecto_admin_token');
+let _role  = localStorage.getItem('vecto_admin_role') || 'admin';
 let _socket = null;
 
 /* ================================================================
@@ -25,9 +26,12 @@ async function login() {
     if (!res.ok) { errEl.style.display = 'block'; return; }
     const data = await res.json();
     _token = data.token;
+    _role  = data.admin.role || 'admin';
     localStorage.setItem('vecto_admin_token', _token);
     localStorage.setItem('vecto_admin_name', data.admin.name);
-    document.getElementById('current-user-label').textContent = data.admin.name + ' · admin';
+    localStorage.setItem('vecto_admin_role', _role);
+    const roleLabel = _role === 'call_center' ? 'Call Center' : 'Admin';
+    document.getElementById('current-user-label').textContent = data.admin.name + ' · ' + roleLabel;
     showApp();
   } catch {
     errEl.style.display = 'block';
@@ -36,7 +40,10 @@ async function login() {
 
 function logout() {
   _token = null;
+  _role  = 'admin';
   localStorage.removeItem('vecto_admin_token');
+  localStorage.removeItem('vecto_admin_name');
+  localStorage.removeItem('vecto_admin_role');
   if (_socket) { _socket.disconnect(); _socket = null; }
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
@@ -45,16 +52,33 @@ function logout() {
 }
 
 function showApp() {
+  _role = localStorage.getItem('vecto_admin_role') || 'admin';
+
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+
+  // Masquer les éléments réservés aux admins si rôle call_center
+  document.querySelectorAll('[data-role="admin"]').forEach(function (el) {
+    el.style.display = _role === 'admin' ? '' : 'none';
+  });
+
   initSocket();
-  showPage('p-stats');
-  loadStats();
-  loadCommandes();
-  loadLivreurs();
-  loadClients();
-  loadTransactions();
-  loadInbox();
+
+  if (_role === 'call_center') {
+    showPage('p-callcenter');
+    loadInbox();
+    loadLivreurs();
+    loadClients();
+  } else {
+    showPage('p-stats');
+    loadStats();
+    loadCommandes();
+    loadLivreurs();
+    loadClients();
+    loadTransactions();
+    loadInbox();
+    loadUsers();
+  }
 }
 
 /* ================================================================
@@ -69,13 +93,20 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   if (_token) {
-    fetch(API + '/api/admin/orders/active', { headers: { Authorization: 'Bearer ' + _token } })
+    fetch(API + '/api/admin/me', { headers: { Authorization: 'Bearer ' + _token } })
       .then(function (r) {
-        if (r.ok) {
-          const name = localStorage.getItem('vecto_admin_name') || 'Admin';
-          document.getElementById('current-user-label').textContent = name + ' · admin';
-          showApp();
-        }
+        if (r.ok) return r.json();
+      })
+      .then(function (data) {
+        if (!data) return;
+        const name = data.name || localStorage.getItem('vecto_admin_name') || 'Admin';
+        const storedRole = data.role || localStorage.getItem('vecto_admin_role') || 'admin';
+        localStorage.setItem('vecto_admin_name', name);
+        localStorage.setItem('vecto_admin_role', storedRole);
+        _role = storedRole;
+        const roleLabel = storedRole === 'call_center' ? 'Call Center' : 'Admin';
+        document.getElementById('current-user-label').textContent = name + ' · ' + roleLabel;
+        showApp();
       })
       .catch(function () {});
   }
@@ -161,7 +192,7 @@ function showPage(pageId) {
   var titles = {
     'p-stats': 'Statistiques', 'p-commandes': 'Commandes', 'p-livreurs': 'Livreurs',
     'p-clients': 'Clients', 'p-wallet': 'Wallets', 'p-callcenter': 'Call Center',
-    'p-tracking': 'Tracking Livreurs',
+    'p-tracking': 'Tracking Livreurs', 'p-users': 'Utilisateurs',
   };
   document.getElementById('page-title').textContent = titles[pageId] || '';
 
@@ -1205,4 +1236,102 @@ async function loadTrackingDrivers() {
     });
     renderTrackingList();
   } catch {}
+}
+
+/* ================================================================
+   UTILISATEURS (admin / call center)
+================================================================ */
+var _users = [];
+
+async function loadUsers() {
+  try {
+    var res = await fetch(API + '/api/admin/users', { headers: authHeaders() });
+    if (!res.ok) return;
+    var data = await res.json();
+    _users = data.users || [];
+    renderUsers();
+  } catch {}
+}
+
+function renderUsers() {
+  var tbody = document.getElementById('users-tbody');
+  if (!tbody) return;
+  if (!_users.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:20px">Aucun utilisateur</td></tr>';
+    return;
+  }
+  var html = '';
+  _users.forEach(function (u, i) {
+    var roleTag = u.role === 'call_center'
+      ? '<span class="badge badge-blue">Call Center</span>'
+      : '<span class="badge badge-green">Admin</span>';
+    html += '<tr>'
+      + '<td style="color:var(--text-3)">' + (i + 1) + '</td>'
+      + '<td style="font-weight:600">' + escHtml(u.name) + '</td>'
+      + '<td style="color:var(--text-2)">' + escHtml(u.email) + '</td>'
+      + '<td>' + roleTag + '</td>'
+      + '<td style="color:var(--text-3)">' + escHtml(u.createdByName || '—') + '</td>'
+      + '<td style="color:var(--text-3)">' + fmtDate(u.createdAt) + '</td>'
+      + '<td><button class="btn btn-ghost btn-sm" style="color:#FF3B30" onclick="deleteUser(\'' + u.id + '\',\'' + escHtml(u.name) + '\')">Supprimer</button></td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+async function createUser() {
+  var name     = document.getElementById('new-user-name').value.trim();
+  var email    = document.getElementById('new-user-email').value.trim();
+  var password = document.getElementById('new-user-password').value;
+  var role     = document.getElementById('new-user-role').value;
+  var errEl    = document.getElementById('add-user-error');
+  errEl.style.display = 'none';
+
+  if (!name || !email || !password) {
+    errEl.textContent = 'Tous les champs sont requis.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  try {
+    var res = await fetch(API + '/api/admin/users', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ name, email, password, role }),
+    });
+    if (res.status === 409) {
+      errEl.textContent = 'Cet email est déjà utilisé.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!res.ok) {
+      errEl.textContent = 'Erreur lors de la création.';
+      errEl.style.display = 'block';
+      return;
+    }
+    var data = await res.json();
+    _users.push(data.user);
+    renderUsers();
+    closeModal('modal-add-user');
+    document.getElementById('new-user-name').value = '';
+    document.getElementById('new-user-email').value = '';
+    document.getElementById('new-user-password').value = '';
+    document.getElementById('new-user-role').value = 'call_center';
+  } catch {
+    errEl.textContent = 'Erreur réseau.';
+    errEl.style.display = 'block';
+  }
+}
+
+function deleteUser(id, name) {
+  document.getElementById('confirm-title').textContent   = 'Supprimer ' + name + ' ?';
+  document.getElementById('confirm-message').textContent = 'Ce compte sera définitivement supprimé.';
+  document.getElementById('confirm-btn').onclick = async function () {
+    try {
+      await fetch(API + '/api/admin/users/' + id, { method: 'DELETE', headers: authHeaders() });
+      _users = _users.filter(function (u) { return u.id !== id; });
+      renderUsers();
+      closeModal('modal-confirm');
+    } catch {}
+  };
+  showModal('modal-confirm');
 }

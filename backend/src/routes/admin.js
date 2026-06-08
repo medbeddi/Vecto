@@ -59,6 +59,11 @@ router.post('/admin/login', async (req, res) => {
   }
 });
 
+// ── Profil courant (vérification token) ──────────────────────────────────────
+router.get('/admin/me', requireCallCenter, async (req, res) => {
+  res.json({ id: req.admin.id, name: req.admin.name, role: req.admin.role });
+});
+
 // ── Dashboard : ordres actifs ────────────────────────────────────────────────
 router.get('/admin/orders/active', requireAdmin, async (req, res) => {
   try {
@@ -184,7 +189,7 @@ router.get('/admin/stats', requireAdmin, async (req, res) => {
 });
 
 // ── Livreurs ─────────────────────────────────────────────────────────────────
-router.get('/admin/drivers', requireAdmin, async (req, res) => {
+router.get('/admin/drivers', requireCallCenter, async (req, res) => {
   try {
     const drivers = await db('drivers')
       .leftJoin('wallets', 'drivers.id', 'wallets.driver_id')
@@ -249,7 +254,7 @@ router.post('/admin/drivers/:id/reactivate', requireAdmin, async (req, res) => {
 });
 
 // ── Clients ───────────────────────────────────────────────────────────────────
-router.get('/admin/clients', requireAdmin, async (req, res) => {
+router.get('/admin/clients', requireCallCenter, async (req, res) => {
   try {
     const clients = await db('clients')
       .orderBy('clients.created_at', 'desc')
@@ -396,7 +401,7 @@ router.post('/admin/inbox/:id/reply', requireCallCenter, async (req, res) => {
 });
 
 // ── Call Center : réponse vocale admin → client WhatsApp ─────────────────────
-router.post('/admin/inbox/:id/reply-audio', requireAdmin, async (req, res) => {
+router.post('/admin/inbox/:id/reply-audio', requireCallCenter, async (req, res) => {
   try {
     const { audioUrl } = req.body;
     if (!audioUrl) return res.status(400).json({ error: 'AUDIO_URL_REQUIRED' });
@@ -425,7 +430,7 @@ router.post('/admin/inbox/:id/reply-audio', requireAdmin, async (req, res) => {
 });
 
 // ── Call Center : lancer une course (admin_queue → pending → livreurs) ─────────
-router.post('/admin/inbox/:id/launch', requireAdmin, async (req, res) => {
+router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
   try {
     const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, forwardedAudioUrl } = req.body;
 
@@ -484,7 +489,7 @@ router.get('/admin/drivers/locations', requireAdmin, async (req, res) => {
 });
 
 // ── Broadcast depuis appel : admin crée un ordre et l'envoie à tous les livreurs
-router.post('/admin/broadcast', requireAdmin, async (req, res) => {
+router.post('/admin/broadcast', requireCallCenter, async (req, res) => {
   try {
     const { description, mediaUrl, mediaType } = req.body;
 
@@ -516,6 +521,64 @@ router.post('/admin/broadcast', requireAdmin, async (req, res) => {
     emitNewOrder({ ...delivery, alias: callAlias }, initialMessage);
 
     res.json({ delivery: { id: delivery.id, clientAlias: callAlias } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Gestion des utilisateurs admin / call center ──────────────────────────────
+router.get('/admin/users', requireAdmin, async (req, res) => {
+  try {
+    const users = await db('admins as u')
+      .leftJoin('admins as c', 'u.created_by', 'c.id')
+      .orderBy('u.created_at', 'asc')
+      .select(
+        'u.id', 'u.name', 'u.email', 'u.role',
+        'u.created_at as createdAt',
+        'c.name as createdByName'
+      );
+    res.json({ users });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+router.post('/admin/users', requireAdmin, async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+    if (!name?.trim() || !email?.trim() || !password) {
+      return res.status(400).json({ error: 'MISSING_FIELDS' });
+    }
+    if (!['admin', 'call_center'].includes(role)) {
+      return res.status(400).json({ error: 'INVALID_ROLE' });
+    }
+    const exists = await db('admins').where({ email: email.trim().toLowerCase() }).first();
+    if (exists) return res.status(409).json({ error: 'EMAIL_TAKEN' });
+
+    const password_hash = await bcrypt.hash(password, 12);
+    const [user] = await db('admins')
+      .insert({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        password_hash,
+        role,
+        created_by: req.admin.id,
+      })
+      .returning(['id', 'name', 'email', 'role', 'created_at']);
+    res.json({ user: { ...user, createdAt: user.created_at, createdByName: req.admin.name } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+router.delete('/admin/users/:id', requireAdmin, async (req, res) => {
+  try {
+    if (req.params.id === req.admin.id) {
+      return res.status(400).json({ error: 'CANNOT_DELETE_SELF' });
+    }
+    const deleted = await db('admins').where({ id: req.params.id }).delete();
+    if (!deleted) return res.status(404).json({ error: 'NOT_FOUND' });
+    res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
