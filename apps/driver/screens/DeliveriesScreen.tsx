@@ -19,6 +19,7 @@ import { useDeliveriesStore } from '../store/deliveries.store';
 import { socketService } from '../lib/socket';
 import { api } from '../lib/api';
 import { DeliveryCard } from '../components/DeliveryCard';
+import { Icon } from '../components/Icon';
 import { BRAND, BG, CARD } from '../lib/config';
 import type { Delivery, RootStackParamList } from '../types';
 
@@ -244,7 +245,7 @@ export default function DeliveriesScreen() {
             <ActivityIndicator color={BRAND} style={{ marginTop: 60 }} />
           ) : (
             <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>🛵</Text>
+              <Icon name="scooter" size={56} color="#888" strokeWidth={1.5} />
               <Text style={styles.emptyText}>Aucune course disponible</Text>
               <Text style={styles.emptyHint}>Tirez pour actualiser</Text>
             </View>

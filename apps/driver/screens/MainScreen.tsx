@@ -319,7 +319,7 @@ function CoursesTab() {
             <ActivityIndicator color={PRIMARY} style={{ marginTop: 60 }} />
           ) : (
             <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>🛵</Text>
+              <Icon name="scooter" size={56} color={TEXT2} strokeWidth={1.5} />
               <Text style={styles.emptyText}>Aucune course disponible</Text>
               <Text style={styles.emptyHint}>Tirez pour actualiser</Text>
             </View>

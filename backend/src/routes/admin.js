@@ -6,7 +6,7 @@ import db from '../config/db.js';
 import { emitNewOrder } from '../services/socket.js';
 import { createDelivery, launchDelivery } from '../services/delivery.js';
 import { hashWaId, encryptWaId, decryptWaId } from '../services/pii-filter.js';
-import { sendText } from '../services/messaging.js';
+import { sendText, sendAudio } from '../services/messaging.js';
 
 const router = Router();
 
@@ -16,6 +16,19 @@ function requireAdmin(req, res, next) {
   try {
     const decoded = jwt.verify(token, env.JWT_SECRET);
     if (decoded.role !== 'admin') return res.status(403).json({ error: 'FORBIDDEN' });
+    req.admin = decoded;
+    next();
+  } catch {
+    res.status(401).json({ error: 'AUTH_INVALID' });
+  }
+}
+
+function requireCallCenter(req, res, next) {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!token) return res.status(401).json({ error: 'AUTH_REQUIRED' });
+  try {
+    const decoded = jwt.verify(token, env.JWT_SECRET);
+    if (decoded.role !== 'admin' && decoded.role !== 'call_center') return res.status(403).json({ error: 'FORBIDDEN' });
     req.admin = decoded;
     next();
   } catch {
@@ -34,12 +47,13 @@ router.post('/admin/login', async (req, res) => {
     );
     if (!admin || !valid) return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
 
+    const adminRole = admin.role || 'admin';
     const token = jwt.sign(
-      { id: admin.id, name: admin.name, role: 'admin' },
+      { id: admin.id, name: admin.name, role: adminRole },
       env.JWT_SECRET,
       { expiresIn: '12h' }
     );
-    res.json({ token, admin: { id: admin.id, name: admin.name } });
+    res.json({ token, admin: { id: admin.id, name: admin.name, role: adminRole } });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
@@ -300,7 +314,7 @@ router.get('/admin/transactions', requireAdmin, async (req, res) => {
 });
 
 // ── Call Center : liste des conversations en attente (admin_queue) ────────────
-router.get('/admin/inbox', requireAdmin, async (req, res) => {
+router.get('/admin/inbox', requireCallCenter, async (req, res) => {
   try {
     const rows = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
@@ -334,7 +348,7 @@ router.get('/admin/inbox', requireAdmin, async (req, res) => {
 });
 
 // ── Call Center : messages d'une conversation admin_queue ─────────────────────
-router.get('/admin/inbox/:id/messages', requireAdmin, async (req, res) => {
+router.get('/admin/inbox/:id/messages', requireCallCenter, async (req, res) => {
   try {
     const delivery = await db('deliveries').where({ id: req.params.id }).first();
     if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
@@ -351,7 +365,7 @@ router.get('/admin/inbox/:id/messages', requireAdmin, async (req, res) => {
 });
 
 // ── Call Center : répondre au client (via WhatsApp) ───────────────────────────
-router.post('/admin/inbox/:id/reply', requireAdmin, async (req, res) => {
+router.post('/admin/inbox/:id/reply', requireCallCenter, async (req, res) => {
   try {
     const { text } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: 'TEXT_REQUIRED' });
@@ -381,10 +395,39 @@ router.post('/admin/inbox/:id/reply', requireAdmin, async (req, res) => {
   }
 });
 
+// ── Call Center : réponse vocale admin → client WhatsApp ─────────────────────
+router.post('/admin/inbox/:id/reply-audio', requireAdmin, async (req, res) => {
+  try {
+    const { audioUrl } = req.body;
+    if (!audioUrl) return res.status(400).json({ error: 'AUDIO_URL_REQUIRED' });
+
+    const delivery = await db('deliveries')
+      .join('clients', 'deliveries.client_id', 'clients.id')
+      .where('deliveries.id', req.params.id)
+      .select('deliveries.*', 'clients.wa_id_enc as waIdEnc')
+      .first();
+    if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const rawWaId = decryptWaId(delivery.waIdEnc);
+
+    const [message] = await db('messages')
+      .insert({ delivery_id: req.params.id, sender_role: 'admin', type: 'audio', content: audioUrl, meta: null })
+      .returning('*');
+
+    await sendAudio(rawWaId, audioUrl).catch((err) => {
+      console.error('[admin/reply-audio] WhatsApp erreur:', err.message);
+    });
+
+    res.json({ message: { id: message.id, content: message.content, createdAt: message.created_at } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 // ── Call Center : lancer une course (admin_queue → pending → livreurs) ─────────
 router.post('/admin/inbox/:id/launch', requireAdmin, async (req, res) => {
   try {
-    const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price } = req.body;
+    const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, forwardedAudioUrl } = req.body;
 
     const client = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
@@ -403,9 +446,12 @@ router.post('/admin/inbox/:id/launch', requireAdmin, async (req, res) => {
       .orderBy('created_at', 'desc')
       .first();
 
-    const initialMessage = lastMsg
-      ? { type: lastMsg.type, content: lastMsg.content, meta: lastMsg.meta }
-      : { type: 'text', content: pickupAddress ? `${pickupAddress} → ${dropoffAddress}` : 'Commande appel', meta: null };
+    // Vocal transféré prioritaire, sinon dernier message, sinon texte par défaut
+    const initialMessage = forwardedAudioUrl
+      ? { type: 'audio', content: forwardedAudioUrl, meta: null }
+      : lastMsg
+        ? { type: lastMsg.type, content: lastMsg.content, meta: lastMsg.meta }
+        : { type: 'text', content: pickupAddress ? `${pickupAddress} → ${dropoffAddress}` : 'Commande appel', meta: null };
 
     emitNewOrder({ ...updated, alias: client.clientAlias }, initialMessage);
 

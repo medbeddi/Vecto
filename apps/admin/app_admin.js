@@ -795,8 +795,14 @@ function renderMessages(messages) {
       body = escHtml(m.content || '');
     } else if (m.type === 'audio') {
       body = m.content
-        ? '<audio controls src="' + escHtml(m.content) + '" style="max-width:220px"></audio>'
+        ? '<audio controls src="' + escHtml(m.content) + '" style="max-width:220px;display:block"></audio>'
         : '[Message vocal]';
+      // Bouton "Transférer aux livreurs" sur les vocaux du client
+      if (side === 'client' && m.content) {
+        body += '<button class="cc-forward-btn" onclick="forwardAudioToDrivers(\'' + escHtml(m.content) + '\')" title="Utiliser ce vocal comme message de course">'
+          + '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg>'
+          + 'Transférer aux livreurs</button>';
+      }
     } else if (m.type === 'image') {
       body = m.content
         ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px" />'
@@ -848,11 +854,175 @@ function openLaunchPanel() {
   document.getElementById('cc-launch-status').textContent = '';
   document.getElementById('cc-launch-status').className = 'cc-launch-status';
   document.querySelector('.cc-inbox-layout').classList.add('launch-open');
+  setTimeout(initMiniMap, 200);
 }
 
 function closeLaunchPanel() {
   document.getElementById('cc-launch-panel').style.display = 'none';
   document.querySelector('.cc-inbox-layout').classList.remove('launch-open');
+}
+
+/* ── Mini-carte Google Maps dans le panneau de lancement ─────────────── */
+var _miniMap = null, _miniMarkerA = null, _miniMarkerB = null, _miniDirRenderer = null;
+var _miniMapReady = false;
+var _miniMapDebounce = null;
+
+function initMiniMap() {
+  var el = document.getElementById('cc-mini-map');
+  if (!el || typeof google === 'undefined') return;
+  if (_miniMapReady) { updateMiniMap(); return; }
+
+  var nouakchott = { lat: 18.0735, lng: -15.9582 };
+  _miniMap = new google.maps.Map(el, {
+    zoom: 13, center: nouakchott,
+    disableDefaultUI: true, zoomControl: true, gestureHandling: 'cooperative',
+  });
+
+  _miniDirRenderer = new google.maps.DirectionsRenderer({
+    suppressMarkers: true,
+    polylineOptions: { strokeColor: '#1A1A1A', strokeOpacity: .8, strokeWeight: 3 },
+  });
+  _miniDirRenderer.setMap(_miniMap);
+
+  var bounds = new google.maps.LatLngBounds(
+    new google.maps.LatLng(17.95, -16.08), new google.maps.LatLng(18.20, -15.85)
+  );
+  var acOpts = { componentRestrictions: { country: 'mr' }, bounds, strictBounds: true, fields: ['geometry','name'] };
+
+  var acPickup = new google.maps.places.Autocomplete(document.getElementById('cc-pickup'), acOpts);
+  acPickup.addListener('place_changed', function () {
+    var p = acPickup.getPlace();
+    if (!p.geometry) return;
+    var loc = p.geometry.location;
+    if (_miniMarkerA) _miniMarkerA.setPosition(loc);
+    else _miniMarkerA = new google.maps.Marker({ position: loc, map: _miniMap, icon: miniIcon('#34C759') });
+    _miniMap.panTo(loc); traceMiniRoute();
+  });
+
+  var acDropoff = new google.maps.places.Autocomplete(document.getElementById('cc-dropoff'), acOpts);
+  acDropoff.addListener('place_changed', function () {
+    var p = acDropoff.getPlace();
+    if (!p.geometry) return;
+    var loc = p.geometry.location;
+    if (_miniMarkerB) _miniMarkerB.setPosition(loc);
+    else _miniMarkerB = new google.maps.Marker({ position: loc, map: _miniMap, icon: miniIcon('#FF3B30') });
+    _miniMap.panTo(loc); traceMiniRoute();
+  });
+
+  _miniMapReady = true;
+}
+
+function miniIcon(color) {
+  return { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 };
+}
+
+function traceMiniRoute() {
+  if (!_miniMarkerA || !_miniMarkerB) return;
+  new google.maps.DirectionsService().route({
+    origin: _miniMarkerA.getPosition(),
+    destination: _miniMarkerB.getPosition(),
+    travelMode: google.maps.TravelMode.DRIVING,
+  }, function (res, status) { if (status === 'OK') _miniDirRenderer.setDirections(res); });
+}
+
+function debounceMiniMap() {
+  clearTimeout(_miniMapDebounce);
+  _miniMapDebounce = setTimeout(updateMiniMap, 800);
+}
+
+function updateMiniMap() {
+  if (!_miniMapReady || typeof google === 'undefined') return;
+  var pickup  = (document.getElementById('cc-pickup')?.value  || '').trim();
+  var dropoff = (document.getElementById('cc-dropoff')?.value || '').trim();
+  if (!pickup || !dropoff) return;
+
+  var geocoder = new google.maps.Geocoder();
+  geocoder.geocode({ address: pickup + ', Mauritanie' }, function (resA, stA) {
+    if (stA !== 'OK' || !resA[0]) return;
+    var locA = resA[0].geometry.location;
+    if (_miniMarkerA) _miniMarkerA.setPosition(locA);
+    else _miniMarkerA = new google.maps.Marker({ position: locA, map: _miniMap, icon: miniIcon('#34C759') });
+
+    geocoder.geocode({ address: dropoff + ', Mauritanie' }, function (resB, stB) {
+      if (stB !== 'OK' || !resB[0]) return;
+      var locB = resB[0].geometry.location;
+      if (_miniMarkerB) _miniMarkerB.setPosition(locB);
+      else _miniMarkerB = new google.maps.Marker({ position: locB, map: _miniMap, icon: miniIcon('#FF3B30') });
+      traceMiniRoute();
+    });
+  });
+}
+
+/* ── Enregistrement vocal admin ───────────────────────────────────────── */
+var _mediaRecorder = null;
+var _audioChunks   = [];
+var _isRecording   = false;
+
+async function toggleRecording() {
+  if (_isRecording) { stopRecording(); } else { await startRecording(); }
+}
+
+async function startRecording() {
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _audioChunks = [];
+    var mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    _mediaRecorder = new MediaRecorder(stream, { mimeType });
+    _mediaRecorder.ondataavailable = function (e) { if (e.data.size > 0) _audioChunks.push(e.data); };
+    _mediaRecorder.onstop = async function () {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      var blob = new Blob(_audioChunks, { type: mimeType });
+      await uploadAndSendAudio(blob);
+    };
+    _mediaRecorder.start();
+    _isRecording = true;
+    var btn = document.getElementById('cc-mic-btn');
+    if (btn) { btn.classList.add('recording'); btn.title = 'Arrêter l\'enregistrement'; }
+    // Timer visuel dans l'input
+    var input = document.getElementById('cc-reply-input');
+    if (input) { input.placeholder = '🔴 Enregistrement en cours…'; input.disabled = true; }
+  } catch (e) {
+    alert('Microphone non accessible. Vérifiez les permissions du navigateur.');
+  }
+}
+
+function stopRecording() {
+  if (_mediaRecorder && _isRecording) {
+    _mediaRecorder.stop();
+    _isRecording = false;
+    var btn = document.getElementById('cc-mic-btn');
+    if (btn) { btn.classList.remove('recording'); btn.title = 'Enregistrer un vocal'; }
+    var input = document.getElementById('cc-reply-input');
+    if (input) { input.placeholder = 'Répondre au client…'; input.disabled = false; }
+  }
+}
+
+async function uploadAndSendAudio(blob) {
+  if (!_inboxSelectedId) return;
+  try {
+    var form = new FormData();
+    form.append('file', blob, 'vocal_admin_' + Date.now() + '.webm');
+    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', body: form });
+    if (!upRes.ok) { alert('Erreur upload audio'); return; }
+    var upData = await upRes.json();
+
+    var res = await fetch(API + '/api/admin/inbox/' + _inboxSelectedId + '/reply-audio', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ audioUrl: upData.url }),
+    });
+    if (!res.ok) { alert('Erreur envoi vocal'); return; }
+
+    var container = document.getElementById('cc-messages');
+    if (container) {
+      var div = document.createElement('div');
+      div.className = 'cc-msg admin';
+      div.innerHTML = '<audio controls src="' + escHtml(upData.url) + '" style="max-width:220px"></audio>'
+        + '<div class="cc-msg-time">maintenant</div>';
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch { alert('Erreur réseau lors de l\'envoi du vocal.'); }
 }
 
 async function launchCourse() {
@@ -874,7 +1044,7 @@ async function launchCourse() {
     var res = await fetch(API + '/api/admin/inbox/' + _inboxSelectedId + '/launch', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ pickupAddress: pickup, dropoffAddress: dropoff, price: price }),
+      body: JSON.stringify({ pickupAddress: pickup, dropoffAddress: dropoff, price: price, forwardedAudioUrl: _forwardedAudioUrl || undefined }),
     });
     if (!res.ok) {
       statusEl.textContent = 'Erreur lors du lancement.';
@@ -888,6 +1058,7 @@ async function launchCourse() {
     setTimeout(function () {
       closeLaunchPanel();
       _inboxSelectedId = null;
+      _forwardedAudioUrl = null;
       document.getElementById('cc-chat-empty').style.display = 'flex';
       document.getElementById('cc-chat-view').style.display = 'none';
       loadInbox();
@@ -895,6 +1066,31 @@ async function launchCourse() {
   } catch {
     statusEl.textContent = 'Erreur réseau.';
     statusEl.className = 'cc-launch-status error';
+  }
+}
+
+/* ── Transférer un vocal client vers les livreurs ─────────────────────── */
+var _forwardedAudioUrl = null;
+
+function forwardAudioToDrivers(audioUrl) {
+  _forwardedAudioUrl = audioUrl;
+  // Ouvrir le panneau de lancement si pas encore ouvert
+  openLaunchPanel();
+  // Feedback visuel
+  document.querySelectorAll('.cc-forward-btn').forEach(function (b) { b.classList.remove('active'); });
+  var btns = document.querySelectorAll('.cc-forward-btn');
+  btns.forEach(function (b) {
+    if (b.getAttribute('onclick') && b.getAttribute('onclick').includes(escHtml(audioUrl))) {
+      b.classList.add('active');
+      b.textContent = '✓ Sélectionné comme message de course';
+    }
+  });
+  // Afficher dans le panneau
+  var statusEl = document.getElementById('cc-launch-status');
+  if (statusEl) {
+    statusEl.className = 'cc-launch-status success';
+    statusEl.innerHTML = '🎙 Vocal sélectionné — sera envoyé aux livreurs lors du lancement.'
+      + '<br><audio controls src="' + escHtml(audioUrl) + '" style="max-width:100%;margin-top:6px"></audio>';
   }
 }
 
