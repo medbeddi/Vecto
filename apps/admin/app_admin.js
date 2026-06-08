@@ -746,6 +746,7 @@ function closeModal(id) {
 ================================================================ */
 var _inboxSelectedId = null;
 var _inboxItems = {};
+var _currentMessages = [];
 
 async function loadInbox() {
   try {
@@ -811,6 +812,7 @@ async function loadMessages(deliveryId) {
 }
 
 function renderMessages(messages) {
+  _currentMessages = messages;
   var container = document.getElementById('cc-messages');
   if (!container) return;
 
@@ -881,16 +883,27 @@ async function sendReply() {
 
 function openLaunchPanel() {
   if (!_inboxSelectedId) return;
-  document.getElementById('cc-launch-panel').style.display = 'flex';
+  // Reset état audio
+  _forwardedAudioUrl = null;
+  var preview = document.getElementById('cc-launch-audio-preview');
+  var player  = document.getElementById('cc-launch-audio-player');
+  if (preview) preview.style.display = 'none';
+  if (player)  player.src = '';
   document.getElementById('cc-launch-status').textContent = '';
   document.getElementById('cc-launch-status').className = 'cc-launch-status';
+  document.getElementById('cc-launch-panel').style.display = 'flex';
   document.querySelector('.cc-inbox-layout').classList.add('launch-open');
-  setTimeout(initMiniMap, 200);
+  populateLaunchAudios();
+  setTimeout(function () {
+    initMiniMap();
+    setTimeout(function () { if (_miniMap) _miniMap.invalidateSize(); }, 150);
+  }, 200);
 }
 
 function closeLaunchPanel() {
   document.getElementById('cc-launch-panel').style.display = 'none';
   document.querySelector('.cc-inbox-layout').classList.remove('launch-open');
+  if (_launchIsRecording) stopLaunchRecording();
 }
 
 /* ── Mini-carte Leaflet dans le panneau de lancement ─────────────────── */
@@ -1071,29 +1084,102 @@ async function launchCourse() {
   }
 }
 
-/* ── Transférer un vocal client vers les livreurs ─────────────────────── */
+/* ── Sélection / enregistrement vocal pour le lancement ──────────────── */
 var _forwardedAudioUrl = null;
+var _launchRecorder    = null;
+var _launchAudioChunks = [];
+var _launchIsRecording = false;
+
+function populateLaunchAudios() {
+  var listEl = document.getElementById('cc-launch-audio-list');
+  if (!listEl) return;
+  var clientAudios = _currentMessages.filter(function (m) {
+    return m.sender_role !== 'admin' && m.type === 'audio' && m.content;
+  });
+  if (!clientAudios.length) { listEl.innerHTML = ''; return; }
+
+  listEl.innerHTML = '<div style="font-size:12px;color:var(--text-3);margin-bottom:5px">Vocaux du client :</div>'
+    + clientAudios.map(function (m, i) {
+      return '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:var(--bg);border-radius:8px;padding:6px 8px;border:1.5px solid var(--border)">'
+        + '<input type="radio" name="launch-audio" value="' + escHtml(m.content) + '" onchange="selectLaunchAudio(this.value)" />'
+        + '<audio src="' + escHtml(m.content) + '" controls style="flex:1;height:28px"></audio>'
+        + '<span style="font-size:11px;color:var(--text-3);flex-shrink:0">' + fmtTime(m.createdAt) + '</span>'
+        + '</label>';
+    }).join('');
+}
+
+function selectLaunchAudio(url) {
+  _forwardedAudioUrl = url;
+  var preview = document.getElementById('cc-launch-audio-preview');
+  var player  = document.getElementById('cc-launch-audio-player');
+  if (preview) preview.style.display = 'block';
+  if (player)  player.src = url;
+}
+
+function clearLaunchAudio() {
+  _forwardedAudioUrl = null;
+  var preview = document.getElementById('cc-launch-audio-preview');
+  var player  = document.getElementById('cc-launch-audio-player');
+  if (preview) preview.style.display = 'none';
+  if (player)  player.src = '';
+  document.querySelectorAll('[name="launch-audio"]').forEach(function (r) { r.checked = false; });
+}
+
+async function toggleLaunchRecording() {
+  if (_launchIsRecording) { stopLaunchRecording(); } else { await startLaunchRecording(); }
+}
+
+async function startLaunchRecording() {
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _launchAudioChunks = [];
+    var mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    _launchRecorder = new MediaRecorder(stream, { mimeType });
+    _launchRecorder.ondataavailable = function (e) { if (e.data.size > 0) _launchAudioChunks.push(e.data); };
+    _launchRecorder.onstop = async function () {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      await uploadLaunchAudio(new Blob(_launchAudioChunks, { type: mimeType }));
+    };
+    _launchRecorder.start();
+    _launchIsRecording = true;
+    var btn = document.getElementById('cc-launch-rec-btn');
+    if (btn) { btn.classList.add('recording'); btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#FF3B30"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0012 6.32V20h-3v2h8v-2h-3v-2.68A7 7 0 0019 11h-2z"/></svg> 🔴 Arrêter l\'enregistrement'; }
+  } catch { alert('Microphone non accessible.'); }
+}
+
+function stopLaunchRecording() {
+  if (_launchRecorder && _launchIsRecording) {
+    _launchRecorder.stop();
+    _launchIsRecording = false;
+    var btn = document.getElementById('cc-launch-rec-btn');
+    if (btn) { btn.classList.remove('recording'); btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0012 6.32V20h-3v2h8v-2h-3v-2.68A7 7 0 0019 11h-2z"/></svg> Enregistrer un nouveau vocal'; }
+  }
+}
+
+async function uploadLaunchAudio(blob) {
+  var btn = document.getElementById('cc-launch-rec-btn');
+  if (btn) btn.disabled = true;
+  try {
+    var form = new FormData();
+    form.append('file', blob, 'vocal_launch_' + Date.now() + '.webm');
+    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', body: form });
+    if (!upRes.ok) { alert('Erreur upload audio'); return; }
+    var upData = await upRes.json();
+    // Décocher les radios client
+    document.querySelectorAll('[name="launch-audio"]').forEach(function (r) { r.checked = false; });
+    selectLaunchAudio(upData.url);
+  } catch { alert('Erreur réseau.'); }
+  finally { if (btn) { btn.disabled = false; } }
+}
 
 function forwardAudioToDrivers(audioUrl) {
-  _forwardedAudioUrl = audioUrl;
-  // Ouvrir le panneau de lancement si pas encore ouvert
   openLaunchPanel();
-  // Feedback visuel
-  document.querySelectorAll('.cc-forward-btn').forEach(function (b) { b.classList.remove('active'); });
-  var btns = document.querySelectorAll('.cc-forward-btn');
-  btns.forEach(function (b) {
-    if (b.getAttribute('onclick') && b.getAttribute('onclick').includes(escHtml(audioUrl))) {
-      b.classList.add('active');
-      b.textContent = '✓ Sélectionné comme message de course';
-    }
-  });
-  // Afficher dans le panneau
-  var statusEl = document.getElementById('cc-launch-status');
-  if (statusEl) {
-    statusEl.className = 'cc-launch-status success';
-    statusEl.innerHTML = '🎙 Vocal sélectionné — sera envoyé aux livreurs lors du lancement.'
-      + '<br><audio controls src="' + escHtml(audioUrl) + '" style="max-width:100%;margin-top:6px"></audio>';
-  }
+  setTimeout(function () {
+    selectLaunchAudio(audioUrl);
+    document.querySelectorAll('[name="launch-audio"]').forEach(function (r) {
+      if (r.value === audioUrl) r.checked = true;
+    });
+  }, 350);
 }
 
 function fmtTime(iso) {
