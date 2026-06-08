@@ -626,6 +626,57 @@ input:focus, textarea:focus { outline: none; }
 }
 .cc-launch-btn:hover { background: rgba(192,57,43,.06) !important; }
 
+/* ── Wrapper mini-carte + bouton agrandir ─────────────────────────── */
+.cc-map-wrap { position: relative; margin-top: 10px; }
+.cc-map-wrap #cc-mini-map { margin-top: 0; }
+.cc-map-expand-btn {
+  position: absolute; bottom: 7px; right: 7px;
+  width: 28px; height: 28px;
+  background: rgba(255,255,255,.92);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+  transition: background .15s, box-shadow .15s;
+  padding: 0;
+}
+.cc-map-expand-btn:hover { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.cc-map-expand-btn svg { fill: var(--text-1); }
+
+/* ── Modal carte plein écran ──────────────────────────────────────── */
+.map-modal-card {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  width: min(92vw, 800px);
+  height: min(88vh, 700px);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,.22);
+}
+.map-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.map-modal-title { font-size: 14px; font-weight: 700; color: var(--text-1); }
+.map-modal-addr {
+  display: flex; gap: 20px;
+  font-size: 12px; color: var(--text-2);
+}
+.map-modal-addr span { display: flex; align-items: center; gap: 5px; }
+#cc-map-fullscreen { flex: 1; min-height: 0; position: relative; z-index: 0; }
+.map-modal-footer {
+  display: flex; gap: 10px; justify-content: flex-end; align-items: center;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Google Places autocomplete dropdown z-index */
+.pac-container { z-index: 99999 !important; }
+
 /* ================================================================
    TRACKING — Carte GPS livreurs
 ================================================================ */

@@ -410,7 +410,12 @@
           </div>
 
           <!-- Mini-carte Leaflet -->
-          <div id="cc-mini-map" style="height:150px;border-radius:10px;overflow:hidden;margin-top:10px;border:1px solid var(--border);background:#e8eaed;position:relative;z-index:0"></div>
+          <div class="cc-map-wrap">
+            <div id="cc-mini-map" style="height:150px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:#e8eaed;position:relative;z-index:0"></div>
+            <button class="cc-map-expand-btn" onclick="openMapModal()" title="Agrandir la carte">
+              <svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M15 3l2.3 2.3-2.89 2.87 1.42 1.42L18.7 6.7 21 9V3h-6zM3 9l2.3-2.3 2.87 2.89 1.42-1.42L6.7 5.3 9 3H3v6zm6 12l-2.3-2.3 2.89-2.87-1.42-1.42L5.3 17.3 3 15v6h6zm12-6l-2.3 2.3-2.87-2.89-1.42 1.42 2.89 2.87L15 21h6v-6z"/></svg>
+            </button>
+          </div>
 
           <!-- Séparateur -->
           <div style="border-top:1px solid var(--border);margin:14px 0 10px"></div>
@@ -649,14 +654,35 @@
   </div>
 </div>
 
+<!-- MODAL — Carte plein écran -->
+<div class="modal-overlay" id="modal-map-fullscreen" style="display:none">
+  <div class="map-modal-card">
+    <div class="map-modal-header">
+      <div>
+        <div class="map-modal-title">Carte — Trajet</div>
+        <div class="map-modal-addr" id="map-modal-addr-display" style="margin-top:4px"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="cancelMapModal()" style="flex-shrink:0">✕</button>
+    </div>
+    <div id="cc-map-fullscreen"></div>
+    <div class="map-modal-footer">
+      <button class="btn btn-ghost" onclick="cancelMapModal()">Annuler</button>
+      <button class="btn btn-dark" onclick="confirmMapModal()">
+        <svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+        Confirmer
+      </button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<!-- Google Maps (Call Center) — ajouter GOOGLE_MAPS_KEY sur Railway -->
+<!-- Google Maps Places — ajouter GOOGLE_MAPS_KEY sur Railway pour l'autocomplete -->
 <script>
   window.GOOGLE_MAPS_KEY = '';
   if (window.GOOGLE_MAPS_KEY) {
     var s = document.createElement('script');
-    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + window.GOOGLE_MAPS_KEY + '&libraries=places&language=fr&callback=Function.prototype';
+    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + window.GOOGLE_MAPS_KEY + '&libraries=places&language=fr&callback=onGoogleMapsReady';
     s.async = true; s.defer = true;
     document.head.appendChild(s);
   }
