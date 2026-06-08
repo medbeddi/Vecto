@@ -893,95 +893,66 @@ function closeLaunchPanel() {
   document.querySelector('.cc-inbox-layout').classList.remove('launch-open');
 }
 
-/* ── Mini-carte Google Maps dans le panneau de lancement ─────────────── */
-var _miniMap = null, _miniMarkerA = null, _miniMarkerB = null, _miniDirRenderer = null;
+/* ── Mini-carte Leaflet dans le panneau de lancement ─────────────────── */
+var _miniMap = null, _miniMarkerA = null, _miniMarkerB = null, _miniPolyline = null;
 var _miniMapReady = false;
 var _miniMapDebounce = null;
 
 function initMiniMap() {
   var el = document.getElementById('cc-mini-map');
-  if (!el || typeof google === 'undefined') return;
-  if (_miniMapReady) { updateMiniMap(); return; }
+  if (!el || typeof L === 'undefined') return;
+  if (_miniMapReady) return;
 
-  var nouakchott = { lat: 18.0735, lng: -15.9582 };
-  _miniMap = new google.maps.Map(el, {
-    zoom: 13, center: nouakchott,
-    disableDefaultUI: true, zoomControl: true, gestureHandling: 'cooperative',
-  });
-
-  _miniDirRenderer = new google.maps.DirectionsRenderer({
-    suppressMarkers: true,
-    polylineOptions: { strokeColor: '#1A1A1A', strokeOpacity: .8, strokeWeight: 3 },
-  });
-  _miniDirRenderer.setMap(_miniMap);
-
-  var bounds = new google.maps.LatLngBounds(
-    new google.maps.LatLng(17.95, -16.08), new google.maps.LatLng(18.20, -15.85)
-  );
-  var acOpts = { componentRestrictions: { country: 'mr' }, bounds, strictBounds: true, fields: ['geometry','name'] };
-
-  var acPickup = new google.maps.places.Autocomplete(document.getElementById('cc-pickup'), acOpts);
-  acPickup.addListener('place_changed', function () {
-    var p = acPickup.getPlace();
-    if (!p.geometry) return;
-    var loc = p.geometry.location;
-    if (_miniMarkerA) _miniMarkerA.setPosition(loc);
-    else _miniMarkerA = new google.maps.Marker({ position: loc, map: _miniMap, icon: miniIcon('#34C759') });
-    _miniMap.panTo(loc); traceMiniRoute();
-  });
-
-  var acDropoff = new google.maps.places.Autocomplete(document.getElementById('cc-dropoff'), acOpts);
-  acDropoff.addListener('place_changed', function () {
-    var p = acDropoff.getPlace();
-    if (!p.geometry) return;
-    var loc = p.geometry.location;
-    if (_miniMarkerB) _miniMarkerB.setPosition(loc);
-    else _miniMarkerB = new google.maps.Marker({ position: loc, map: _miniMap, icon: miniIcon('#FF3B30') });
-    _miniMap.panTo(loc); traceMiniRoute();
-  });
-
+  _miniMap = L.map('cc-mini-map', { zoomControl: true, attributionControl: false })
+    .setView([18.0735, -15.9582], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(_miniMap);
   _miniMapReady = true;
-}
-
-function miniIcon(color) {
-  return { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 };
-}
-
-function traceMiniRoute() {
-  if (!_miniMarkerA || !_miniMarkerB) return;
-  new google.maps.DirectionsService().route({
-    origin: _miniMarkerA.getPosition(),
-    destination: _miniMarkerB.getPosition(),
-    travelMode: google.maps.TravelMode.DRIVING,
-  }, function (res, status) { if (status === 'OK') _miniDirRenderer.setDirections(res); });
 }
 
 function debounceMiniMap() {
   clearTimeout(_miniMapDebounce);
-  _miniMapDebounce = setTimeout(updateMiniMap, 800);
+  _miniMapDebounce = setTimeout(updateMiniMap, 900);
 }
 
-function updateMiniMap() {
-  if (!_miniMapReady || typeof google === 'undefined') return;
+async function updateMiniMap() {
+  if (!_miniMapReady) { initMiniMap(); if (!_miniMapReady) return; }
   var pickup  = (document.getElementById('cc-pickup')?.value  || '').trim();
   var dropoff = (document.getElementById('cc-dropoff')?.value || '').trim();
-  if (!pickup || !dropoff) return;
+  if (!pickup && !dropoff) return;
 
-  var geocoder = new google.maps.Geocoder();
-  geocoder.geocode({ address: pickup + ', Mauritanie' }, function (resA, stA) {
-    if (stA !== 'OK' || !resA[0]) return;
-    var locA = resA[0].geometry.location;
-    if (_miniMarkerA) _miniMarkerA.setPosition(locA);
-    else _miniMarkerA = new google.maps.Marker({ position: locA, map: _miniMap, icon: miniIcon('#34C759') });
+  async function geocode(addr) {
+    try {
+      var r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(addr + ', Mauritanie'));
+      var d = await r.json();
+      if (d.length) return [parseFloat(d[0].lat), parseFloat(d[0].lon)];
+    } catch {}
+    return null;
+  }
 
-    geocoder.geocode({ address: dropoff + ', Mauritanie' }, function (resB, stB) {
-      if (stB !== 'OK' || !resB[0]) return;
-      var locB = resB[0].geometry.location;
-      if (_miniMarkerB) _miniMarkerB.setPosition(locB);
-      else _miniMarkerB = new google.maps.Marker({ position: locB, map: _miniMap, icon: miniIcon('#FF3B30') });
-      traceMiniRoute();
-    });
-  });
+  var dotA = pickup  ? await geocode(pickup)  : null;
+  var dotB = dropoff ? await geocode(dropoff) : null;
+
+  var greenIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#34C759;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [14,14], iconAnchor: [7,7] });
+  var redIcon   = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#FF3B30;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>', iconSize: [14,14], iconAnchor: [7,7] });
+
+  if (dotA) {
+    if (_miniMarkerA) { _miniMarkerA.setLatLng(dotA); }
+    else { _miniMarkerA = L.marker(dotA, { icon: greenIcon }).addTo(_miniMap); }
+  }
+  if (dotB) {
+    if (_miniMarkerB) { _miniMarkerB.setLatLng(dotB); }
+    else { _miniMarkerB = L.marker(dotB, { icon: redIcon }).addTo(_miniMap); }
+  }
+
+  if (dotA && dotB) {
+    if (_miniPolyline) { _miniPolyline.setLatLngs([dotA, dotB]); }
+    else { _miniPolyline = L.polyline([dotA, dotB], { color: '#1A1A1A', weight: 3, opacity: 0.7, dashArray: '6 4' }).addTo(_miniMap); }
+    _miniMap.fitBounds([dotA, dotB], { padding: [24, 24] });
+  } else if (dotA) {
+    _miniMap.setView(dotA, 14);
+  } else if (dotB) {
+    _miniMap.setView(dotB, 14);
+  }
 }
 
 /* ── Enregistrement vocal admin ───────────────────────────────────────── */

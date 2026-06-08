@@ -355,6 +355,9 @@
 
             <!-- Saisie réponse -->
             <div class="cc-reply-bar">
+              <button id="cc-mic-btn" class="btn btn-ghost btn-sm" onclick="toggleRecording()" title="Enregistrer un vocal" style="flex-shrink:0;padding:0 10px">
+                <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:currentColor"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0012 6.32V20h-3v2h8v-2h-3v-2.68A7 7 0 0019 11h-2z"/></svg>
+              </button>
               <input class="cc-reply-input" id="cc-reply-input"
                      placeholder="Répondre au client…"
                      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendReply();}" />
@@ -381,7 +384,7 @@
           <div class="cc-addr-row">
             <div class="addr-dot green"></div>
             <div class="field-row" style="flex:1;margin-bottom:0">
-              <input type="text" id="cc-pickup" placeholder="Adresse de départ" />
+              <input type="text" id="cc-pickup" placeholder="Adresse de départ" oninput="debounceMiniMap()" />
             </div>
           </div>
 
@@ -389,12 +392,15 @@
           <div class="cc-addr-row">
             <div class="addr-dot red"></div>
             <div class="field-row" style="flex:1;margin-bottom:0">
-              <input type="text" id="cc-dropoff" placeholder="Adresse de destination" />
+              <input type="text" id="cc-dropoff" placeholder="Adresse de destination" oninput="debounceMiniMap()" />
             </div>
           </div>
 
+          <!-- Mini-carte -->
+          <div id="cc-mini-map" style="height:160px;border-radius:10px;overflow:hidden;margin-top:12px;border:1px solid var(--border)"></div>
+
           <button class="btn btn-dark"
-                  style="width:100%;justify-content:center;margin-top:16px"
+                  style="width:100%;justify-content:center;margin-top:12px"
                   onclick="launchCourse()">
             <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
             Envoyer aux livreurs
