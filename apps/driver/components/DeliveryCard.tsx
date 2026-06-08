@@ -107,40 +107,6 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props)
         </View>
       </View>
 
-      {/* Waveform audio player */}
-      <View style={styles.waveRow}>
-        <TouchableOpacity
-          style={styles.playBtn}
-          onPress={hasAudio ? toggleAudio : undefined}
-          disabled={loadingAudio}
-          activeOpacity={0.75}
-        >
-          {loadingAudio
-            ? <ActivityIndicator size="small" color="#fff" />
-            : playing
-              ? <Icon name="pause" size={16} color="#fff" strokeWidth={2} />
-              : <Icon name="play" size={16} color="#fff" />
-          }
-        </TouchableOpacity>
-
-        <View style={styles.waveform}>
-          {animVals.map((v, i) => (
-            <Animated.View
-              key={i}
-              style={[
-                styles.waveBar,
-                { height: v.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) },
-                playing && styles.waveBarActive,
-              ]}
-            />
-          ))}
-        </View>
-
-        <Text style={styles.waveDur}>
-          {delivery.initialMediaType === 'audio' ? '0:08' : '—'}
-        </Text>
-      </View>
-
       {/* Prix si défini */}
       {delivery.price != null && (
         <View style={styles.priceBadge}>
@@ -167,6 +133,40 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props)
       ) : delivery.description && delivery.initialMediaType !== 'audio' ? (
         <Text style={styles.desc} numberOfLines={2}>{delivery.description}</Text>
       ) : null}
+
+      {/* Lecteur audio — uniquement s'il y a vraiment un fichier audio */}
+      {hasAudio && (
+        <View style={styles.waveRow}>
+          <TouchableOpacity
+            style={styles.playBtn}
+            onPress={toggleAudio}
+            disabled={loadingAudio}
+            activeOpacity={0.75}
+          >
+            {loadingAudio
+              ? <ActivityIndicator size="small" color="#fff" />
+              : playing
+                ? <Icon name="pause" size={16} color="#fff" strokeWidth={2} />
+                : <Icon name="play" size={16} color="#fff" />
+            }
+          </TouchableOpacity>
+
+          <View style={styles.waveform}>
+            {animVals.map((v, i) => (
+              <Animated.View
+                key={i}
+                style={[
+                  styles.waveBar,
+                  { height: v.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) },
+                  playing && styles.waveBarActive,
+                ]}
+              />
+            ))}
+          </View>
+
+          <Text style={styles.waveDur}>vocal</Text>
+        </View>
+      )}
 
       {/* Boutons */}
       <View style={styles.actions}>

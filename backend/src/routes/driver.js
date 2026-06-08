@@ -134,6 +134,9 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
         'deliveries.created_at as createdAt',
         'deliveries.initial_media_type as initialMediaType',
         'deliveries.initial_media_url as initialMediaUrl',
+        'deliveries.pickup_address as pickupAddress',
+        'deliveries.dropoff_address as dropoffAddress',
+        'deliveries.price',
         'clients.alias as clientAlias'
         // JAMAIS : wa_id_hash, wa_id_enc, client_id
       );
@@ -159,6 +162,9 @@ router.get('/deliveries/mine', requireAuth, async (req, res) => {
         'deliveries.created_at as createdAt',
         'deliveries.initial_media_type as initialMediaType',
         'deliveries.initial_media_url as initialMediaUrl',
+        'deliveries.pickup_address as pickupAddress',
+        'deliveries.dropoff_address as dropoffAddress',
+        'deliveries.price',
         'clients.alias as clientAlias'
       );
     res.json({ deliveries });
