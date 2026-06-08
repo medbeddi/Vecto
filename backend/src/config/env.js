@@ -59,6 +59,9 @@ export const env = {
   // OpenAI — optionnel (transcription vocale désactivée si absent)
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || null,
 
+  // Google Maps — optionnel (autocomplete adresses dans le call center)
+  GOOGLE_MAPS_KEY: process.env.GOOGLE_MAPS_KEY || '',
+
   // CORS — liste d'origines séparées par des virgules, ex: http://localhost:3000,https://admin.monapp.com
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())

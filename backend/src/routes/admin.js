@@ -36,6 +36,11 @@ function requireCallCenter(req, res, next) {
   }
 }
 
+// ── Config publique (clés front-end) ─────────────────────────────────────────
+router.get('/admin/config', (_req, res) => {
+  res.json({ googleMapsKey: env.GOOGLE_MAPS_KEY });
+});
+
 // ── Login admin ──────────────────────────────────────────────────────────────
 router.post('/admin/login', async (req, res) => {
   try {

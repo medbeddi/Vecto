@@ -92,6 +92,19 @@ document.addEventListener('DOMContentLoaded', function () {
     if (e.key === 'Enter') login();
   });
 
+  // Charger la config publique (clé Google Maps) dès le démarrage
+  fetch(API + '/api/admin/config')
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (cfg) {
+      if (cfg && cfg.googleMapsKey) {
+        var s = document.createElement('script');
+        s.src = 'https://maps.googleapis.com/maps/api/js?key=' + cfg.googleMapsKey + '&libraries=places&language=fr&callback=onGoogleMapsReady';
+        s.async = true; s.defer = true;
+        document.head.appendChild(s);
+      }
+    })
+    .catch(function () {});
+
   if (_token) {
     fetch(API + '/api/admin/me', { headers: { Authorization: 'Bearer ' + _token } })
       .then(function (r) {
