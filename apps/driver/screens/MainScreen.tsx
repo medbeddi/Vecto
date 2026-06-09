@@ -95,8 +95,32 @@ function CoursesTab() {
 
   const [accepting, setAccepting] = useState<string | null>(null);
   const [dispo, setDispo] = useState(true);
+  const [togglingDispo, setTogglingDispo] = useState(false);
   const [incomingOrder, setIncomingOrder] = useState<IncomingOrder | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
+
+  // Charger la disponibilité initiale depuis le backend
+  useEffect(() => {
+    api<{ driver: { isAvailable: boolean } }>('/api/drivers/me')
+      .then(({ driver: d }) => setDispo(d.isAvailable))
+      .catch(() => {});
+  }, []);
+
+  const handleDispoToggle = async (value: boolean) => {
+    setDispo(value);
+    setTogglingDispo(true);
+    try {
+      await api('/api/drivers/me/availability', {
+        method: 'PATCH',
+        body: { isAvailable: value },
+      });
+    } catch {
+      setDispo(!value); // rollback si erreur
+      Alert.alert('Erreur', 'Impossible de changer la disponibilité.');
+    } finally {
+      setTogglingDispo(false);
+    }
+  };
 
   useEffect(() => {
     loadAvailable();
@@ -215,7 +239,8 @@ function CoursesTab() {
           <Text style={styles.dispoLabel}>Disponible</Text>
           <Switch
             value={dispo}
-            onValueChange={setDispo}
+            onValueChange={handleDispoToggle}
+            disabled={togglingDispo}
             trackColor={{ false: '#555', true: '#34C759' }}
             thumbColor="#fff"
             style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}

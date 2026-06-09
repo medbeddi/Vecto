@@ -64,7 +64,7 @@ router.post('/client/delivery', requireClientAuth, async (req, res) => {
       initial_media_url: type !== 'location' ? (content ?? null) : null,
     });
 
-    emitNewOrder({ ...delivery, alias: req.client.alias }, {
+    await emitNewOrder({ ...delivery, alias: req.client.alias }, {
       type: message.type,
       content: message.content,
       meta: message.meta,

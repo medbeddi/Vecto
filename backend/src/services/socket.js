@@ -41,12 +41,13 @@ export function initSocket(httpServer) {
       db('drivers')
         .whereNotNull('last_lat')
         .whereNotNull('last_lng')
-        .select('id', 'name', 'last_lat', 'last_lng', 'last_seen', 'status')
+        .select('id', 'name', 'last_lat', 'last_lng', 'last_seen', 'status', 'is_available')
         .then((rows) => {
           socket.emit('drivers_locations', rows.map((r) => ({
             driverId: r.id, name: r.name,
             lat: r.last_lat, lng: r.last_lng,
             lastSeen: r.last_seen, status: r.status,
+            isAvailable: r.is_available,
           })));
         }).catch(() => {});
       socket.on('disconnect', () => {});
@@ -87,7 +88,11 @@ export function initSocket(httpServer) {
       if (!driverId || typeof lat !== 'number' || typeof lng !== 'number') return;
       try {
         await db('drivers').where({ id: driverId }).update({ last_lat: lat, last_lng: lng, last_seen: db.fn.now() });
-        io.to(ADMINS_ROOM).emit('driver_location', { driverId, name: driverName, lat, lng });
+        const driver = await db('drivers').where({ id: driverId }).first('status', 'is_available');
+        io.to(ADMINS_ROOM).emit('driver_location', {
+          driverId, name: driverName, lat, lng,
+          status: driver?.status, isAvailable: driver?.is_available,
+        });
       } catch {}
     });
 
@@ -102,8 +107,8 @@ export function getIO() {
   return io;
 }
 
-// ── Nouvel ordre → broadcast livreurs + admins ────────────────────────────────
-export function emitNewOrder(delivery, initialMessage) {
+// ── Nouvel ordre → broadcast livreurs disponibles + admins ───────────────────
+export async function emitNewOrder(delivery, initialMessage) {
   if (!io) return;
   const payload = {
     deliveryId:      delivery.id,
@@ -118,7 +123,14 @@ export function emitNewOrder(delivery, initialMessage) {
       meta:    initialMessage.meta,
     },
   };
-  io.to(DRIVERS_ROOM).emit('new_order', payload);
+
+  // N'envoyer qu'aux drivers disponibles (is_available = true)
+  const availableDrivers = await db('drivers')
+    .where({ is_available: true, suspended: false })
+    .select('id');
+  for (const { id } of availableDrivers) {
+    io.to(`driver:${id}`).emit('new_order', payload);
+  }
   io.to(ADMINS_ROOM).emit('new_order', payload);
 }
 
@@ -189,8 +201,8 @@ export function emitIncomingText(delivery, message, clientAlias) {
   });
 }
 
-export function emitNewDelivery(delivery) {
-  emitNewOrder(delivery, { type: 'text', content: delivery.description, meta: null });
+export async function emitNewDelivery(delivery) {
+  await emitNewOrder(delivery, { type: 'text', content: delivery.description, meta: null });
 }
 
 // ── CC → Livreur (message direct) ────────────────────────────────────────────
@@ -203,4 +215,10 @@ export function emitCCMessageToDriver(driverId, message) {
 export function emitDriverReplyToCC(driverId, driverName, message) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('driver_reply_to_cc', { driverId, driverName, message });
+}
+
+// ── Disponibilité livreur → admins ───────────────────────────────────────────
+export function emitDriverAvailability(driverId, driverName, isAvailable) {
+  if (!io) return;
+  io.to(ADMINS_ROOM).emit('driver_availability', { driverId, name: driverName, isAvailable });
 }

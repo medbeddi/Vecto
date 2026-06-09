@@ -19,7 +19,7 @@ import { hashWaId } from '../services/pii-filter.js';
 import { acceptDelivery, updateDeliveryStatus } from '../services/delivery.js';
 import { relayDriverMessage } from '../services/relay.js';
 import { getSignedUploadUrl } from '../services/media.js';
-import { emitDeliveryCancelled, emitDriverReplyToCC } from '../services/socket.js';
+import { emitDeliveryCancelled, emitDriverReplyToCC, emitDriverAvailability } from '../services/socket.js';
 
 const router = Router();
 
@@ -114,6 +114,32 @@ router.put('/drivers/fcm-token', requireAuth, validate(fcmTokenSchema), async (r
   try {
     await db('drivers').where({ id: req.driver.id }).update({ fcm_token: req.body.token });
     res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ─── Disponibilité driver ────────────────────────────────────────────────────
+
+router.patch('/drivers/me/availability', requireAuth, async (req, res) => {
+  try {
+    const { isAvailable } = req.body;
+    if (typeof isAvailable !== 'boolean') return res.status(400).json({ error: 'INVALID_BODY' });
+    await db('drivers').where({ id: req.driver.id }).update({ is_available: isAvailable });
+    emitDriverAvailability(req.driver.id, req.driver.name, isAvailable);
+    res.json({ ok: true, isAvailable });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+router.get('/drivers/me', requireAuth, async (req, res) => {
+  try {
+    const driver = await db('drivers')
+      .where({ id: req.driver.id })
+      .first('id', 'name', 'is_available as isAvailable');
+    if (!driver) return res.status(404).json({ error: 'NOT_FOUND' });
+    res.json({ driver });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }

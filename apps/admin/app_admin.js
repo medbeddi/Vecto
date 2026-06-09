@@ -157,6 +157,7 @@ function initSocket() {
   _socket.on('driver_location', function (data) {
     _trackingDrivers[data.driverId] = Object.assign(_trackingDrivers[data.driverId] || {}, {
       driverId: data.driverId, name: data.name, lat: data.lat, lng: data.lng,
+      status: data.status, isAvailable: data.isAvailable,
     });
     updateTrackingMarker(_trackingDrivers[data.driverId]);
     renderTrackingList();
@@ -168,6 +169,15 @@ function initSocket() {
       _trackingDrivers[d.driverId] = d;
       updateTrackingMarker(d);
     });
+    renderTrackingList();
+  });
+
+  // Changement de disponibilité livreur en temps réel
+  _socket.on('driver_availability', function (data) {
+    if (_trackingDrivers[data.driverId]) {
+      _trackingDrivers[data.driverId].isAvailable = data.isAvailable;
+      updateTrackingMarker(_trackingDrivers[data.driverId]);
+    }
     renderTrackingList();
   });
 
@@ -1572,14 +1582,41 @@ function initTrackingMap() {
   }).addTo(_trackingMap);
 }
 
-function trackingIcon(status) {
-  var color = status === 'available' ? '#34C759' : status === 'busy' ? '#FF9500' : '#AEAEB2';
+function trackingIcon(driver) {
+  var status = driver.status || 'offline';
+  var isAvailable = driver.isAvailable !== false; // true par défaut
+  // Couleur : vert=dispo, orange=en course, gris=indisponible/hors ligne
+  var color = status === 'busy' ? '#FF9500' : isAvailable ? '#34C759' : '#AEAEB2';
+  var shadow = status === 'busy' ? '0 0 0 3px rgba(255,149,0,.35)' : isAvailable ? '0 0 0 3px rgba(52,199,89,.35)' : 'none';
+  var moto = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="26" height="26" fill="' + color + '">'
+    + '<circle cx="5.5" cy="17.5" r="3" stroke="#fff" stroke-width="1.2" fill="' + color + '"/>'
+    + '<circle cx="18.5" cy="17.5" r="3" stroke="#fff" stroke-width="1.2" fill="' + color + '"/>'
+    + '<path stroke="#fff" stroke-width="1" fill="' + color + '" d="M5.5 17.5 L9 10 L14 10 L18 14 L18.5 17.5 M9 10 L12 7 L16 7 L18 10"/>'
+    + '</svg>';
+  // Icône moto SVG simplifiée (scooter Unicode fallback)
+  var html = '<div style="display:flex;align-items:center;justify-content:center;'
+    + 'width:32px;height:32px;border-radius:50%;background:' + color + ';'
+    + 'border:2px solid #fff;box-shadow:' + shadow + ',0 2px 8px rgba(0,0,0,.25);'
+    + 'font-size:16px;line-height:1">🛵</div>';
   return L.divIcon({
     className: '',
-    html: '<div style="background:' + color + ';width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)"></div>',
-    iconSize: [14, 14],
-    iconAnchor: [7, 7],
+    html: html,
+    iconSize: [32, 32],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -18],
   });
+}
+
+function trackingPopupContent(driver) {
+  var statusLabel = driver.status === 'busy' ? 'En course' : driver.status === 'available' ? 'En ligne' : 'Hors ligne';
+  var dispoBadge = driver.isAvailable !== false
+    ? '<span style="background:#34C759;color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;font-weight:600">Disponible</span>'
+    : '<span style="background:#AEAEB2;color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;font-weight:600">Indisponible</span>';
+  return '<div style="min-width:140px;font-family:sans-serif">'
+    + '<div style="font-weight:700;font-size:14px;margin-bottom:5px">🛵 ' + escHtml(driver.name) + '</div>'
+    + dispoBadge
+    + '<div style="color:#666;font-size:12px;margin-top:5px">' + statusLabel + '</div>'
+    + '</div>';
 }
 
 function updateTrackingMarker(driver) {
@@ -1587,12 +1624,12 @@ function updateTrackingMarker(driver) {
   if (_trackingMarkers[driver.driverId]) {
     _trackingMarkers[driver.driverId]
       .setLatLng([driver.lat, driver.lng])
-      .setIcon(trackingIcon(driver.status || 'available'))
-      .getPopup()?.setContent('<b>' + escHtml(driver.name) + '</b><br>Statut : ' + (driver.status || '—'));
+      .setIcon(trackingIcon(driver))
+      .getPopup()?.setContent(trackingPopupContent(driver));
   } else {
-    var marker = L.marker([driver.lat, driver.lng], { icon: trackingIcon(driver.status || 'available') })
+    var marker = L.marker([driver.lat, driver.lng], { icon: trackingIcon(driver) })
       .addTo(_trackingMap)
-      .bindPopup('<b>' + escHtml(driver.name) + '</b><br>Statut : ' + (driver.status || '—'));
+      .bindPopup(trackingPopupContent(driver));
     _trackingMarkers[driver.driverId] = marker;
   }
 }
@@ -1612,13 +1649,22 @@ function renderTrackingList() {
   }
 
   list.innerHTML = drivers.map(function (d) {
-    var dotClass = d.status === 'busy' ? 'busy' : d.lat ? 'online' : 'offline';
-    var statusLabel = d.status === 'available' ? 'Disponible' : d.status === 'busy' ? 'En course' : 'Hors ligne';
+    var isAvailable = d.isAvailable !== false;
+    var isBusy = d.status === 'busy';
+    var dotClass = isBusy ? 'busy' : d.lat ? 'online' : 'offline';
+    var statusLabel = isBusy ? 'En course' : d.lat ? 'En ligne' : 'Hors ligne';
+    var dispoBadge = isBusy
+      ? '<span style="background:#FF9500;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;margin-left:4px">En course</span>'
+      : isAvailable
+        ? '<span style="background:#34C759;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;margin-left:4px">Disponible</span>'
+        : '<span style="background:#AEAEB2;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;margin-left:4px">Indisponible</span>';
     var active = _trackingSelected === d.driverId ? ' active' : '';
     return '<div class="tracking-item' + active + '" onclick="focusDriver(\'' + d.driverId + '\')">'
-      + '<div class="tracking-dot ' + dotClass + '"></div>'
-      + '<div><div class="tracking-item-name">' + escHtml(d.name) + '</div>'
-      + '<div class="tracking-item-status">' + statusLabel + '</div></div>'
+      + '<div style="font-size:20px;margin-right:4px">🛵</div>'
+      + '<div style="flex:1">'
+      + '<div class="tracking-item-name">' + escHtml(d.name) + dispoBadge + '</div>'
+      + '<div class="tracking-item-status">' + statusLabel + '</div>'
+      + '</div>'
       + '</div>';
   }).join('');
 }
@@ -1643,8 +1689,8 @@ async function loadTrackingDrivers() {
     if (!res.ok) return;
     var data = await res.json();
     (data.drivers || []).forEach(function (d) {
-      _trackingDrivers[d.id] = { driverId: d.id, name: d.name, status: d.status, lat: d.lat, lng: d.lng, lastSeen: d.lastSeen };
-      updateTrackingMarker(_trackingDrivers[d.id]);
+      _trackingDrivers[d.id] = { driverId: d.id, name: d.name, status: d.status, isAvailable: d.isAvailable, lat: d.lat, lng: d.lng, lastSeen: d.lastSeen };
+      if (d.lat && d.lng) updateTrackingMarker(_trackingDrivers[d.id]);
     });
     renderTrackingList();
   } catch {}

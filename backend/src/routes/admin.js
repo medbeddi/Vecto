@@ -464,7 +464,7 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
         ? { type: lastMsg.type, content: lastMsg.content, meta: lastMsg.meta }
         : { type: 'text', content: pickupAddress ? `${pickupAddress} → ${dropoffAddress}` : 'Commande appel', meta: null };
 
-    emitNewOrder({ ...updated, alias: client.clientAlias }, initialMessage);
+    await emitNewOrder({ ...updated, alias: client.clientAlias }, initialMessage);
 
     res.json({ delivery: { id: updated.id, status: updated.status } });
   } catch (err) {
@@ -481,11 +481,11 @@ router.get('/admin/drivers/locations', requireAdmin, async (req, res) => {
       .whereNotNull('last_lat')
       .whereNotNull('last_lng')
       .where('suspended', false)
-      .select('id', 'name', 'status', 'last_lat', 'last_lng', 'last_seen');
+      .select('id', 'name', 'status', 'is_available', 'last_lat', 'last_lng', 'last_seen');
 
     res.json({
       drivers: drivers.map((d) => ({
-        id: d.id, name: d.name, status: d.status,
+        id: d.id, name: d.name, status: d.status, isAvailable: d.is_available,
         lat: d.last_lat, lng: d.last_lng, lastSeen: d.last_seen,
       })),
     });
@@ -524,7 +524,7 @@ router.post('/admin/broadcast', requireCallCenter, async (req, res) => {
       meta: null,
     };
 
-    emitNewOrder({ ...delivery, alias: callAlias }, initialMessage);
+    await emitNewOrder({ ...delivery, alias: callAlias }, initialMessage);
 
     res.json({ delivery: { id: delivery.id, clientAlias: callAlias } });
   } catch {
