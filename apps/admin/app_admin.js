@@ -1143,11 +1143,22 @@ function initMiniMap() {
 }
 
 /* ── Google Maps + Places ────────────────────────────────────────── */
+
+// Appelé par Google Maps quand la clé est invalide ou billing non activé
+window.gm_authFailure = function() {
+  _useGoogleMaps = false;
+  _googleMiniMap = null; _googleFullMap = null;
+  _mmPickupMarker = null; _mmDropoffMarker = null;
+  _fsPickupMarker = null; _fsDropoffMarker = null;
+  // Réinitialiser en Leaflet si la mini-carte était ouverte
+  var el = document.getElementById('cc-mini-map');
+  if (el && el.style.display !== 'none') setTimeout(initMiniMap, 100);
+};
+
 function onGoogleMapsReady() {
   _useGoogleMaps = true;
   setTimeout(function() {
     initGooglePlaces();
-    // Réinitialiser la mini-carte en Google Maps au prochain openLaunchPanel
     _googleMiniMap = null;
     _mmPickupMarker = null; _mmDropoffMarker = null;
   }, 150);
