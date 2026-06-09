@@ -1127,6 +1127,10 @@ function initMiniMap() {
         center: { lat: 18.0735, lng: -15.9582 }, zoom: 12,
         disableDefaultUI: true, gestureHandling: 'none',
       });
+      // Attacher Places seulement après chargement réussi des tuiles
+      google.maps.event.addListenerOnce(_googleMiniMap, 'tilesloaded', function() {
+        if (_useGoogleMaps && !_googlePlacesReady) initGooglePlaces();
+      });
       if (_mmPickupCoords || _mmDropoffCoords) setTimeout(refreshMapMarkers, 300);
     }
   } else if (typeof L !== 'undefined') {
@@ -1175,8 +1179,9 @@ window.gm_authFailure = function() {
 
 function onGoogleMapsReady() {
   _useGoogleMaps = true;
+  // Ne PAS attacher Places ici — on attend que la carte charge ses tuiles
+  // pour confirmer que la clé est valide (sinon gm_authFailure fire avant)
   setTimeout(function() {
-    initGooglePlaces();
     _googleMiniMap = null;
     _mmPickupMarker = null; _mmDropoffMarker = null;
   }, 150);
