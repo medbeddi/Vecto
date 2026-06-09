@@ -1147,12 +1147,30 @@ function initMiniMap() {
 // Appelé par Google Maps quand la clé est invalide ou billing non activé
 window.gm_authFailure = function() {
   _useGoogleMaps = false;
+  _googlePlacesReady = false; // réactiver Nominatim
   _googleMiniMap = null; _googleFullMap = null;
   _mmPickupMarker = null; _mmDropoffMarker = null;
   _fsPickupMarker = null; _fsDropoffMarker = null;
-  // Réinitialiser en Leaflet si la mini-carte était ouverte
-  var el = document.getElementById('cc-mini-map');
-  if (el && el.style.display !== 'none') setTimeout(initMiniMap, 100);
+
+  // Supprimer les overlays Google Places (les "!") des inputs
+  document.querySelectorAll('.pac-container').forEach(function(el) { el.remove(); });
+  // Réinitialiser les inputs pour enlever les widgets Google Places
+  ['cc-pickup', 'cc-dropoff', 'modal-pickup-input', 'modal-dropoff-input'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var val = el.value;
+    var clone = el.cloneNode(true);
+    clone.value = val;
+    el.parentNode.replaceChild(clone, el);
+  });
+  // Rattacher les listeners debounceMiniMap sur les inputs principaux
+  var pu = document.getElementById('cc-pickup');
+  var dr = document.getElementById('cc-dropoff');
+  if (pu) pu.addEventListener('input', debounceMiniMap);
+  if (dr) dr.addEventListener('input', debounceMiniMap);
+
+  // Réinitialiser en Leaflet
+  setTimeout(initMiniMap, 100);
 };
 
 function onGoogleMapsReady() {
