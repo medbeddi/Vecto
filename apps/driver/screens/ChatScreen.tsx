@@ -275,6 +275,7 @@ export default function ChatScreen() {
           renderItem={({ item }) => <MessageBubble message={item} />}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
+          style={{ flex: 1 }}
         />
       )}
 
