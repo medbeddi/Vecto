@@ -92,16 +92,22 @@ document.addEventListener('DOMContentLoaded', function () {
     if (e.key === 'Enter') login();
   });
 
-  // Charger la config publique (clé Google Maps) dès le démarrage
+  // Charger Google Maps seulement si la clé est valide (test Geocoding avant)
   fetch(API + '/api/admin/config')
     .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (cfg) {
-      if (cfg && cfg.googleMapsKey) {
-        var s = document.createElement('script');
-        s.src = 'https://maps.googleapis.com/maps/api/js?key=' + cfg.googleMapsKey + '&libraries=places&language=fr&callback=onGoogleMapsReady';
-        s.async = true; s.defer = true;
-        document.head.appendChild(s);
-      }
+    .then(async function (cfg) {
+      if (!cfg || !cfg.googleMapsKey) return;
+      try {
+        var test = await fetch('https://maps.googleapis.com/maps/api/geocode/json?address=Nouakchott&key=' + cfg.googleMapsKey);
+        var data = await test.json();
+        // REQUEST_DENIED = billing non activé ou clé invalide → ne pas charger
+        if (data.status === 'REQUEST_DENIED' || data.status === 'UNKNOWN_ERROR') return;
+      } catch (e) { return; }
+      // Clé vérifiée → charger Google Maps
+      var s = document.createElement('script');
+      s.src = 'https://maps.googleapis.com/maps/api/js?key=' + cfg.googleMapsKey + '&libraries=places&language=fr&callback=onGoogleMapsReady';
+      s.async = true; s.defer = true;
+      document.head.appendChild(s);
     })
     .catch(function () {});
 
