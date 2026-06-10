@@ -399,8 +399,8 @@ function CoursesTab() {
             onAccept={handleAccept}
             onRefuse={async (d) => {
               socketDeliveryIds.current.delete(d.id);
-              try { await api(`/api/deliveries/${d.id}/refuse`, { method: 'POST' }); } catch {}
               removeAvailable(d.id);
+              api(`/api/deliveries/${d.id}/refuse`, { method: 'POST' }).catch(() => {});
             }}
             onExpire={(d) => {
               socketDeliveryIds.current.delete(d.id);
