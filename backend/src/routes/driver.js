@@ -334,7 +334,7 @@ router.get('/drivers/cc-chat', requireAuth, async (req, res) => {
     const messages = await db('cc_driver_messages')
       .where({ driver_id: req.driver.id })
       .orderBy('created_at', 'asc')
-      .select('id', 'sender_role as senderRole', 'content', 'created_at as createdAt');
+      .select('id', 'sender_role as senderRole', 'type', 'content', 'created_at as createdAt');
     await db('cc_driver_messages')
       .where({ driver_id: req.driver.id, read_by_driver: false })
       .update({ read_by_driver: true });
@@ -346,15 +346,16 @@ router.get('/drivers/cc-chat', requireAuth, async (req, res) => {
 
 router.post('/drivers/cc-chat', requireAuth, async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, type = 'text' } = req.body;
     if (!content?.trim()) return res.status(400).json({ error: 'EMPTY_MESSAGE' });
+    const validTypes = ['text', 'audio', 'image'];
+    const msgType = validTypes.includes(type) ? type : 'text';
     const [msg] = await db('cc_driver_messages')
-      .insert({ driver_id: req.driver.id, sender_role: 'driver', content: content.trim() })
-      .returning('id', 'sender_role', 'content', 'created_at');
-    emitDriverReplyToCC(req.driver.id, req.driver.name, {
-      id: msg.id, senderRole: msg.sender_role, content: msg.content, createdAt: msg.created_at,
-    });
-    res.json({ message: { id: msg.id, senderRole: msg.sender_role, content: msg.content, createdAt: msg.created_at } });
+      .insert({ driver_id: req.driver.id, sender_role: 'driver', type: msgType, content: content.trim() })
+      .returning('id', 'sender_role', 'type', 'content', 'created_at');
+    const out = { id: msg.id, senderRole: msg.sender_role, type: msg.type, content: msg.content, createdAt: msg.created_at };
+    emitDriverReplyToCC(req.driver.id, req.driver.name, out);
+    res.json({ message: out });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }

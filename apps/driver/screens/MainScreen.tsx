@@ -3,7 +3,11 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Linking,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -13,6 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as Notifications from 'expo-notifications';
@@ -21,7 +26,7 @@ import { Audio } from 'expo-av';
 import { useAuthStore } from '../store/auth.store';
 import { useDeliveriesStore } from '../store/deliveries.store';
 import { socketService } from '../lib/socket';
-import { api } from '../lib/api';
+import { api, uploadFile } from '../lib/api';
 import { DeliveryCard } from '../components/DeliveryCard';
 import {
   PRIMARY, BG, CARD, BORDER, TEXT, TEXT2, SURFACE, BRAND,
@@ -449,45 +454,116 @@ function ChatsTab() {
 // ─── Onglet Admin — chat direct avec le call center ──────────────────────────
 
 function AdminChatTab() {
-  const [messages, setMessages] = useState<CCMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
+  const [messages, setMessages]   = useState<CCMessage[]>([]);
+  const [input,    setInput]      = useState('');
+  const [sending,  setSending]    = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [ccPhone,  setCcPhone]    = useState<string | null>(null);
   const flatRef = useRef<FlatList<CCMessage>>(null);
 
   useEffect(() => {
     api<{ messages: CCMessage[] }>('/api/drivers/cc-chat')
       .then((d) => setMessages(d.messages ?? []))
       .catch(() => {});
-
-    const onMsg = (msg: CCMessage) => setMessages((prev) => [...prev, msg]);
+    api<{ ccPhone: string | null }>('/api/drivers/config')
+      .then((d) => setCcPhone(d.ccPhone))
+      .catch(() => {});
+    const onMsg = (msg: CCMessage) => {
+      setMessages((prev) => [...prev, msg]);
+      setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80);
+    };
     socketService.on('cc_message', onMsg);
     return () => socketService.off('cc_message', onMsg);
   }, []);
 
-  const send = async () => {
-    const text = input.trim();
-    if (!text) return;
+  const scrollBottom = () =>
+    setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80);
+
+  const sendMsg = async (content: string, type = 'text') => {
+    if (!content.trim()) return;
     setSending(true);
-    setInput('');
     try {
       const { message } = await api<{ message: CCMessage }>('/api/drivers/cc-chat', {
-        method: 'POST', body: { content: text },
+        method: 'POST', body: { content: content.trim(), type },
       });
       setMessages((prev) => [...prev, message]);
-    } catch {} finally {
-      setSending(false);
+      scrollBottom();
+    } catch {} finally { setSending(false); }
+  };
+
+  const sendText = () => {
+    const t = input.trim(); if (!t) return;
+    setInput('');
+    sendMsg(t, 'text');
+  };
+
+  const toggleRecording = async () => {
+    if (recording) {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+      if (!uri) return;
+      setSending(true);
+      try {
+        const fd = new FormData();
+        fd.append('file', { uri, type: 'audio/mp4', name: 'voice.m4a' } as any);
+        const { url } = await uploadFile('/api/upload', fd);
+        await sendMsg(url, 'audio');
+      } catch {} finally { setSending(false); }
+      return;
     }
+    const { status } = await Audio.requestPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission refusée', 'Activez le microphone.'); return; }
+    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+    const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+    setRecording(rec);
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission refusée', 'Activez la galerie.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.75 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    const ext  = asset.uri.split('.').pop() ?? 'jpg';
+    const mime = asset.mimeType ?? `image/${ext}`;
+    setSending(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', { uri: asset.uri, type: mime, name: `img.${ext}` } as any);
+      const { url } = await uploadFile('/api/upload', fd);
+      await sendMsg(url, 'image');
+    } catch { Alert.alert('Erreur', 'Impossible d\'envoyer l\'image.'); }
+    finally { setSending(false); }
+  };
+
+  const callCC = () => {
+    if (!ccPhone) { Alert.alert('Indisponible', 'Le numéro du Call Center n\'est pas configuré.'); return; }
+    Linking.openURL(`tel:${ccPhone}`);
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: BG }}>
-      <View style={styles.header}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: BG }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+    >
+      {/* Header */}
+      <View style={[styles.header, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
         <Text style={styles.headerBrand}>Centre d'appels</Text>
+        <TouchableOpacity
+          style={adminChat.callBtn}
+          onPress={callCC}
+          activeOpacity={0.75}
+        >
+          <Icon name="phone" size={18} color="#fff" strokeWidth={1.75} />
+        </TouchableOpacity>
       </View>
 
+      {/* Messages */}
       {messages.length === 0 ? (
-        <View style={styles.empty}>
-          <Icon name="chat" size={52} color={TEXT2} strokeWidth={1.5} />
+        <View style={[styles.empty, { flex: 1 }]}>
+          <Icon name="headset" size={52} color={TEXT2} strokeWidth={1.5} />
           <Text style={styles.emptyText}>Aucun message</Text>
           <Text style={styles.emptyHint}>Le call center peut vous contacter ici</Text>
         </View>
@@ -496,87 +572,138 @@ function AdminChatTab() {
           ref={flatRef}
           data={messages}
           keyExtractor={(m) => m.id}
+          style={{ flex: 1 }}
           contentContainerStyle={adminChat.list}
-          onContentSizeChange={() => flatRef.current?.scrollToEnd({ animated: false })}
-          renderItem={({ item }) => {
-            const isAdmin = item.senderRole === 'admin';
-            return (
-              <View style={[adminChat.row, isAdmin ? adminChat.rowIn : adminChat.rowOut]}>
-                {isAdmin && (
-                  <View style={adminChat.avatar}>
-                    <Text style={adminChat.avatarText}>CC</Text>
-                  </View>
-                )}
-                <View style={[adminChat.bubble, isAdmin ? adminChat.bubbleIn : adminChat.bubbleOut]}>
-                  <Text style={isAdmin ? adminChat.textIn : adminChat.textOut}>{item.content}</Text>
-                  <Text style={adminChat.time}>
-                    {new Date(item.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
-                </View>
-              </View>
-            );
-          }}
+          onContentSizeChange={scrollBottom}
+          renderItem={({ item }) => <CCBubble message={item} />}
         />
       )}
 
-      <View style={adminChat.inputRow}>
+      {/* Barre de saisie */}
+      <View style={adminChat.inputBar}>
+        {/* Image */}
+        <TouchableOpacity style={adminChat.iconBtn} onPress={pickImage} disabled={sending || !!recording}>
+          <Icon name="image" size={20} color={TEXT2} strokeWidth={1.75} />
+        </TouchableOpacity>
+        {/* TextInput */}
         <TextInput
           style={adminChat.input}
           value={input}
           onChangeText={setInput}
-          placeholder="Répondre au centre d'appels…"
-          placeholderTextColor={TEXT2}
+          placeholder={recording ? '🔴 Enregistrement...' : 'Répondre au centre d\'appels…'}
+          placeholderTextColor={recording ? '#FF3B30' : TEXT2}
           returnKeyType="send"
-          onSubmitEditing={send}
+          onSubmitEditing={sendText}
+          editable={!recording}
+          multiline
+          maxLength={1000}
         />
-        <TouchableOpacity
-          style={[adminChat.sendBtn, (!input.trim() || sending) && { opacity: 0.4 }]}
-          onPress={send}
-          disabled={!input.trim() || sending}
-          activeOpacity={0.75}
-        >
-          {sending
-            ? <ActivityIndicator size="small" color="#fff" />
-            : <Icon name="send" size={18} color="#fff" strokeWidth={2} />
-          }
-        </TouchableOpacity>
+        {/* Mic ou Send */}
+        {input.trim() ? (
+          <TouchableOpacity
+            style={[adminChat.actionBtn, sending && { opacity: 0.5 }]}
+            onPress={sendText}
+            disabled={sending}
+            activeOpacity={0.75}
+          >
+            {sending
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Icon name="send" size={18} color="#fff" />}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[adminChat.actionBtn, recording && adminChat.actionBtnRec]}
+            onPress={toggleRecording}
+            disabled={sending && !recording}
+            activeOpacity={0.75}
+          >
+            {recording
+              ? <Icon name="pause" size={18} color="#fff" strokeWidth={2} />
+              : <Icon name="mic" size={20} color="#fff" strokeWidth={1.75} />}
+          </TouchableOpacity>
+        )}
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function CCBubble({ message }: { message: CCMessage }) {
+  const isAdmin = message.senderRole === 'admin';
+  const time = new Date(message.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+  let content: React.ReactNode;
+  if (message.type === 'image') {
+    content = <Image source={{ uri: message.content }} style={adminChat.msgImage} resizeMode="cover" />;
+  } else if (message.type === 'audio') {
+    content = (
+      <View style={adminChat.audioRow}>
+        <Icon name="mic" size={14} color={isAdmin ? TEXT : '#fff'} strokeWidth={1.75} />
+        <Text style={[adminChat.audioText, isAdmin ? { color: TEXT2 } : { color: 'rgba(255,255,255,0.8)' }]}>Message vocal</Text>
+      </View>
+    );
+  } else {
+    content = <Text style={isAdmin ? adminChat.textIn : adminChat.textOut}>{message.content}</Text>;
+  }
+
+  return (
+    <View style={[adminChat.row, isAdmin ? adminChat.rowIn : adminChat.rowOut]}>
+      {isAdmin && (
+        <View style={adminChat.avatar}>
+          <Text style={adminChat.avatarText}>CC</Text>
+        </View>
+      )}
+      <View style={[adminChat.bubble, isAdmin ? adminChat.bubbleIn : adminChat.bubbleOut]}>
+        {content}
+        <Text style={adminChat.time}>{time}</Text>
       </View>
     </View>
   );
 }
 
 const adminChat = StyleSheet.create({
-  list: { padding: 14, gap: 10 },
+  list: { padding: 14, paddingBottom: 8, gap: 10 },
   row: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   rowIn: { justifyContent: 'flex-start' },
   rowOut: { justifyContent: 'flex-end' },
   avatar: {
     width: 30, height: 30, borderRadius: 15,
-    backgroundColor: PRIMARY, justifyContent: 'center', alignItems: 'center',
-    flexShrink: 0,
+    backgroundColor: PRIMARY, justifyContent: 'center', alignItems: 'center', flexShrink: 0,
   },
   avatarText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-  bubble: {
-    maxWidth: '75%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, gap: 4,
-  },
+  bubble: { maxWidth: '75%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, gap: 4 },
   bubbleIn: { backgroundColor: CARD, borderBottomLeftRadius: 4 },
   bubbleOut: { backgroundColor: PRIMARY, borderBottomRightRadius: 4 },
-  textIn: { color: TEXT, fontSize: 15, lineHeight: 20 },
+  textIn:  { color: TEXT, fontSize: 15, lineHeight: 20 },
   textOut: { color: '#fff', fontSize: 15, lineHeight: 20 },
-  time: { fontSize: 11, color: 'rgba(128,128,128,0.8)', alignSelf: 'flex-end' },
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 14, paddingVertical: 10,
+  time: { fontSize: 11, color: 'rgba(128,128,128,0.7)', alignSelf: 'flex-end' },
+  msgImage: { width: 200, height: 150, borderRadius: 10 },
+  audioRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 },
+  audioText: { fontSize: 13, fontWeight: '500' },
+  // Input bar
+  inputBar: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
     borderTopWidth: 0.5, borderTopColor: BORDER, backgroundColor: CARD,
   },
-  input: {
-    flex: 1, backgroundColor: BG, borderRadius: 22,
-    paddingHorizontal: 16, paddingVertical: 11,
-    fontSize: 15, color: TEXT, borderWidth: 0.5, borderColor: BORDER,
+  iconBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: SURFACE, justifyContent: 'center', alignItems: 'center',
   },
-  sendBtn: {
-    width: 44, height: 44, borderRadius: 22,
+  input: {
+    flex: 1, backgroundColor: '#F0F0F5', borderRadius: 22,
+    paddingHorizontal: 16, paddingVertical: 10,
+    fontSize: 15, color: TEXT, maxHeight: 100,
+  },
+  actionBtn: {
+    width: 42, height: 42, borderRadius: 21,
     backgroundColor: PRIMARY, justifyContent: 'center', alignItems: 'center',
+  },
+  actionBtnRec: { backgroundColor: '#FF3B30' },
+  // Call button in header
+  callBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center', alignItems: 'center',
   },
 });
 
