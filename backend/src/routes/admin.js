@@ -734,13 +734,14 @@ import multer from 'multer';
 import { mkdirSync } from 'fs';
 import pathMod from 'path';
 import { fileURLToPath as fturl } from 'url';
+import { uploadToR2, extFromMime } from '../services/media.js';
 
 const __dirnameAdmin = pathMod.dirname(fturl(import.meta.url));
 const ADMIN_UPLOADS_DIR = pathMod.join(__dirnameAdmin, '../../uploads');
 mkdirSync(ADMIN_UPLOADS_DIR, { recursive: true });
 
 const adminUpload = multer({
-  storage: multer.diskStorage({
+  storage: env.R2_ENABLED ? multer.memoryStorage() : multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, ADMIN_UPLOADS_DIR),
     filename: (_req, file, cb) => {
       const ext = pathMod.extname(file.originalname) || '.bin';
@@ -754,8 +755,19 @@ const adminUpload = multer({
   },
 });
 
-router.post('/admin/upload', requireCallCenter, adminUpload.single('file'), (req, res) => {
+router.post('/admin/upload', requireCallCenter, adminUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'NO_FILE' });
+  if (env.R2_ENABLED) {
+    try {
+      const ext = extFromMime(req.file.mimetype) || pathMod.extname(req.file.originalname).slice(1) || 'bin';
+      const key = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      await uploadToR2(req.file.buffer, key, req.file.mimetype);
+      return res.json({ url: `${env.R2_PUBLIC_URL}/${key}` });
+    } catch (err) {
+      console.error('[admin/upload] R2 error:', err.message);
+      return res.status(500).json({ error: 'UPLOAD_FAILED' });
+    }
+  }
   const host = `${req.protocol}://${req.headers.host}`;
   res.json({ url: `${host}/uploads/${req.file.filename}` });
 });

@@ -167,7 +167,7 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
           .whereRaw('delivery_refusals.delivery_id = deliveries.id')
           .where('delivery_refusals.driver_id', req.driver.id)
       )
-      .orderBy('deliveries.created_at', 'asc')
+      .orderBy('deliveries.created_at', 'desc')
       .select(
         'deliveries.id',
         'deliveries.description',
