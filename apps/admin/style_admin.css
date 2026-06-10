@@ -464,7 +464,7 @@ input:focus, textarea:focus { outline: none; }
   transition: grid-template-columns 0.25s var(--ease);
 }
 .cc-inbox-layout.launch-open {
-  grid-template-columns: 280px 1fr 440px;
+  grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1fr);
 }
 
 /* Sidebar conversations */
