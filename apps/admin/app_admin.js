@@ -1423,11 +1423,26 @@ function onGoogleMapsReady() {
   }, 150);
 }
 
+// Bounding box Nouakchott : ~17.90 N–18.30 N, 16.10 W–15.75 W
+var _NKT_BOUNDS = null;
+function _getNktBounds() {
+  if (!_NKT_BOUNDS && window.google)
+    _NKT_BOUNDS = new google.maps.LatLngBounds(
+      new google.maps.LatLng(17.90, -16.10),
+      new google.maps.LatLng(18.30, -15.75)
+    );
+  return _NKT_BOUNDS;
+}
+
 function _attachPlaces(inputEl, onSelect) {
   if (!inputEl || inputEl._acDone) return;
   inputEl._acDone = true;
-  var ac = new google.maps.places.Autocomplete(inputEl,
-    { componentRestrictions: { country: 'mr' }, fields: ['geometry', 'formatted_address'] });
+  var ac = new google.maps.places.Autocomplete(inputEl, {
+    componentRestrictions: { country: 'mr' },
+    bounds: _getNktBounds(),
+    strictBounds: false,
+    fields: ['geometry', 'formatted_address'],
+  });
   ac.addListener('place_changed', function() {
     var p = ac.getPlace();
     if (p && p.geometry) onSelect([p.geometry.location.lat(), p.geometry.location.lng()], p.formatted_address || inputEl.value);
@@ -1485,9 +1500,16 @@ async function updateMiniMap() {
   if (!pickup && !dropoff) return;
   async function geocode(addr) {
     try {
-      var r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(addr + ', Mauritanie'));
+      var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1'
+        + '&viewbox=-16.10,18.30,-15.75,17.90&bounded=1'
+        + '&q=' + encodeURIComponent(addr + ', Nouakchott, Mauritanie');
+      var r = await fetch(url);
       var d = await r.json();
       if (d.length) return [parseFloat(d[0].lat), parseFloat(d[0].lon)];
+      // fallback sans bounded si rien trouvé dans le bbox
+      var r2 = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(addr + ', Mauritanie'));
+      var d2 = await r2.json();
+      if (d2.length) return [parseFloat(d2[0].lat), parseFloat(d2[0].lon)];
     } catch {}
     return null;
   }
