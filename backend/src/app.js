@@ -79,6 +79,9 @@ app.use('/sim', simRouter);
 // ─── Admin web app ────────────────────────────────────────────────────────────
 app.use('/admin', express.static(path.join(__dirname, '../../apps/admin')));
 
+// ─── Driver web app ───────────────────────────────────────────────────────────
+app.use('/driver', express.static(path.join(__dirname, '../../apps/driver-web')));
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));
 

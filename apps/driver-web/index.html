@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VECTO — App Livreur</title>
+  <link rel="stylesheet" href="style_livreur.css?v=3" />
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+
+<div class="phone-wrap">
+<div class="phone">
+
+  <!-- SCREEN: Login -->
+  <div class="screen active" id="s-login">
+    <div class="welcome-fill">
+      <div class="brand">
+        <div class="brand-logo">V</div>
+        <div class="brand-name">VECTO</div>
+        <div class="brand-sub">Espace Livreur</div>
+      </div>
+      <div class="welcome-title">Bienvenue 👋</div>
+      <div class="welcome-sub">Connectez-vous pour recevoir des courses</div>
+      <div style="width:100%">
+        <label class="field-label">Numéro de téléphone</label>
+        <div class="field-row" style="margin-bottom:20px">
+          <div class="field-prefix" id="login-dial" style="cursor:pointer" onclick="toggleDialPicker()">+222 ▾</div>
+          <input type="tel" id="login-phone" placeholder="XX XX XX XX" onkeydown="if(event.key==='Enter')handleContinue()" />
+        </div>
+        <!-- Dial picker -->
+        <div id="dial-picker" style="display:none;background:var(--card);border-radius:12px;border:.5px solid var(--border);margin-bottom:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.1)">
+          <div onclick="selectDial('+222')" style="padding:12px 16px;cursor:pointer;font-size:14px;border-bottom:.5px solid var(--border)">🇲🇷 Mauritanie +222</div>
+          <div onclick="selectDial('+216')" style="padding:12px 16px;cursor:pointer;font-size:14px;border-bottom:.5px solid var(--border)">🇹🇳 Tunisie +216</div>
+          <div onclick="selectDial('+212')" style="padding:12px 16px;cursor:pointer;font-size:14px;border-bottom:.5px solid var(--border)">🇲🇦 Maroc +212</div>
+          <div onclick="selectDial('+213')" style="padding:12px 16px;cursor:pointer;font-size:14px">🇩🇿 Algérie +213</div>
+        </div>
+        <div id="login-error" class="error-msg" style="display:none"></div>
+        <button class="btn btn-dark" id="btn-continue" onclick="handleContinue()">Continuer →</button>
+        <p class="field-hint">Entrez votre numéro pour continuer</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: Password (driver existant) -->
+  <div class="screen" id="s-password">
+    <div class="tb"><span class="back" onclick="go('s-login')">←</span></div>
+    <div class="login-fill">
+      <div class="login-header">
+        <div class="page-title">Mot de passe</div>
+        <div class="page-sub">Numéro enregistré<br><strong id="pw-phone-display"></strong></div>
+      </div>
+      <div class="field-row" style="margin-bottom:8px">
+        <input type="password" id="pw-input" placeholder="Votre mot de passe" onkeydown="if(event.key==='Enter')handleLogin()" />
+      </div>
+      <div id="pw-error" class="error-msg" style="display:none"></div>
+      <button class="btn btn-dark" id="btn-login" onclick="handleLogin()" style="margin-top:16px">Se connecter</button>
+      <p class="field-hint" style="margin-top:12px;cursor:pointer;text-decoration:underline" onclick="alert('Contactez l\'administrateur pour réinitialiser votre mot de passe.')">Mot de passe oublié ?</p>
+    </div>
+  </div>
+
+  <!-- SCREEN: OTP -->
+  <div class="screen" id="s-otp">
+    <div class="tb"><span class="back" onclick="go('s-login')">←</span></div>
+    <div class="login-fill">
+      <div class="login-header">
+        <div class="page-title">Vérification</div>
+        <div class="page-sub">Code envoyé au <strong id="otp-phone-display"></strong></div>
+      </div>
+      <div class="otp-row" id="otp-boxes">
+        <input class="otp-box" maxlength="1" onInput="otpInput(this,0)" onKeydown="otpKey(event,0)" />
+        <input class="otp-box" maxlength="1" onInput="otpInput(this,1)" onKeydown="otpKey(event,1)" />
+        <input class="otp-box" maxlength="1" onInput="otpInput(this,2)" onKeydown="otpKey(event,2)" />
+        <input class="otp-box" maxlength="1" onInput="otpInput(this,3)" onKeydown="otpKey(event,3)" />
+      </div>
+      <div id="otp-error" class="error-msg" style="display:none"></div>
+      <button class="btn btn-dark" id="btn-otp-next" onclick="handleOtpNext()" disabled>Suivant →</button>
+      <p class="field-hint" id="otp-resend-wrap" style="margin-top:12px">Renvoyer dans <strong id="otp-timer">60</strong>s</p>
+    </div>
+  </div>
+
+  <!-- SCREEN: Setup (nouveau driver — nom + mdp) -->
+  <div class="screen" id="s-setup">
+    <div class="tb"><span class="back" onclick="go('s-otp')">←</span></div>
+    <div class="login-fill">
+      <div class="login-header">
+        <div class="page-title">Créer mon compte</div>
+        <div class="page-sub">Renseignez votre nom et choisissez un mot de passe</div>
+      </div>
+      <label class="field-label">Nom complet</label>
+      <div class="field-row"><input type="text" id="setup-name" placeholder="Ex. Karim Ben Ali" /></div>
+      <label class="field-label">Mot de passe</label>
+      <div class="field-row"><input type="password" id="setup-pass" placeholder="6 caractères minimum" /></div>
+      <label class="field-label">Confirmer</label>
+      <div class="field-row"><input type="password" id="setup-confirm" placeholder="Répétez le mot de passe" onkeydown="if(event.key==='Enter')handleSetup()" /></div>
+      <div id="setup-error" class="error-msg" style="display:none"></div>
+      <button class="btn btn-dark" id="btn-setup" onclick="handleSetup()" style="margin-top:8px">Créer mon compte</button>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       SCREEN: Courses (tab 1)
+  ====================================================== -->
+  <div class="screen" id="s-courses">
+    <div class="tb tb-main">
+      <div class="tb-brand">VECTO</div>
+      <div class="dispo-row">
+        <span class="dispo-label" id="dispo-label">Disponible</span>
+        <div class="toggle-wrap tap" onclick="toggleDispo()">
+          <div class="toggle active" id="toggle-dispo"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <div class="sec-header">
+        <span class="sec-title">Nouvelles courses</span>
+        <span class="sec-sub" id="courses-count">0 disponible</span>
+      </div>
+      <div id="courses-list"></div>
+      <div class="empty-state" id="courses-empty" style="display:none">
+        <div class="empty-icon">🎤</div>
+        <div class="empty-title">Aucune course disponible</div>
+        <div class="empty-sub">Les nouvelles demandes apparaîtront ici</div>
+      </div>
+    </div>
+
+    <nav class="bnav">
+      <div class="bni active" id="tab-courses" onclick="setTab(this,'s-courses')">
+        <svg viewBox="0 0 24 24"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>
+      </div>
+      <div class="bni" id="tab-chats" onclick="setTab(this,'s-chats')">
+        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+        <div class="bni-badge" id="badge-chats" style="display:none">2</div>
+      </div>
+      <div class="bni" id="tab-menu" onclick="setTab(this,'s-menu')">
+        <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ======================================================
+       SCREEN: Chats (tab 2)
+  ====================================================== -->
+  <div class="screen" id="s-chats">
+    <div class="tb tb-main">
+      <div class="tb-brand">Mes courses</div>
+      <div class="active-count-wrap">
+        <span class="active-count" id="active-count">0 active</span>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <div id="chats-list"></div>
+      <div class="empty-state" id="chats-empty" style="display:none">
+        <div class="empty-icon">💬</div>
+        <div class="empty-title">Aucune course active</div>
+        <div class="empty-sub">Acceptez une course pour démarrer un chat</div>
+      </div>
+    </div>
+
+    <nav class="bnav">
+      <div class="bni" id="tab-courses2" onclick="setTab(this,'s-courses')">
+        <svg viewBox="0 0 24 24"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>
+      </div>
+      <div class="bni active" id="tab-chats2" onclick="setTab(this,'s-chats')">
+        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+        <div class="bni-badge" id="badge-chats2" style="display:none">2</div>
+      </div>
+      <div class="bni" id="tab-menu2" onclick="setTab(this,'s-menu')">
+        <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+      </div>
+    </nav>
+  </div>
+
+  <!-- ======================================================
+       SCREEN: Chat individuel
+  ====================================================== -->
+  <div class="screen" id="s-chat">
+    <div class="chat-header">
+      <div class="back-circle-sm tap" onclick="go('s-chats')">
+        <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      </div>
+      <div class="chat-avatar" id="chat-avatar">A</div>
+      <div class="chat-header-info">
+        <div class="chat-header-name" id="chat-header-name">Ahmed M.</div>
+        <div class="chat-header-sub" id="chat-header-sub">Course en cours</div>
+      </div>
+      <div class="chat-icon-btn tap" onclick="alert('Appel via VECTO...')">
+        <svg viewBox="0 0 24 24"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+      </div>
+    </div>
+
+    <div class="chat-messages" id="chat-messages"></div>
+
+    <!-- Boutons statut (En route / Terminé / Annuler) -->
+    <div class="status-bar" id="status-bar" style="display:none">
+      <button class="status-btn orange" id="btn-enroute" onclick="updateStatus('in_progress')" style="display:none">🛵 En route</button>
+      <button class="status-btn green"  id="btn-done"    onclick="updateStatus('done')"        style="display:none">✅ Terminé</button>
+      <button class="status-btn red"    id="btn-cancel"  onclick="updateStatus('cancelled')">✕ Annuler</button>
+    </div>
+
+    <div class="chat-input-bar" id="chat-input-bar">
+      <div class="chat-input-actions">
+        <div class="chat-icon-btn tap small" onclick="sendImage()">
+          <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+        </div>
+        <div class="chat-icon-btn tap small" onclick="sendLocation()">
+          <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+        </div>
+      </div>
+      <div class="chat-input-wrap">
+        <input type="text" class="chat-input" id="chat-text-input" placeholder="Message…" onkeydown="if(event.key==='Enter') sendText()" oninput="toggleSendMic()" />
+      </div>
+      <div class="chat-send-btn tap" id="chat-send-btn" onclick="sendText()" style="display:none">
+        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </div>
+      <div class="chat-mic-btn tap" id="chat-mic-btn" onmousedown="startVoice()" onmouseup="stopVoice()" ontouchstart="startVoice()" ontouchend="stopVoice()">
+        <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================
+       SCREEN: Menu / Profil (tab 3)
+  ====================================================== -->
+  <div class="screen" id="s-menu">
+    <div class="tb tb-main">
+      <div class="tb-brand">Mon compte</div>
+    </div>
+
+    <div class="scroll">
+      <div class="profile-hero">
+        <div class="profile-avatar-wrap">
+          <div class="avatar profile-avatar" id="menu-avatar">M</div>
+          <div class="profile-avatar-badge">★</div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-name" id="menu-name">—</div>
+          <div class="profile-rating">★ 5.0 · 0 courses</div>
+          <span class="status-badge green" style="margin-top:6px;display:inline-flex">Compte vérifié</span>
+        </div>
+      </div>
+
+      <div class="wallet-hero tap" onclick="go('s-wallet')">
+        <div>
+          <div class="wallet-hero-label">Solde disponible</div>
+          <div class="wallet-hero-amount">1 250 MRU</div>
+        </div>
+        <div class="wallet-hero-arrow">
+          <svg viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+        </div>
+      </div>
+
+      <div class="menu-list">
+        <div class="menu-item tap" onclick="go('s-profile')">
+          <div class="menu-icon"><svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg></div>
+          <div class="menu-text"><div class="menu-label">Informations personnelles</div><div class="menu-sub">Nom, téléphone</div></div>
+          <svg class="menu-chevron" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+        </div>
+        <div class="menu-item tap" onclick="go('s-wallet')">
+          <div class="menu-icon orange"><svg viewBox="0 0 24 24"><path d="M21 18v1a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1h-9a2 2 0 00-2 2v8a2 2 0 002 2h9zm-9-2h10V8H12v8zm4-2.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg></div>
+          <div class="menu-text"><div class="menu-label">Wallet & Transactions</div><div class="menu-sub">Recharge, historique</div></div>
+          <svg class="menu-chevron" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+        </div>
+        <div class="menu-item tap" onclick="go('s-history')">
+          <div class="menu-icon"><svg viewBox="0 0 24 24"><path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21a9 9 0 000-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg></div>
+          <div class="menu-text"><div class="menu-label">Historique des courses</div><div class="menu-sub">Courses passées, revenus</div></div>
+          <svg class="menu-chevron" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+        </div>
+        <div class="menu-item tap">
+          <div class="menu-icon"><svg viewBox="0 0 24 24"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg></div>
+          <div class="menu-text"><div class="menu-label">Notifications</div><div class="menu-sub">Activées</div></div>
+          <svg class="menu-chevron" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+        </div>
+      </div>
+
+      <div class="pad-h">
+        <button class="btn btn-danger" onclick="handleLogout()">
+          <svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+          Se déconnecter
+        </button>
+      </div>
+    </div>
+
+    <nav class="bnav">
+      <div class="bni" id="tab-courses3" onclick="setTab(this,'s-courses')">
+        <svg viewBox="0 0 24 24"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>
+      </div>
+      <div class="bni" id="tab-chats3" onclick="setTab(this,'s-chats')">
+        <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+      </div>
+      <div class="bni active" id="tab-menu3" onclick="setTab(this,'s-menu')">
+        <svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+      </div>
+    </nav>
+  </div>
+
+  <!-- SCREEN: Profil détail -->
+  <div class="screen" id="s-profile">
+    <div class="tb">
+      <span class="back" onclick="go('s-menu')">←</span>
+      <div class="tb-title">Informations personnelles</div>
+    </div>
+    <div class="scroll">
+      <div class="profile-hero" style="padding-top:12px">
+        <div class="profile-avatar-wrap">
+          <div class="avatar profile-avatar" id="profile-avatar-detail">M</div>
+        </div>
+        <div class="profile-info">
+          <div class="profile-name" id="profile-name-detail">—</div>
+          <div class="profile-phone" id="profile-phone-detail">—</div>
+        </div>
+      </div>
+      <div class="card" id="profile-view">
+        <div class="section-label">Mes informations</div>
+        <div class="info-row"><span class="info-key">Nom</span><span class="info-val" id="display-name">—</span></div>
+        <div class="info-row last"><span class="info-key">Téléphone</span><span class="info-val" id="display-phone">—</span></div>
+        <button class="btn-edit tap" onclick="toggleEdit(true)">
+          <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          Modifier
+        </button>
+      </div>
+      <div class="card" id="profile-edit" style="display:none">
+        <div class="section-label">Modifier</div>
+        <label class="field-label">Nom</label>
+        <div class="edit-field-row" style="margin-bottom:16px"><input type="text" id="edit-name" /></div>
+        <label class="field-label">Téléphone</label>
+        <div class="edit-field-row" style="margin-bottom:20px"><input type="tel" id="edit-phone" /></div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-ghost sm" onclick="toggleEdit(false)">Annuler</button>
+          <button class="btn btn-dark sm" onclick="saveProfile()">Enregistrer</button>
+        </div>
+      </div>
+      <div class="card card-muted">
+        <div class="section-label">Statistiques</div>
+        <div class="info-row"><span class="info-key">Membre depuis</span><span class="info-val">2025</span></div>
+        <div class="info-row"><span class="info-key">Total courses</span><span class="info-val">0</span></div>
+        <div class="info-row last"><span class="info-key">Note moyenne</span><span class="info-val">★ 5.0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: Wallet -->
+  <div class="screen" id="s-wallet">
+    <div class="tb">
+      <span class="back" onclick="go('s-menu')">←</span>
+      <div class="tb-title">Mon Wallet</div>
+    </div>
+    <div class="scroll">
+      <div class="wallet-hero-full">
+        <div class="wallet-hero-label">Solde disponible</div>
+        <div class="wallet-hero-amount-lg">1 250 MRU</div>
+        <div class="wallet-hero-sub">Minimum requis : 200 MRU</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Recharger le wallet</div>
+        <div class="recharge-info">Payez via Bankily ou Sedad avec le code marchand VECTO, puis entrez le code reçu.</div>
+        <label class="field-label">Fournisseur</label>
+        <div class="provider-grid">
+          <button class="provider-btn active" id="btn-bankily" onclick="selectProvider('bankily')">Bankily</button>
+          <button class="provider-btn" id="btn-sedad" onclick="selectProvider('sedad')">Sedad</button>
+        </div>
+        <label class="field-label">Montant (MRU)</label>
+        <div class="field-row" style="margin-bottom:16px"><input type="number" id="wallet-montant" placeholder="Ex: 500" min="100" step="100" /></div>
+        <label class="field-label">Numéro de téléphone</label>
+        <div class="field-row" style="margin-bottom:16px"><input type="tel" placeholder="+222 XX XX XX XX" /></div>
+        <label class="field-label">Code de confirmation</label>
+        <div class="otp-row" style="justify-content:flex-start;margin:0 0 20px">
+          <input class="otp-box" maxlength="1" placeholder="·" />
+          <input class="otp-box" maxlength="1" placeholder="·" />
+          <input class="otp-box" maxlength="1" placeholder="·" />
+          <input class="otp-box" maxlength="1" placeholder="·" />
+        </div>
+        <button class="btn btn-dark" onclick="validerRechargement()">Valider le rechargement</button>
+      </div>
+      <div class="sec-header"><span class="sec-title">Historique</span></div>
+      <div class="card">
+        <div class="history-row">
+          <div class="history-left"><div class="hist-icon green"><svg viewBox="0 0 24 24" style="fill:#1a7a45"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg></div><div><div class="history-type">Rechargement Bankily</div><div class="history-date">20 mars · 10:00</div></div></div>
+          <div class="history-price green">+ 500 MRU</div>
+        </div>
+        <div class="history-row">
+          <div class="history-left"><div class="hist-icon orange"><svg viewBox="0 0 24 24" style="fill:#c85a00"><path d="M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8z"/></svg></div><div><div class="history-type">Commission — Course</div><div class="history-date">19 mars · 18:30</div></div></div>
+          <div class="history-price orange">- 15 MRU</div>
+        </div>
+        <div class="history-row last">
+          <div class="history-left"><div class="hist-icon green"><svg viewBox="0 0 24 24" style="fill:#1a7a45"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg></div><div><div class="history-type">Rechargement Sedad</div><div class="history-date">18 mars · 09:00</div></div></div>
+          <div class="history-price green">+ 800 MRU</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: Historique -->
+  <div class="screen" id="s-history">
+    <div class="tb">
+      <span class="back" onclick="go('s-menu')">←</span>
+      <div class="tb-title">Historique</div>
+    </div>
+    <div class="scroll">
+      <div class="card">
+        <div class="history-row tap"><div class="history-left"><div class="hist-icon dark"><svg viewBox="0 0 24 24" style="fill:#fff"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg></div><div><div class="history-type">Course #1</div><div class="history-date">20 mars · 18:30</div></div></div><div style="text-align:right"><div class="history-price green">+ 135 MRU</div><span class="status-badge green sm">Livrée</span></div></div>
+        <div class="history-row tap"><div class="history-left"><div class="hist-icon dark"><svg viewBox="0 0 24 24" style="fill:#fff"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg></div><div><div class="history-type">Course #2</div><div class="history-date">19 mars · 14:15</div></div></div><div style="text-align:right"><div class="history-price green">+ 90 MRU</div><span class="status-badge green sm">Livrée</span></div></div>
+        <div class="history-row last tap"><div class="history-left"><div class="hist-icon dark"><svg viewBox="0 0 24 24" style="fill:#fff"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg></div><div><div class="history-type">Course #3</div><div class="history-date">17 mars · 16:45</div></div></div><div style="text-align:right"><div class="history-price red">Annulée</div><span class="status-badge red sm">Annulée</span></div></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+<script src="app_livreur.js?v=3"></script>
+</body>
+</html>
