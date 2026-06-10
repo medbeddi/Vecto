@@ -1917,8 +1917,12 @@ async function launchCourse() {
     alert('Veuillez renseigner les adresses de départ et d\'arrivée.');
     return;
   }
+  if (price !== null && (isNaN(price) || price < 0 || price > 999999)) {
+    alert('Tarif invalide (max 999 999 MRU).');
+    return;
+  }
 
-  var description = (document.getElementById('cc-description') ? document.getElementById('cc-description').value : '').trim() || undefined;
+  var description;
 
   var statusEl = document.getElementById('cc-launch-status');
   statusEl.textContent = 'Lancement en cours…';
@@ -1941,7 +1945,12 @@ async function launchCourse() {
       }),
     });
     if (!res.ok) {
-      statusEl.textContent = 'Erreur lors du lancement.';
+      var errBody = {};
+      try { errBody = await res.json(); } catch {}
+      var msg = res.status === 409 ? 'Déjà lancée (statut invalide).'
+              : res.status === 404 ? 'Course introuvable.'
+              : 'Erreur serveur (' + (errBody.error || res.status) + ').';
+      statusEl.textContent = msg;
       statusEl.className = 'cc-launch-status error';
       return;
     }
