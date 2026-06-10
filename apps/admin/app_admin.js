@@ -8,6 +8,30 @@ let _token = localStorage.getItem('vecto_admin_token');
 let _role  = localStorage.getItem('vecto_admin_role') || 'admin';
 let _socket = null;
 
+/* ── Compteurs de notifications ─────────────────────────────────── */
+var _navBadgeCC     = 0;   // nouveaux messages Call Center (hors page active)
+var _navBadgeOrders = 0;   // nouvelles commandes (hors page active)
+var _currentPage    = '';  // page actuellement visible
+var _inboxPollTimer = null;
+
+function _updateNavBadge(id, count) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  if (count > 0) { el.textContent = count > 99 ? '99+' : count; el.style.display = 'inline-flex'; }
+  else { el.style.display = 'none'; }
+}
+
+function _sendBrowserNotif(title, body, tag) {
+  if (Notification.permission !== 'granted') return;
+  try { new Notification(title, { body: body, tag: tag, icon: '/favicon.ico', silent: false }); } catch {}
+}
+
+function _requestNotifPermission() {
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
 /* ================================================================
    AUTH
 ================================================================ */
@@ -64,6 +88,7 @@ function showApp() {
   });
 
   initSocket();
+  _requestNotifPermission();
 
   if (_role === 'call_center') {
     showPage('p-callcenter');
@@ -146,6 +171,16 @@ function initSocket() {
     _activeOrders[order.deliveryId] = order;
     renderCommandes();
     renderStatsRecent();
+    // Badge + notification si on n'est pas sur la page Commandes
+    if (_currentPage !== 'p-commandes') {
+      _navBadgeOrders++;
+      _updateNavBadge('nav-badge-orders', _navBadgeOrders);
+    }
+    _sendBrowserNotif(
+      '🛵 Nouvelle commande',
+      'Course de ' + (order.clientAlias || 'Client'),
+      'order-' + order.deliveryId
+    );
   });
 
   _socket.on('order_taken', function (data) {
@@ -183,16 +218,6 @@ function initSocket() {
     renderTrackingList();
   });
 
-  // Réponse livreur → CC
-  _socket.on('driver_reply_to_cc', function (data) {
-    if (_ccActiveTab === 'drivers' && _selectedDriverId === data.driverId) {
-      appendDriverChatMessage(data.message);
-    } else {
-      _driverChatUnread++;
-      var badge = document.getElementById('cc-driver-unread-badge');
-      if (badge) { badge.textContent = _driverChatUnread; badge.style.display = 'inline-flex'; }
-    }
-  });
 
   // Nouveau message texte WA → call center
   _socket.on('incoming_text', function (data) {
@@ -210,6 +235,33 @@ function initSocket() {
         container.appendChild(div);
         container.scrollTop = container.scrollHeight;
       }
+    }
+    // Badge nav + notification navigateur si on n'est pas sur le CC
+    if (_currentPage !== 'p-callcenter') {
+      _navBadgeCC++;
+      _updateNavBadge('nav-badge-cc', _navBadgeCC);
+    }
+    var preview = data.message && data.message.type === 'text' ? data.message.content : '🎤 Message vocal';
+    _sendBrowserNotif(
+      '💬 ' + (data.clientAlias || 'Client'),
+      preview || 'Nouveau message',
+      'msg-' + data.deliveryId
+    );
+  });
+
+  // Réponse livreur → badge nav CC si on n'est pas sur le CC
+  _socket.on('driver_reply_to_cc', function (data) {
+    if (_ccActiveTab === 'drivers' && _selectedDriverId === data.driverId && _currentPage === 'p-callcenter') {
+      appendDriverChatMessage(data.message);
+    } else {
+      _driverChatUnread++;
+      var badge = document.getElementById('cc-driver-unread-badge');
+      if (badge) { badge.textContent = _driverChatUnread; badge.style.display = 'inline-flex'; }
+      if (_currentPage !== 'p-callcenter') {
+        _navBadgeCC++;
+        _updateNavBadge('nav-badge-cc', _navBadgeCC);
+      }
+      _sendBrowserNotif('💬 Livreur', data.message.content || 'Nouveau message', 'driver-' + data.driverId);
     }
   });
 
@@ -276,9 +328,22 @@ function showPage(pageId) {
     'p-tracking': 'Tracking Livreurs', 'p-users': 'Utilisateurs',
   };
   document.getElementById('page-title').textContent = titles[pageId] || '';
+  _currentPage = pageId;
 
+  // Effacer le badge de la page qu'on ouvre
   if (pageId === 'p-callcenter') {
+    _navBadgeCC = 0; _updateNavBadge('nav-badge-cc', 0);
     showCCTab(_ccActiveTab);
+    // Polling inbox toutes les 30s quand on est sur le CC
+    if (_inboxPollTimer) clearInterval(_inboxPollTimer);
+    _inboxPollTimer = setInterval(function () {
+      if (_currentPage === 'p-callcenter' && _inboxSubTab === 'pending') loadInbox();
+    }, 30000);
+  } else {
+    if (_inboxPollTimer) { clearInterval(_inboxPollTimer); _inboxPollTimer = null; }
+  }
+  if (pageId === 'p-commandes') {
+    _navBadgeOrders = 0; _updateNavBadge('nav-badge-orders', 0);
   }
   if (pageId === 'p-tracking') {
     setTimeout(function () {
