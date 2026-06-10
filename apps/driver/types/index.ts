@@ -14,6 +14,8 @@ export type Delivery = {
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   price?: number | null;
+  distanceKm?: number | null;
+  durationMin?: number | null;
 };
 
 export type MessageType = 'text' | 'audio' | 'image' | 'location';
