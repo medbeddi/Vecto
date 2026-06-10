@@ -521,9 +521,15 @@
           <div class="cc-chat-view" id="cc-driver-chat-view" style="display:none">
             <div class="cc-chat-topbar">
               <div class="cc-chat-client-name" id="cc-driver-chat-name">—</div>
+              <button class="cc-topbar-call-btn" id="cc-driver-call-btn" onclick="callDriver()" title="Appeler le livreur" style="display:none">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.11 1.18 2 2 0 012.11 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.09a16 16 0 006 6l.45-.45a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 14.92z"/></svg>
+              </button>
             </div>
             <div class="cc-messages" id="cc-driver-messages"></div>
             <div class="cc-reply-bar">
+              <button class="cc-reply-icon-btn" id="cc-driver-mic-btn" onclick="toggleDriverMic()" title="Message vocal">
+                <svg id="cc-driver-mic-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              </button>
               <input class="cc-reply-input" id="cc-driver-reply-input"
                      placeholder="Envoyer un message au livreur…"
                      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendDriverChatMsg();}" />

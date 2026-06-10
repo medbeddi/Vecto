@@ -308,7 +308,10 @@ function initSocket() {
 var _ccActiveTab = 'clients';
 var _selectedDriverId = null;
 var _selectedDriverName = null;
+var _selectedDriverPhone = null;
 var _driverChatUnread = 0;
+var _driverMicRecorder = null;
+var _driverMicChunks = [];
 var _ccMapInitialized = false;
 
 function showPage(pageId) {
@@ -398,21 +401,30 @@ function renderDriversChatList(drivers) {
     var dot = d.status === 'available' ? '🟢' : d.status === 'busy' ? '🔴' : '⚫';
     var statusLabel = d.status === 'available' ? 'Disponible' : d.status === 'busy' ? 'En course' : 'Hors ligne';
     var isActive = d.id === _selectedDriverId;
-    return '<div class="cc-inbox-item' + (isActive ? ' active' : '') + '" onclick="selectDriverChat(\'' + d.id + '\',\'' + (d.name || '').replace(/'/g, "\\'") + '\')">'
+    var phone = (d.phone || '').replace(/'/g, "\\'");
+    return '<div class="cc-inbox-item' + (isActive ? ' active' : '') + '" onclick="selectDriverChat(\'' + d.id + '\',\'' + (d.name || '').replace(/'/g, "\\'") + '\',\'' + phone + '\')">'
       + '<div class="cc-inbox-alias">' + escHtml(d.name) + '</div>'
       + '<div class="cc-inbox-preview">' + dot + ' ' + statusLabel + '</div>'
       + '</div>';
   }).join('');
 }
 
-function selectDriverChat(driverId, driverName) {
-  _selectedDriverId  = driverId;
+function selectDriverChat(driverId, driverName, driverPhone) {
+  _selectedDriverId   = driverId;
   _selectedDriverName = driverName;
+  _selectedDriverPhone = driverPhone || null;
   document.getElementById('cc-driver-chat-empty').style.display = 'none';
   document.getElementById('cc-driver-chat-view').style.display  = 'flex';
   document.getElementById('cc-driver-chat-name').textContent    = driverName;
+  var callBtn = document.getElementById('cc-driver-call-btn');
+  if (callBtn) callBtn.style.display = driverPhone ? 'flex' : 'none';
   loadDriversChatList();
   loadDriverChatMessages(driverId);
+}
+
+function callDriver() {
+  if (!_selectedDriverPhone) return;
+  window.open('tel:' + _selectedDriverPhone, '_self');
 }
 
 function loadDriverChatMessages(driverId) {
@@ -422,49 +434,111 @@ function loadDriverChatMessages(driverId) {
     .catch(function () {});
 }
 
+function _driverMsgBubble(m) {
+  var isOut = m.senderRole === 'admin';
+  var type  = m.type || 'text';
+  var inner = '';
+  if (type === 'audio') {
+    var uid = 'aud_' + m.id.replace(/-/g,'');
+    inner = '<button class="cc-msg-audio" onclick="toggleAudioMsg(\'' + uid + '\',\'' + escHtml(m.content) + '\')">'
+          + '<span class="cc-msg-audio-icon">▶</span>'
+          + '<span class="cc-msg-audio-label">Message vocal</span>'
+          + '</button>'
+          + '<audio id="' + uid + '" src="' + escHtml(m.content) + '" style="display:none"></audio>';
+  } else if (type === 'image') {
+    inner = '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px;display:block" />';
+  } else {
+    inner = '<div class="cc-msg-text">' + escHtml(m.content) + '</div>';
+  }
+  return '<div class="cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in') + '">'
+    + '<div class="cc-msg-bubble ' + (isOut ? 'cc-msg-bubble-out' : 'cc-msg-bubble-in') + '">'
+    + inner
+    + '<div class="cc-msg-time">' + fmtTime(m.createdAt) + '</div>'
+    + '</div></div>';
+}
+
+function toggleAudioMsg(uid, src) {
+  var audio = document.getElementById(uid);
+  if (!audio) return;
+  if (audio.paused) {
+    document.querySelectorAll('.cc-msg-audio-el').forEach(function(a) { if(a.id !== uid) a.pause(); });
+    audio.play();
+    var btn = audio.previousElementSibling;
+    if (btn) btn.querySelector('.cc-msg-audio-icon').textContent = '⏸';
+    audio.onended = function() {
+      var b = document.getElementById(uid);
+      if (b) { var p = b.previousElementSibling; if(p) p.querySelector('.cc-msg-audio-icon').textContent = '▶'; }
+    };
+  } else {
+    audio.pause();
+    var btn2 = audio.previousElementSibling;
+    if (btn2) btn2.querySelector('.cc-msg-audio-icon').textContent = '▶';
+  }
+}
+
 function renderDriverChatMessages(messages) {
   var container = document.getElementById('cc-driver-messages');
   if (!container) return;
-  container.innerHTML = messages.map(function (m) {
-    var isOut = m.senderRole === 'admin';
-    return '<div class="cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in') + '">'
-      + '<div class="cc-msg-bubble ' + (isOut ? 'cc-msg-bubble-out' : 'cc-msg-bubble-in') + '">'
-      + '<div class="cc-msg-text">' + escHtml(m.content) + '</div>'
-      + '<div class="cc-msg-time">' + fmtTime(m.createdAt) + '</div>'
-      + '</div></div>';
-  }).join('');
+  container.innerHTML = messages.map(_driverMsgBubble).join('');
   container.scrollTop = container.scrollHeight;
 }
 
 function appendDriverChatMessage(msg) {
   var container = document.getElementById('cc-driver-messages');
   if (!container) return;
-  var isOut = msg.senderRole === 'admin';
   var div = document.createElement('div');
-  div.className = 'cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in');
-  div.innerHTML = '<div class="cc-msg-bubble ' + (isOut ? 'cc-msg-bubble-out' : 'cc-msg-bubble-in') + '">'
-    + '<div class="cc-msg-text">' + escHtml(msg.content) + '</div>'
-    + '<div class="cc-msg-time">' + fmtTime(msg.createdAt) + '</div>'
-    + '</div>';
-  container.appendChild(div);
+  div.outerHTML; // dummy
+  container.insertAdjacentHTML('beforeend', _driverMsgBubble(msg));
   container.scrollTop = container.scrollHeight;
 }
 
-async function sendDriverChatMsg() {
-  var input   = document.getElementById('cc-driver-reply-input');
-  var content = input ? input.value.trim() : '';
+async function sendDriverChatMsg(content, type) {
+  var input = document.getElementById('cc-driver-reply-input');
+  if (!content) { content = input ? input.value.trim() : ''; }
+  if (!type) type = 'text';
   if (!content || !_selectedDriverId) return;
-  input.value = '';
+  if (input) input.value = '';
   try {
     var res = await fetch(API + '/api/admin/driver-chat/' + _selectedDriverId, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ content: content }),
+      body: JSON.stringify({ content: content, type: type }),
     });
     if (!res.ok) return;
     var data = await res.json();
     appendDriverChatMessage(data.message);
   } catch {}
+}
+
+async function toggleDriverMic() {
+  var btn = document.getElementById('cc-driver-mic-btn');
+  if (_driverMicRecorder && _driverMicRecorder.state === 'recording') {
+    _driverMicRecorder.stop();
+    return;
+  }
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _driverMicChunks = [];
+    _driverMicRecorder = new MediaRecorder(stream);
+    _driverMicRecorder.ondataavailable = function(e) { if (e.data.size > 0) _driverMicChunks.push(e.data); };
+    _driverMicRecorder.onstop = async function() {
+      btn.classList.remove('recording');
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      var blob = new Blob(_driverMicChunks, { type: 'audio/webm' });
+      var fd = new FormData();
+      fd.append('file', blob, 'voice.webm');
+      try {
+        var r = await fetch(API + '/api/admin/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + _token }, body: fd });
+        var d = await r.json();
+        if (d.url) await sendDriverChatMsg(d.url, 'audio');
+      } catch {}
+      _driverMicRecorder = null;
+    };
+    _driverMicRecorder.start();
+    btn.classList.add('recording');
+  } catch {
+    alert('Permission microphone refusée.');
+  }
 }
 
 /* ================================================================

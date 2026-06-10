@@ -602,6 +602,29 @@ input:focus, textarea:focus { outline: none; }
 #cc-mic-btn { color: var(--text-2); border: 1.5px solid var(--border); border-radius: var(--radius-md); }
 #cc-mic-btn:hover { color: var(--text-1); }
 #cc-mic-btn.recording { color: #FF3B30; border-color: #FF3B30; background: rgba(255,59,48,.08); animation: pulse-red 1s infinite; }
+/* Boutons topbar chat livreur */
+.cc-topbar-call-btn {
+  width: 32px; height: 32px; border-radius: 50%; border: none; cursor: pointer;
+  background: #22C55E; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.cc-topbar-call-btn:hover { background: #16a34a; }
+.cc-reply-icon-btn {
+  width: 36px; height: 36px; border-radius: 8px; border: 1.5px solid var(--border);
+  background: var(--bg); cursor: pointer; color: var(--text-2); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.cc-reply-icon-btn:hover { color: var(--text-1); }
+.cc-reply-icon-btn.recording { color: #FF3B30; border-color: #FF3B30; background: rgba(255,59,48,.08); animation: pulse-red 1s infinite; }
+/* Message audio dans la bulle */
+.cc-msg-audio {
+  display: flex; align-items: center; gap: 8px; padding: 4px 0;
+  background: none; border: none; cursor: pointer; color: inherit;
+}
+.cc-msg-audio-icon { font-size: 18px; }
+.cc-msg-audio-label { font-size: 13px; font-weight: 500; opacity: .85; }
 #cc-launch-rec-btn { color: var(--text-2); border: 1.5px solid var(--border); border-radius: var(--radius-md); }
 #cc-launch-rec-btn.recording { color: #FF3B30; border-color: #FF3B30; background: rgba(255,59,48,.08); animation: pulse-red 1s infinite; }
 @keyframes pulse-red { 0%,100% { opacity: 1 } 50% { opacity: .55 } }

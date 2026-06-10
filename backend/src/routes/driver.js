@@ -48,7 +48,7 @@ router.post('/auth/register', loginLimiter, validate(registerSchema), async (req
 
     const passwordHash = await bcrypt.hash(password, 12);
     const [driver] = await db('drivers')
-      .insert({ name, phone_hash: phoneHash, password_hash: passwordHash, status: 'offline' })
+      .insert({ name, phone, phone_hash: phoneHash, password_hash: passwordHash, status: 'offline' })
       .returning(['id', 'name']);
 
     const payload = { id: driver.id, name: driver.name };

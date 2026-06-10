@@ -200,7 +200,7 @@ router.get('/admin/drivers', requireCallCenter, async (req, res) => {
       .leftJoin('wallets', 'drivers.id', 'wallets.driver_id')
       .orderBy('drivers.created_at', 'desc')
       .select(
-        'drivers.id', 'drivers.name', 'drivers.status', 'drivers.suspended',
+        'drivers.id', 'drivers.name', 'drivers.phone', 'drivers.status', 'drivers.suspended',
         'drivers.created_at as createdAt',
         db.raw('COALESCE(wallets.balance, 0) as balance')
       );
@@ -217,6 +217,7 @@ router.get('/admin/drivers', requireCallCenter, async (req, res) => {
     const result = drivers.map(d => ({
       id: d.id,
       name: d.name,
+      phone: d.phone || null,
       status: d.suspended ? 'suspended' : d.status,
       courses: countMap[d.id] ?? 0,
       balance: parseFloat(d.balance),
@@ -684,7 +685,7 @@ router.get('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) =
     const messages = await db('cc_driver_messages')
       .where({ driver_id: req.params.driverId })
       .orderBy('created_at', 'asc')
-      .select('id', 'sender_role as senderRole', 'content', 'created_at as createdAt');
+      .select('id', 'sender_role as senderRole', 'type', 'content', 'created_at as createdAt');
     await db('cc_driver_messages')
       .where({ driver_id: req.params.driverId, read_by_admin: false })
       .update({ read_by_admin: true });
@@ -696,20 +697,51 @@ router.get('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) =
 
 router.post('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) => {
   try {
-    const { content } = req.body;
+    const { content, type = 'text' } = req.body;
     if (!content?.trim()) return res.status(400).json({ error: 'EMPTY_MESSAGE' });
     const driver = await db('drivers').where({ id: req.params.driverId }).first('id', 'name');
     if (!driver) return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
+    const msgType = ['text', 'audio', 'image'].includes(type) ? type : 'text';
     const [msg] = await db('cc_driver_messages')
-      .insert({ driver_id: req.params.driverId, sender_role: 'admin', content: content.trim() })
-      .returning('id', 'sender_role', 'content', 'created_at');
-    emitCCMessageToDriver(req.params.driverId, {
-      id: msg.id, senderRole: msg.sender_role, content: msg.content, createdAt: msg.created_at,
-    });
-    res.json({ message: { id: msg.id, senderRole: msg.sender_role, content: msg.content, createdAt: msg.created_at } });
+      .insert({ driver_id: req.params.driverId, sender_role: 'admin', type: msgType, content: content.trim() })
+      .returning('id', 'sender_role', 'type', 'content', 'created_at');
+    const out = { id: msg.id, senderRole: msg.sender_role, type: msg.type, content: msg.content, createdAt: msg.created_at };
+    emitCCMessageToDriver(req.params.driverId, out);
+    res.json({ message: out });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
+});
+
+// Upload fichier depuis le dashboard admin (vocal/image dans le chat livreur)
+import multer from 'multer';
+import { mkdirSync } from 'fs';
+import pathMod from 'path';
+import { fileURLToPath as fturl } from 'url';
+
+const __dirnameAdmin = pathMod.dirname(fturl(import.meta.url));
+const ADMIN_UPLOADS_DIR = pathMod.join(__dirnameAdmin, '../../uploads');
+mkdirSync(ADMIN_UPLOADS_DIR, { recursive: true });
+
+const adminUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, ADMIN_UPLOADS_DIR),
+    filename: (_req, file, cb) => {
+      const ext = pathMod.extname(file.originalname) || '.bin';
+      cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('audio/') || file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Type non supporté'));
+  },
+});
+
+router.post('/admin/upload', requireCallCenter, adminUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'NO_FILE' });
+  const host = `${req.protocol}://${req.headers.host}`;
+  res.json({ url: `${host}/uploads/${req.file.filename}` });
 });
 
 export default router;
