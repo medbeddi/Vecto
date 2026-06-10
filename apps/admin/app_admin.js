@@ -1073,6 +1073,9 @@ var _mmPickupCoords   = null;   // [lat, lng]
 var _mmDropoffCoords  = null;   // [lat, lng]
 var _mmDebounce       = null;
 var _googlePlacesReady = false;
+var _mmClickMode      = 'pickup';  // 'pickup' | 'dropoff'
+var _fsDirectionsRenderer = null;
+var _fsOsrmPolyline   = null;
 var _MAP_TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
 function _gll(coords) { return coords ? { lat: coords[0], lng: coords[1] } : null; }
@@ -1127,6 +1130,9 @@ function refreshMapMarkers() {
     var r2 = _applyL(_leafletFullMap, ptA, ptB, _fsPickupMarker, _fsDropoffMarker);
     _fsPickupMarker = r2.a; _fsDropoffMarker = r2.b;
   }
+  // Redessiner la route si les deux points existent et que le modal est ouvert
+  var modal = document.getElementById('modal-map-fullscreen');
+  if (ptA && ptB && modal && modal.style.display !== 'none') renderModalRoute();
 }
 
 /* ── Init mini-carte ─────────────────────────────────────────────── */
@@ -1276,6 +1282,108 @@ async function updateMiniMap() {
   refreshMapMarkers();
 }
 
+/* ── Modal carte — clic sur la carte + route optimisée ──────────── */
+function setMapClickMode(mode) {
+  _mmClickMode = mode;
+  ['pickup', 'dropoff'].forEach(function(m) {
+    var btn = document.getElementById('mm-mode-' + m);
+    if (btn) btn.classList.toggle('active', m === mode);
+  });
+}
+
+function _attachFullMapClick() {
+  if (_useGoogleMaps && _googleFullMap && !_googleFullMap._clickDone) {
+    _googleFullMap._clickDone = true;
+    google.maps.event.addListener(_googleFullMap, 'click', function(e) {
+      _setModalPoint(e.latLng.lat(), e.latLng.lng());
+    });
+  } else if (!_useGoogleMaps && _leafletFullMap && !_leafletFullMap._clickDone) {
+    _leafletFullMap._clickDone = true;
+    _leafletFullMap.on('click', function(e) {
+      _setModalPoint(e.latlng.lat, e.latlng.lng);
+    });
+  }
+}
+
+function _setModalPoint(lat, lng) {
+  var isPickup = _mmClickMode === 'pickup';
+  var coordsLabel = lat.toFixed(5) + ', ' + lng.toFixed(5);
+  if (isPickup) {
+    _mmPickupCoords = [lat, lng];
+    var mpi = document.getElementById('modal-pickup-input');
+    var pu  = document.getElementById('cc-pickup');
+    if (mpi) mpi.value = coordsLabel;
+    if (pu)  pu.value  = coordsLabel;
+    if (!_mmDropoffCoords) setMapClickMode('dropoff');
+  } else {
+    _mmDropoffCoords = [lat, lng];
+    var mdi = document.getElementById('modal-dropoff-input');
+    var dr  = document.getElementById('cc-dropoff');
+    if (mdi) mdi.value = coordsLabel;
+    if (dr)  dr.value  = coordsLabel;
+  }
+  refreshMapMarkers();
+  renderModalRoute();
+  // Reverse geocode en arrière-plan pour remplacer les coords par une adresse
+  _reverseGeocode(lat, lng, function(addr) {
+    if (!addr) return;
+    var inputId = isPickup ? 'modal-pickup-input' : 'modal-dropoff-input';
+    var mainId  = isPickup ? 'cc-pickup' : 'cc-dropoff';
+    var inp = document.getElementById(inputId); if (inp) inp.value = addr;
+    var mai = document.getElementById(mainId);  if (mai) mai.value = addr;
+  });
+}
+
+async function _reverseGeocode(lat, lng, cb) {
+  if (_useGoogleMaps && window.google && google.maps.Geocoder) {
+    var gc = new google.maps.Geocoder();
+    gc.geocode({ location: { lat: lat, lng: lng } }, function(results, status) {
+      cb(status === 'OK' && results[0] ? results[0].formatted_address : null);
+    });
+  } else {
+    try {
+      var r = await fetch('https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng);
+      var d = await r.json();
+      cb(d.display_name || null);
+    } catch (e) { cb(null); }
+  }
+}
+
+function renderModalRoute() {
+  var ptA = _mmPickupCoords;
+  var ptB = _mmDropoffCoords;
+  if (!ptA || !ptB) return;
+
+  if (_useGoogleMaps && _googleFullMap) {
+    if (!_fsDirectionsRenderer) {
+      _fsDirectionsRenderer = new google.maps.DirectionsRenderer({
+        suppressMarkers: true,
+        polylineOptions: { strokeColor: '#1976D2', strokeOpacity: 0.85, strokeWeight: 5 },
+      });
+      _fsDirectionsRenderer.setMap(_googleFullMap);
+    }
+    new google.maps.DirectionsService().route({
+      origin: { lat: ptA[0], lng: ptA[1] },
+      destination: { lat: ptB[0], lng: ptB[1] },
+      travelMode: google.maps.TravelMode.DRIVING,
+    }, function(result, status) {
+      if (status === 'OK') _fsDirectionsRenderer.setDirections(result);
+    });
+  } else if (_leafletFullMap) {
+    var url = 'https://router.project-osrm.org/route/v1/driving/'
+      + ptA[1] + ',' + ptA[0] + ';' + ptB[1] + ',' + ptB[0]
+      + '?overview=full&geometries=geojson';
+    fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+      if (_fsOsrmPolyline) _leafletFullMap.removeLayer(_fsOsrmPolyline);
+      if (data.routes && data.routes[0]) {
+        _fsOsrmPolyline = L.geoJSON(data.routes[0].geometry, {
+          style: { color: '#1976D2', weight: 5, opacity: 0.85 }
+        }).addTo(_leafletFullMap);
+      }
+    }).catch(function() {});
+  }
+}
+
 /* ── Modal carte plein écran ─────────────────────────────────────── */
 function openMapModal() {
   var pickup  = (document.getElementById('cc-pickup')?.value  || '').trim();
@@ -1286,6 +1394,9 @@ function openMapModal() {
   if (mdi) mdi.value = dropoff;
 
   document.getElementById('modal-map-fullscreen').style.display = 'flex';
+
+  // Réinitialiser le mode clic au départ (pickup si pas encore défini, sinon dropoff)
+  setMapClickMode(_mmPickupCoords ? 'dropoff' : 'pickup');
 
   setTimeout(function() {
     if (_useGoogleMaps && window.google) {
@@ -1303,6 +1414,8 @@ function openMapModal() {
         if (_mmPickupCoords || _mmDropoffCoords) setTimeout(refreshMapMarkers, 300);
       }
       _initModalPlaces();
+      _attachFullMapClick();
+      if (_mmPickupCoords && _mmDropoffCoords) renderModalRoute();
     } else if (typeof L !== 'undefined') {
       var el2 = document.getElementById('cc-map-fullscreen');
       if (!el2) return;
@@ -1315,6 +1428,8 @@ function openMapModal() {
         _leafletFullMap.invalidateSize(true);
         if (_mmPickupCoords || _mmDropoffCoords) setTimeout(refreshMapMarkers, 300);
       }
+      _attachFullMapClick();
+      if (_mmPickupCoords && _mmDropoffCoords) setTimeout(renderModalRoute, 350);
       // Sync champs modaux → principaux pour Nominatim
       var mpi2 = document.getElementById('modal-pickup-input');
       var mdi2 = document.getElementById('modal-dropoff-input');

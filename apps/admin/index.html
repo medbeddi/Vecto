@@ -676,6 +676,16 @@
         </div>
       </div>
     </div>
+    <!-- Panel de mode clic -->
+    <div class="mm-click-panel">
+      <span class="mm-click-label">Clic sur la carte&nbsp;:</span>
+      <button id="mm-mode-pickup"  class="mm-mode-btn active" onclick="setMapClickMode('pickup')">
+        <div class="addr-dot green"></div>Départ
+      </button>
+      <button id="mm-mode-dropoff" class="mm-mode-btn"        onclick="setMapClickMode('dropoff')">
+        <div class="addr-dot red"></div>Arrivée
+      </button>
+    </div>
     <div id="cc-map-fullscreen"></div>
     <div class="map-modal-footer">
       <button class="btn btn-ghost" onclick="cancelMapModal()">Annuler</button>

@@ -681,6 +681,25 @@ input:focus, textarea:focus { outline: none; }
   flex-shrink: 0;
 }
 
+/* ── Modal map — panel de mode clic ──────────────────────────── */
+.mm-click-panel {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--surface-2);
+}
+.mm-click-label { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.mm-mode-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 20px;
+  border: 1.5px solid var(--border); background: var(--card);
+  font-size: 12px; font-weight: 500; color: var(--text-2);
+  cursor: pointer; transition: all .15s;
+}
+.mm-mode-btn.active { border-color: #1976D2; background: #1976D2; color: #fff; }
+.mm-mode-btn .addr-dot { flex-shrink: 0; }
+
 /* Google Places autocomplete dropdown z-index */
 .pac-container { z-index: 99999 !important; }
 
