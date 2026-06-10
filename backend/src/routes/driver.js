@@ -107,6 +107,15 @@ router.post('/auth/logout', requireAuth, async (req, res) => {
   }
 });
 
+// ─── Config publique driver ──────────────────────────────────────────────────
+
+// GET /api/drivers/config — numéro Call Center et autres params utiles au driver
+router.get('/drivers/config', requireAuth, async (_req, res) => {
+  res.json({
+    ccPhone: process.env.CC_PHONE || null,
+  });
+});
+
 // ─── FCM token ────────────────────────────────────────────────────────────────
 
 // PUT /api/drivers/fcm-token — Flutter enregistre son token à chaque login/refresh

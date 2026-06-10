@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   StyleSheet,
   Text,
@@ -47,10 +48,18 @@ export default function ChatScreen() {
   const [text, setText] = useState('');
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [sending, setSending] = useState(false);
+  const [ccPhone, setCcPhone] = useState<string | null>(null);
   const listRef = useRef<FlatList>(null);
 
   const delivery = activeDelivery ?? initDelivery;
   const isClosed = delivery.status === 'done' || delivery.status === 'cancelled';
+
+  // Numéro Call Center
+  useEffect(() => {
+    api<{ ccPhone: string | null }>('/api/drivers/config')
+      .then((d) => setCcPhone(d.ccPhone))
+      .catch(() => {});
+  }, []);
 
   // Initialisation
   useEffect(() => {
@@ -259,7 +268,16 @@ export default function ChatScreen() {
           <Text style={styles.headerName}>{delivery.clientAlias}</Text>
           <Text style={styles.headerStatus}>{STATUS_LABELS[delivery.status ?? 'assigned']}</Text>
         </View>
-        <TouchableOpacity style={styles.headerCircleBtn} onPress={() => Alert.alert('Appel', 'Appel en cours de développement.')}>
+        <TouchableOpacity
+          style={styles.headerCircleBtn}
+          onPress={() => {
+            if (!ccPhone) {
+              Alert.alert('Appel indisponible', 'Le numéro du Call Center n\'est pas configuré.');
+              return;
+            }
+            Linking.openURL(`tel:${ccPhone}`);
+          }}
+        >
           <Icon name="phone" size={18} color="#fff" strokeWidth={1.75} />
         </TouchableOpacity>
       </View>
