@@ -129,25 +129,41 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
 
   const hasRoute = !!(delivery.pickupAddress || delivery.dropoffAddress);
   const hasStats = delivery.distanceKm != null || delivery.durationMin != null;
+  const countdownColor = countdown == null ? GREEN
+    : countdown > 10 ? GREEN
+    : countdown > 5  ? '#FF9500'
+    : '#FF3B30';
 
   return (
     <View style={styles.card}>
 
+      {/* ── Barre de progression (remplace greenBar) ─── */}
+      {countdown != null ? (
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, {
+            width: `${Math.max(0, (countdown / 20) * 100)}%` as `${number}%`,
+            backgroundColor: countdownColor,
+          }]} />
+        </View>
+      ) : (
+        <View style={styles.greenBar} />
+      )}
+
       {/* ── Dark header ─────────────────────────────── */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          {/* LEFT: heure de création + compte à rebours */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={styles.timeBadge}>
-              <Icon name="clock" size={13} color="#ccc" strokeWidth={2} />
-              <Text style={styles.timeText}>{orderTime(delivery.createdAt)}</Text>
-            </View>
-            {countdown != null && countdown > 0 && (
-              <View style={[styles.countdownBadge, countdown <= 8 && styles.countdownBadgeRed]}>
-                <Text style={styles.countdownText}>{countdown}s</Text>
-              </View>
-            )}
+          {/* LEFT: heure */}
+          <View style={styles.timeBadge}>
+            <Icon name="clock" size={13} color="#ccc" strokeWidth={2} />
+            <Text style={styles.timeText}>{orderTime(delivery.createdAt)}</Text>
           </View>
+          {/* CENTER: grand compteur */}
+          {countdown != null && countdown > 0 && (
+            <View style={[styles.countdownPill, { backgroundColor: countdownColor }]}>
+              <Text style={styles.countdownPillNum}>{countdown}</Text>
+              <Text style={styles.countdownPillS}>s</Text>
+            </View>
+          )}
           {/* RIGHT: prix */}
           {delivery.price != null && (
             <View style={styles.priceGroup}>
@@ -156,8 +172,6 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
             </View>
           )}
         </View>
-        {/* Barre verte en bas du header */}
-        <View style={styles.greenBar} />
       </View>
 
       {/* ── Body ───────────────────────────────────── */}
@@ -321,13 +335,19 @@ const styles = StyleSheet.create({
   priceGroup: { alignItems: 'flex-end' },
   priceAmount: { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
   priceLabel: { color: '#888', fontSize: 11, marginTop: 1 },
-  greenBar: { height: 3, backgroundColor: GREEN },
-  countdownBadge: {
-    backgroundColor: '#FF9500',
-    borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4,
+  greenBar: { height: 4, backgroundColor: GREEN },
+  progressTrack: { height: 4, backgroundColor: 'rgba(255,255,255,0.08)' },
+  progressFill:  { height: 4 },
+  countdownPill: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 3,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
   },
-  countdownBadgeRed: { backgroundColor: '#FF3B30' },
-  countdownText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  countdownPillNum: { color: '#fff', fontSize: 28, fontWeight: '900', lineHeight: 30 },
+  countdownPillS:   { color: 'rgba(255,255,255,0.85)', fontSize: 15, fontWeight: '700' },
 
   // ── Body ──────────────────────────────────────
   body: { padding: 16, gap: 14 },
