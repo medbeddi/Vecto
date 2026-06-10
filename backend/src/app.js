@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import { env } from './config/env.js';
 import { initSocket } from './services/socket.js';
 import { initFCM } from './services/fcm.js';
+import { startRebroadcastJob } from './jobs/rebroadcast.js';
 import { apiLimiter, webhookLimiter } from './middleware/rate-limit.js';
 import whatsappWebhook from './webhooks/whatsapp.js';
 import driverRouter from './routes/driver.js';
@@ -55,6 +56,9 @@ initSocket(httpServer);
 
 // ─── FCM (optionnel, async — ne bloque pas le démarrage) ─────────────────────
 initFCM();
+
+// ─── Re-broadcast des courses pending > 3 min ─────────────────────────────────
+startRebroadcastJob();
 
 // ─── Webhooks Meta ────────────────────────────────────────────────────────────
 app.use('/webhook/whatsapp', webhookLimiter, whatsappWebhook);

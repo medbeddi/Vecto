@@ -17,7 +17,9 @@ type Props = {
   delivery: Delivery;
   onAccept: (delivery: Delivery) => void;
   onRefuse?: (delivery: Delivery) => void;
+  onExpire?: (delivery: Delivery) => void;
   accepting: boolean;
+  autoRemoveSec?: number;
 };
 
 function genWave(n: number) {
@@ -33,7 +35,7 @@ function splitAddr(addr: string): [string, string | null] {
   return i === -1 ? [addr, null] : [addr.slice(0, i).trim(), addr.slice(i + 1).trim()];
 }
 
-export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props) {
+export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting, autoRemoveSec }: Props) {
   const hasAudio = delivery.initialMediaType === 'audio' && !!delivery.initialMediaUrl;
   const wave     = useMemo(() => genWave(WAVE_COUNT), [delivery.id]);
   const animVals = useRef(wave.map(() => new Animated.Value(1))).current;
@@ -43,6 +45,8 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props)
   const [playing,      setPlaying]      = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [durSec,       setDurSec]       = useState<number | null>(null);
+  const [countdown,    setCountdown]    = useState<number | null>(autoRemoveSec ?? null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [pickupMain,  pickupSub]  = delivery.pickupAddress  ? splitAddr(delivery.pickupAddress)  : ['', null];
   const [dropoffMain, dropoffSub] = delivery.dropoffAddress ? splitAddr(delivery.dropoffAddress) : ['', null];
@@ -50,7 +54,27 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props)
   useEffect(() => () => {
     soundRef.current?.unloadAsync();
     loopRef.current?.stop();
+    if (countdownRef.current) clearInterval(countdownRef.current);
   }, []);
+
+  useEffect(() => {
+    if (autoRemoveSec == null) return;
+    setCountdown(autoRemoveSec);
+    countdownRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev == null || prev <= 1) {
+          clearInterval(countdownRef.current!);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
+  }, [delivery.id, autoRemoveSec]);
+
+  useEffect(() => {
+    if (countdown === 0) onExpire?.(delivery);
+  }, [countdown]);
 
   const startWave = () => {
     const anims = animVals.map((v, i) =>
@@ -112,10 +136,17 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props)
       {/* ── Dark header ─────────────────────────────── */}
       <View style={styles.header}>
         <View style={styles.headerRow}>
-          {/* LEFT: heure de création */}
-          <View style={styles.timeBadge}>
-            <Icon name="clock" size={13} color="#ccc" strokeWidth={2} />
-            <Text style={styles.timeText}>{orderTime(delivery.createdAt)}</Text>
+          {/* LEFT: heure de création + compte à rebours */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={styles.timeBadge}>
+              <Icon name="clock" size={13} color="#ccc" strokeWidth={2} />
+              <Text style={styles.timeText}>{orderTime(delivery.createdAt)}</Text>
+            </View>
+            {countdown != null && countdown > 0 && (
+              <View style={[styles.countdownBadge, countdown <= 8 && styles.countdownBadgeRed]}>
+                <Text style={styles.countdownText}>{countdown}s</Text>
+              </View>
+            )}
           </View>
           {/* RIGHT: prix */}
           {delivery.price != null && (
@@ -291,6 +322,12 @@ const styles = StyleSheet.create({
   priceAmount: { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
   priceLabel: { color: '#888', fontSize: 11, marginTop: 1 },
   greenBar: { height: 3, backgroundColor: GREEN },
+  countdownBadge: {
+    backgroundColor: '#FF9500',
+    borderRadius: 20, paddingHorizontal: 9, paddingVertical: 4,
+  },
+  countdownBadgeRed: { backgroundColor: '#FF3B30' },
+  countdownText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   // ── Body ──────────────────────────────────────
   body: { padding: 16, gap: 14 },

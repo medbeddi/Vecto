@@ -103,6 +103,9 @@ function CoursesTab() {
   const [togglingDispo, setTogglingDispo] = useState(false);
   const [incomingOrder, setIncomingOrder] = useState<IncomingOrder | null>(null);
   const soundRef = useRef<Audio.Sound | null>(null);
+  // Courses reçues par socket → ont un compte à rebours de 20s
+  const socketDeliveryIds = useRef<Set<string>>(new Set());
+  const modalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Charger la disponibilité initiale depuis le backend
   useEffect(() => {
@@ -139,7 +142,16 @@ function CoursesTab() {
     }, 15000);
 
     const onNewOrder = (order: IncomingOrder) => {
+      socketDeliveryIds.current.add(order.deliveryId);
       setIncomingOrder(order);
+
+      // Fermer le modal après 20s si le driver ne réagit pas
+      if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
+      modalTimerRef.current = setTimeout(() => {
+        setIncomingOrder((prev) => prev?.deliveryId === order.deliveryId ? null : prev);
+        modalTimerRef.current = null;
+      }, 20 * 1000);
+
       upsertAvailable({
         id: order.deliveryId,
         clientAlias: order.clientAlias,
@@ -169,6 +181,7 @@ function CoursesTab() {
 
     const onOrderTaken = ({ deliveryId }: { deliveryId: string }) => {
       removeAvailable(deliveryId);
+      socketDeliveryIds.current.delete(deliveryId);
       setIncomingOrder((prev) => prev?.deliveryId === deliveryId ? null : prev);
     };
 
@@ -178,6 +191,7 @@ function CoursesTab() {
       socketService.off('new_order', onNewOrder);
       socketService.off('order_taken', onOrderTaken);
       clearInterval(pollInterval);
+      if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
     };
   }, []);
 
@@ -220,6 +234,8 @@ function CoursesTab() {
 
   const handleAccept = useCallback(async (delivery: Delivery) => {
     setAccepting(delivery.id);
+    socketDeliveryIds.current.delete(delivery.id);
+    if (modalTimerRef.current) { clearTimeout(modalTimerRef.current); modalTimerRef.current = null; }
     try {
       const { delivery: updated } = await api<{ delivery: Delivery }>(
         `/api/deliveries/${delivery.id}/accept`,
@@ -378,7 +394,21 @@ function CoursesTab() {
           )
         }
         renderItem={({ item }) => (
-          <DeliveryCard delivery={item} onAccept={handleAccept} accepting={accepting === item.id} />
+          <DeliveryCard
+            delivery={item}
+            onAccept={handleAccept}
+            onRefuse={async (d) => {
+              socketDeliveryIds.current.delete(d.id);
+              try { await api(`/api/deliveries/${d.id}/refuse`, { method: 'POST' }); } catch {}
+              removeAvailable(d.id);
+            }}
+            onExpire={(d) => {
+              socketDeliveryIds.current.delete(d.id);
+              removeAvailable(d.id);
+            }}
+            accepting={accepting === item.id}
+            autoRemoveSec={socketDeliveryIds.current.has(item.id) ? 20 : undefined}
+          />
         )}
       />
     </View>
