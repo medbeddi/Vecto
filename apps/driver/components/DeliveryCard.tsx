@@ -104,7 +104,7 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props)
     : '0:00';
 
   const hasRoute = !!(delivery.pickupAddress || delivery.dropoffAddress);
-  const hasStats = delivery.distanceKm != null || delivery.durationMin != null || delivery.price != null;
+  const hasStats = delivery.distanceKm != null || delivery.durationMin != null;
 
   return (
     <View style={styles.card}>
@@ -187,11 +187,6 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, accepting }: Props)
               <View style={styles.chip}>
                 <Icon name="clock" size={13} color="#555" strokeWidth={1.75} />
                 <Text style={styles.chipText}>{delivery.durationMin} min</Text>
-              </View>
-            )}
-            {delivery.price != null && (
-              <View style={[styles.chip, styles.chipPrice]}>
-                <Text style={styles.chipPriceText}>$ {delivery.price} MRU</Text>
               </View>
             )}
           </View>
