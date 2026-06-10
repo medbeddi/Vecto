@@ -1252,6 +1252,10 @@ function openLaunchPanel() {
   // Masquer le badge "Tous refusé" au départ
   var refusedBadge = document.getElementById('cc-launch-refused-badge');
   if (refusedBadge) refusedBadge.style.display = 'none';
+  // Reset état carte mini (route + marqueurs)
+  _mmPickupCoords = null; _mmDropoffCoords = null;
+  if (_mmDirectionsRenderer) { _mmDirectionsRenderer.setMap(null); _mmDirectionsRenderer = null; }
+  if (_mmOsrmPolyline && _leafletMiniMap) { _leafletMiniMap.removeLayer(_mmOsrmPolyline); _mmOsrmPolyline = null; }
   document.getElementById('cc-launch-panel').style.display = 'flex';
   document.querySelector('.cc-inbox-layout').classList.add('launch-open');
   populateLaunchAudios();
@@ -1282,6 +1286,8 @@ var _googlePlacesReady = false;
 var _mmClickMode      = 'pickup';  // 'pickup' | 'dropoff'
 var _fsDirectionsRenderer = null;
 var _fsOsrmPolyline   = null;
+var _mmDirectionsRenderer = null;
+var _mmOsrmPolyline   = null;
 var _MAP_TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
 function _gll(coords) { return coords ? { lat: coords[0], lng: coords[1] } : null; }
@@ -1336,9 +1342,11 @@ function refreshMapMarkers() {
     var r2 = _applyL(_leafletFullMap, ptA, ptB, _fsPickupMarker, _fsDropoffMarker);
     _fsPickupMarker = r2.a; _fsDropoffMarker = r2.b;
   }
-  // Redessiner la route si les deux points existent et que le modal est ouvert
-  var modal = document.getElementById('modal-map-fullscreen');
-  if (ptA && ptB && modal && modal.style.display !== 'none') renderModalRoute();
+  if (ptA && ptB) {
+    renderMiniMapRoute();
+    var modal = document.getElementById('modal-map-fullscreen');
+    if (modal && modal.style.display !== 'none') renderModalRoute();
+  }
 }
 
 /* ── Init mini-carte ─────────────────────────────────────────────── */
@@ -1552,6 +1560,41 @@ async function _reverseGeocode(lat, lng, cb) {
       var d = await r.json();
       cb(d.display_name || null);
     } catch (e) { cb(null); }
+  }
+}
+
+function renderMiniMapRoute() {
+  var ptA = _mmPickupCoords;
+  var ptB = _mmDropoffCoords;
+  if (!ptA || !ptB) return;
+
+  if (_useGoogleMaps && _googleMiniMap) {
+    if (!_mmDirectionsRenderer) {
+      _mmDirectionsRenderer = new google.maps.DirectionsRenderer({
+        suppressMarkers: true,
+        polylineOptions: { strokeColor: '#1976D2', strokeOpacity: 0.85, strokeWeight: 4 },
+      });
+      _mmDirectionsRenderer.setMap(_googleMiniMap);
+    }
+    new google.maps.DirectionsService().route({
+      origin: { lat: ptA[0], lng: ptA[1] },
+      destination: { lat: ptB[0], lng: ptB[1] },
+      travelMode: google.maps.TravelMode.DRIVING,
+    }, function(result, status) {
+      if (status === 'OK') _mmDirectionsRenderer.setDirections(result);
+    });
+  } else if (_leafletMiniMap) {
+    var url = 'https://router.project-osrm.org/route/v1/driving/'
+      + ptA[1] + ',' + ptA[0] + ';' + ptB[1] + ',' + ptB[0]
+      + '?overview=full&geometries=geojson';
+    fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+      if (_mmOsrmPolyline) _leafletMiniMap.removeLayer(_mmOsrmPolyline);
+      if (data.routes && data.routes[0]) {
+        _mmOsrmPolyline = L.geoJSON(data.routes[0].geometry, {
+          style: { color: '#1976D2', weight: 4, opacity: 0.85 }
+        }).addTo(_leafletMiniMap);
+      }
+    }).catch(function() {});
   }
 }
 
