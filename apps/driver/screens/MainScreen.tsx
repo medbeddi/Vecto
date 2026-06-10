@@ -102,10 +102,11 @@ function CoursesTab() {
   const [dispo, setDispo] = useState(true);
   const [togglingDispo, setTogglingDispo] = useState(false);
   const [incomingOrder, setIncomingOrder] = useState<IncomingOrder | null>(null);
+  const [modalCountdown, setModalCountdown] = useState(20);
   const soundRef = useRef<Audio.Sound | null>(null);
-  // Courses reçues par socket → ont un compte à rebours de 20s
   const socketDeliveryIds = useRef<Set<string>>(new Set());
   const modalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modalCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Charger la disponibilité initiale depuis le backend
   useEffect(() => {
@@ -145,8 +146,16 @@ function CoursesTab() {
       socketDeliveryIds.current.add(order.deliveryId);
       setIncomingOrder(order);
 
-      // Fermer le modal après 20s si le driver ne réagit pas
+      // Compte à rebours modal (20s)
       if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
+      if (modalCountdownRef.current) clearInterval(modalCountdownRef.current);
+      setModalCountdown(20);
+      modalCountdownRef.current = setInterval(() => {
+        setModalCountdown((prev) => {
+          if (prev <= 1) { clearInterval(modalCountdownRef.current!); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
       modalTimerRef.current = setTimeout(() => {
         setIncomingOrder((prev) => prev?.deliveryId === order.deliveryId ? null : prev);
         modalTimerRef.current = null;
@@ -192,6 +201,7 @@ function CoursesTab() {
       socketService.off('order_taken', onOrderTaken);
       clearInterval(pollInterval);
       if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
+      if (modalCountdownRef.current) clearInterval(modalCountdownRef.current);
     };
   }, []);
 
@@ -236,6 +246,7 @@ function CoursesTab() {
     setAccepting(delivery.id);
     socketDeliveryIds.current.delete(delivery.id);
     if (modalTimerRef.current) { clearTimeout(modalTimerRef.current); modalTimerRef.current = null; }
+    if (modalCountdownRef.current) { clearInterval(modalCountdownRef.current); modalCountdownRef.current = null; }
     try {
       const { delivery: updated } = await api<{ delivery: Delivery }>(
         `/api/deliveries/${delivery.id}/accept`,
@@ -277,7 +288,12 @@ function CoursesTab() {
       <Modal visible={!!incomingOrder} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>🛵 Nouvelle course</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={styles.modalTitle}>🛵 Nouvelle course</Text>
+              <View style={[styles.modalCountdown, modalCountdown <= 8 && styles.modalCountdownRed]}>
+                <Text style={styles.modalCountdownText}>{modalCountdown}s</Text>
+              </View>
+            </View>
             <Text style={styles.modalAlias}>{incomingOrder?.clientAlias}</Text>
 
             {incomingOrder?.price != null && (
@@ -407,7 +423,7 @@ function CoursesTab() {
               removeAvailable(d.id);
             }}
             accepting={accepting === item.id}
-            autoRemoveSec={socketDeliveryIds.current.has(item.id) ? 20 : undefined}
+            autoRemoveSec={20}
           />
         )}
       />
@@ -1340,7 +1356,13 @@ const styles = StyleSheet.create({
     backgroundColor: CARD, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 40, gap: 12,
   },
-  modalTitle: { color: PRIMARY, fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  modalTitle: { color: PRIMARY, fontSize: 18, fontWeight: '700' },
+  modalCountdown: {
+    backgroundColor: '#FF9500', borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  modalCountdownRed: { backgroundColor: '#FF3B30' },
+  modalCountdownText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   modalAlias: { color: TEXT, fontSize: 16, fontWeight: '600', textAlign: 'center' },
   modalMsg: { color: TEXT2, fontSize: 15, textAlign: 'center', lineHeight: 22 },
   playBtn: {
