@@ -731,7 +731,7 @@ router.post('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) 
 
 // Upload fichier depuis le dashboard admin (vocal/image dans le chat livreur)
 import multer from 'multer';
-import { mkdirSync } from 'fs';
+import { mkdirSync, readFileSync } from 'fs';
 import pathMod from 'path';
 import { fileURLToPath as fturl } from 'url';
 import { uploadToR2, extFromMime } from '../services/media.js';
@@ -741,7 +741,7 @@ const ADMIN_UPLOADS_DIR = pathMod.join(__dirnameAdmin, '../../uploads');
 mkdirSync(ADMIN_UPLOADS_DIR, { recursive: true });
 
 const adminUpload = multer({
-  storage: env.R2_ENABLED ? multer.memoryStorage() : multer.diskStorage({
+  storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, ADMIN_UPLOADS_DIR),
     filename: (_req, file, cb) => {
       const ext = pathMod.extname(file.originalname) || '.bin';
@@ -757,15 +757,15 @@ const adminUpload = multer({
 
 router.post('/admin/upload', requireCallCenter, adminUpload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'NO_FILE' });
-  if (env.R2_ENABLED) {
+  if (env.R2_ENABLED && env.R2_PUBLIC_URL) {
     try {
       const ext = extFromMime(req.file.mimetype) || pathMod.extname(req.file.originalname).slice(1) || 'bin';
       const key = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      await uploadToR2(req.file.buffer, key, req.file.mimetype);
+      const buffer = readFileSync(req.file.path);
+      await uploadToR2(buffer, key, req.file.mimetype);
       return res.json({ url: `${env.R2_PUBLIC_URL}/${key}` });
     } catch (err) {
-      console.error('[admin/upload] R2 error:', err.message);
-      return res.status(500).json({ error: 'UPLOAD_FAILED' });
+      console.error('[admin/upload] R2 failed, falling back to disk:', err.message);
     }
   }
   const host = `${req.protocol}://${req.headers.host}`;
