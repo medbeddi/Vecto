@@ -139,6 +139,13 @@ export default function DeliveriesScreen() {
     [navigation, removeAvailable, addActiveCourse]
   );
 
+  const handleRefuse = useCallback(async (delivery: Delivery) => {
+    removeAvailable(delivery.id);
+    try {
+      await api(`/api/deliveries/${delivery.id}/refuse`, { method: 'POST' });
+    } catch {}
+  }, [removeAvailable]);
+
   const handleLogout = () => {
     Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
       { text: 'Annuler', style: 'cancel' },
@@ -255,6 +262,7 @@ export default function DeliveriesScreen() {
           <DeliveryCard
             delivery={item}
             onAccept={handleAccept}
+            onRefuse={handleRefuse}
             accepting={accepting === item.id}
           />
         )}

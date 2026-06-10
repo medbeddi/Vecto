@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
-import { emitNewOrder, emitCCMessageToDriver, emitDriverReplyToCC } from '../services/socket.js';
+import { emitNewOrder, emitCCMessageToDriver, emitDriverReplyToCC, emitConversationClaimed, emitConversationUnclaimed } from '../services/socket.js';
 import { createDelivery, launchDelivery } from '../services/delivery.js';
 import { hashWaId, encryptWaId, decryptWaId } from '../services/pii-filter.js';
 import { sendText, sendAudio } from '../services/messaging.js';
@@ -326,14 +326,20 @@ router.get('/admin/transactions', requireAdmin, async (req, res) => {
 // ── Call Center : liste des conversations en attente (admin_queue) ────────────
 router.get('/admin/inbox', requireCallCenter, async (req, res) => {
   try {
+    const adminId = req.admin.id;
     const rows = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'admin_queue')
       .whereNull('deliveries.archived_at')
+      // Seulement les non-claimées OU claimées par cet agent
+      .where(function () {
+        this.whereNull('deliveries.claimed_by').orWhere('deliveries.claimed_by', adminId);
+      })
       .orderBy('deliveries.created_at', 'desc')
       .select(
         'deliveries.id',
         'deliveries.created_at as createdAt',
+        'deliveries.claimed_by as claimedBy',
         'clients.alias as clientAlias',
         'clients.wa_id_enc as waIdEnc'
       );
@@ -347,11 +353,92 @@ router.get('/admin/inbox', requireCallCenter, async (req, res) => {
         id:          row.id,
         clientAlias: row.clientAlias,
         createdAt:   row.createdAt,
+        claimedBy:   row.claimedBy,
         lastMessage: last ? { type: last.type, content: last.content, createdAt: last.created_at } : null,
       };
     }));
 
     res.json({ inbox: result });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : réclamer (lock) une conversation ────────────────────────────
+router.post('/admin/inbox/:id/claim', requireCallCenter, async (req, res) => {
+  try {
+    const adminId = req.admin.id;
+    const delivery = await db('deliveries')
+      .where({ id: req.params.id, status: 'admin_queue' })
+      .first('id', 'claimed_by');
+    if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    // Déjà claimée par quelqu'un d'autre → refus
+    if (delivery.claimed_by && delivery.claimed_by !== adminId) {
+      return res.status(409).json({ error: 'ALREADY_CLAIMED' });
+    }
+
+    await db('deliveries')
+      .where({ id: req.params.id })
+      .update({ claimed_by: adminId, claimed_at: db.fn.now() });
+
+    // Notifier les autres agents CC que cette conversation est prise
+    emitConversationClaimed(req.params.id, adminId);
+
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : libérer une conversation ────────────────────────────────────
+router.post('/admin/inbox/:id/unclaim', requireCallCenter, async (req, res) => {
+  try {
+    await db('deliveries')
+      .where({ id: req.params.id, claimed_by: req.admin.id })
+      .update({ claimed_by: null, claimed_at: null });
+    emitConversationUnclaimed(req.params.id);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : conversations archivées (livrées ou annulées) ───────────────
+router.get('/admin/inbox/archived', requireCallCenter, async (req, res) => {
+  try {
+    const rows = await db('deliveries')
+      .join('clients', 'deliveries.client_id', 'clients.id')
+      .whereIn('deliveries.status', ['done', 'cancelled'])
+      .whereExists(
+        db('messages').whereRaw('messages.delivery_id = deliveries.id')
+      )
+      .orderBy('deliveries.created_at', 'desc')
+      .limit(50)
+      .select(
+        'deliveries.id',
+        'deliveries.status',
+        'deliveries.created_at as createdAt',
+        'deliveries.done_at as doneAt',
+        'clients.alias as clientAlias'
+      );
+
+    const result = await Promise.all(rows.map(async (row) => {
+      const last = await db('messages')
+        .where({ delivery_id: row.id })
+        .orderBy('created_at', 'desc')
+        .first();
+      return {
+        id:          row.id,
+        status:      row.status,
+        clientAlias: row.clientAlias,
+        createdAt:   row.createdAt,
+        doneAt:      row.doneAt,
+        lastMessage: last ? { type: last.type, content: last.content, createdAt: last.created_at } : null,
+      };
+    }));
+
+    res.json({ archived: result });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
@@ -437,7 +524,7 @@ router.post('/admin/inbox/:id/reply-audio', requireCallCenter, async (req, res) 
 // ── Call Center : lancer une course (admin_queue → pending → livreurs) ─────────
 router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
   try {
-    const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, forwardedAudioUrl } = req.body;
+    const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description, forwardedAudioUrl } = req.body;
 
     const client = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
@@ -447,7 +534,7 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
     if (!client) return res.status(404).json({ error: 'NOT_FOUND' });
 
     const updated = await launchDelivery(req.params.id, {
-      pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price,
+      pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description,
       forwardedAudioUrl,
     });
 

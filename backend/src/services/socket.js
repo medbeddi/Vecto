@@ -124,9 +124,14 @@ export async function emitNewOrder(delivery, initialMessage) {
     },
   };
 
-  // N'envoyer qu'aux drivers disponibles (is_available = true)
+  // N'envoyer qu'aux drivers disponibles qui n'ont pas refusé cette course
+  const refusedDriverIds = await db('delivery_refusals')
+    .where('delivery_id', delivery.id)
+    .pluck('driver_id');
+
   const availableDrivers = await db('drivers')
     .where({ is_available: true, suspended: false })
+    .whereNotIn('id', refusedDriverIds.length ? refusedDriverIds : [-1])
     .select('id');
   for (const { id } of availableDrivers) {
     io.to(`driver:${id}`).emit('new_order', payload);
@@ -221,4 +226,22 @@ export function emitDriverReplyToCC(driverId, driverName, message) {
 export function emitDriverAvailability(driverId, driverName, isAvailable) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('driver_availability', { driverId, name: driverName, isAvailable });
+}
+
+// ── Conversation CC claimée par un agent → retirer des autres inboxes ─────────
+export function emitConversationClaimed(deliveryId, adminId) {
+  if (!io) return;
+  io.to(ADMINS_ROOM).emit('conversation_claimed', { deliveryId, claimedBy: adminId });
+}
+
+// ── Conversation CC libérée → peut réapparaître dans les inboxes ──────────────
+export function emitConversationUnclaimed(deliveryId) {
+  if (!io) return;
+  io.to(ADMINS_ROOM).emit('conversation_unclaimed', { deliveryId });
+}
+
+// ── Tous les livreurs disponibles ont refusé une course → notif admin ─────────
+export function emitAllDriversRefused(deliveryId) {
+  if (!io) return;
+  io.to(ADMINS_ROOM).emit('all_drivers_refused', { deliveryId });
 }

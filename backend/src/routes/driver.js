@@ -152,6 +152,12 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
     const deliveries = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'pending')
+      // Exclure les courses que ce livreur a explicitement refusées
+      .whereNotExists(
+        db('delivery_refusals')
+          .whereRaw('delivery_refusals.delivery_id = deliveries.id')
+          .where('delivery_refusals.driver_id', req.driver.id)
+      )
       .orderBy('deliveries.created_at', 'asc')
       .select(
         'deliveries.id',
@@ -168,6 +174,40 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
       );
 
     res.json({ deliveries });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// Livreur refuse explicitement une course (ne la reverra plus)
+router.post('/deliveries/:id/refuse', requireAuth, async (req, res) => {
+  try {
+    const delivery = await db('deliveries').where({ id: req.params.id, status: 'pending' }).first('id');
+    if (!delivery) return res.status(404).json({ error: 'DELIVERY_NOT_FOUND' });
+
+    await db('delivery_refusals')
+      .insert({ delivery_id: req.params.id, driver_id: req.driver.id })
+      .onConflict(['delivery_id', 'driver_id']).ignore();
+
+    // Notifier l'admin si tous les livreurs disponibles ont refusé
+    const availableDriverIds = await db('drivers')
+      .where({ is_available: true, suspended: false })
+      .pluck('id');
+
+    if (availableDriverIds.length > 0) {
+      const refusedCount = await db('delivery_refusals')
+        .where('delivery_id', req.params.id)
+        .whereIn('driver_id', availableDriverIds)
+        .count('id as n')
+        .first();
+
+      if (Number(refusedCount.n) >= availableDriverIds.length) {
+        const { emitAllDriversRefused } = await import('../services/socket.js');
+        emitAllDriversRefused(req.params.id);
+      }
+    }
+
+    res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }

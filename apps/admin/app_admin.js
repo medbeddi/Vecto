@@ -25,8 +25,9 @@ async function login() {
     });
     if (!res.ok) { errEl.style.display = 'block'; return; }
     const data = await res.json();
-    _token = data.token;
-    _role  = data.admin.role || 'admin';
+    _token      = data.token;
+    _role       = data.admin.role || 'admin';
+    _myAdminId  = data.admin.id;
     localStorage.setItem('vecto_admin_token', _token);
     localStorage.setItem('vecto_admin_name', data.admin.name);
     localStorage.setItem('vecto_admin_role', _role);
@@ -122,7 +123,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const storedRole = data.role || localStorage.getItem('vecto_admin_role') || 'admin';
         localStorage.setItem('vecto_admin_name', name);
         localStorage.setItem('vecto_admin_role', storedRole);
-        _role = storedRole;
+        _role      = storedRole;
+        _myAdminId = data.id;
         const roleLabel = storedRole === 'call_center' ? 'Call Center' : 'Admin';
         document.getElementById('current-user-label').textContent = name + ' · ' + roleLabel;
         showApp();
@@ -194,8 +196,7 @@ function initSocket() {
 
   // Nouveau message texte WA → call center
   _socket.on('incoming_text', function (data) {
-    // Mettre à jour l'inbox si la page est active
-    loadInbox();
+    if (_inboxSubTab === 'pending') loadInbox();
     // Si la conversation est déjà ouverte, ajouter le message en temps réel
     if (_inboxSelectedId === data.deliveryId && data.message) {
       var container = document.getElementById('cc-messages');
@@ -209,6 +210,42 @@ function initSocket() {
         container.appendChild(div);
         container.scrollTop = container.scrollHeight;
       }
+    }
+  });
+
+  // Une conversation a été prise par un autre agent CC → la retirer de notre inbox
+  _socket.on('conversation_claimed', function (data) {
+    if (data.claimedBy === _myAdminId) return; // c'est nous qui l'avons claimée
+    if (_inboxItems[data.deliveryId]) {
+      delete _inboxItems[data.deliveryId];
+      // Si c'était la conversation ouverte, fermer le panneau
+      if (_inboxSelectedId === data.deliveryId) {
+        _inboxSelectedId = null;
+        document.getElementById('cc-chat-empty').style.display = '';
+        document.getElementById('cc-chat-view').style.display = 'none';
+        closeLaunchPanel();
+      }
+      // Re-rendre la liste sans cet élément
+      renderInboxList(Object.values(_inboxItems));
+    }
+  });
+
+  // Une conversation a été libérée → recharger l'inbox
+  _socket.on('conversation_unclaimed', function () {
+    if (_inboxSubTab === 'pending') loadInbox();
+  });
+
+  // Tous les livreurs disponibles ont refusé une course
+  _socket.on('all_drivers_refused', function (data) {
+    // Si le panneau de lancement est ouvert pour cette course, afficher le badge
+    if (_inboxSelectedId === data.deliveryId) {
+      var badge = document.getElementById('cc-launch-refused-badge');
+      if (badge) badge.style.display = '';
+    }
+    // Notification discrète dans la liste
+    if (_inboxItems[data.deliveryId]) {
+      _inboxItems[data.deliveryId]._allRefused = true;
+      if (_inboxSubTab === 'pending') renderInboxList(Object.values(_inboxItems));
     }
   });
 }
@@ -897,11 +934,34 @@ function closeModal(id) {
 }
 
 /* ================================================================
-   CALL CENTER — INBOX (conversations WhatsApp en attente)
+   CALL CENTER — INBOX (conversations WhatsApp en attente + archivées)
 ================================================================ */
 var _inboxSelectedId = null;
-var _inboxItems = {};
+var _inboxItems      = {};   // conversations en attente (admin_queue)
+var _archivedItems   = {};   // conversations archivées (done/cancelled)
 var _currentMessages = [];
+var _inboxSubTab     = 'pending';   // 'pending' | 'archived'
+var _myAdminId       = null;        // id de l'agent connecté (rempli au login)
+
+function showInboxSubTab(tab) {
+  _inboxSubTab = tab;
+  document.getElementById('cc-sub-tab-pending').classList.toggle('active', tab === 'pending');
+  document.getElementById('cc-sub-tab-archived').classList.toggle('active', tab === 'archived');
+
+  // Fermer la conversation courante si on change d'onglet
+  _inboxSelectedId = null;
+  document.getElementById('cc-chat-empty').style.display = '';
+  document.getElementById('cc-chat-view').style.display = 'none';
+  closeLaunchPanel();
+
+  if (tab === 'pending') loadInbox();
+  else loadArchivedInbox();
+}
+
+function refreshCurrentInboxTab() {
+  if (_inboxSubTab === 'archived') loadArchivedInbox();
+  else loadInbox();
+}
 
 async function loadInbox() {
   try {
@@ -909,6 +969,17 @@ async function loadInbox() {
     if (!res.ok) return;
     var data = await res.json();
     renderInboxList(data.inbox || []);
+  } catch {}
+}
+
+async function loadArchivedInbox() {
+  var list = document.getElementById('cc-inbox-list');
+  if (list) list.innerHTML = '<div class="cc-inbox-empty">Chargement…</div>';
+  try {
+    var res = await fetch(API + '/api/admin/inbox/archived', { headers: authHeaders() });
+    if (!res.ok) return;
+    var data = await res.json();
+    renderArchivedList(data.archived || []);
   } catch {}
 }
 
@@ -930,8 +1001,41 @@ function renderInboxList(items) {
       : 'Nouveau contact';
     var time = item.lastMessage ? fmtTime(item.lastMessage.createdAt) : fmtTime(item.createdAt);
     var active = item.id === _inboxSelectedId ? ' active' : '';
+    // Badge "Moi" si cette convo est claimée par l'agent courant
+    var claimedBadge = item.claimedBy && item.claimedBy === _myAdminId
+      ? ' <span style="font-size:10px;background:#007AFF;color:#fff;padding:1px 5px;border-radius:10px;font-weight:700">Moi</span>'
+      : '';
     return '<div class="cc-inbox-item' + active + '" onclick="openConversation(\'' + item.id + '\')">'
-      + '<div class="cc-inbox-alias">' + escHtml(item.clientAlias) + '</div>'
+      + '<div class="cc-inbox-alias">' + escHtml(item.clientAlias) + claimedBadge + '</div>'
+      + '<div class="cc-inbox-preview">' + escHtml(preview.slice(0, 60)) + '</div>'
+      + '<div class="cc-inbox-time">' + time + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function renderArchivedList(items) {
+  var list = document.getElementById('cc-inbox-list');
+  if (!list) return;
+
+  _archivedItems = {};
+  items.forEach(function (item) { _archivedItems[item.id] = item; });
+
+  if (!items.length) {
+    list.innerHTML = '<div class="cc-inbox-empty">Aucune conversation archivée</div>';
+    return;
+  }
+
+  list.innerHTML = items.map(function (item) {
+    var preview = item.lastMessage
+      ? (item.lastMessage.type === 'text' ? (item.lastMessage.content || '') : '[' + item.lastMessage.type + ']')
+      : '—';
+    var time = item.doneAt ? fmtTime(item.doneAt) : fmtTime(item.createdAt);
+    var active = item.id === _inboxSelectedId ? ' active' : '';
+    var badgeClass = item.status === 'done' ? 'done' : 'cancelled';
+    var badgeLabel = item.status === 'done' ? 'Livré' : 'Annulé';
+    return '<div class="cc-inbox-item archived' + active + '" onclick="openArchivedConversation(\'' + item.id + '\')">'
+      + '<div class="cc-inbox-alias">' + escHtml(item.clientAlias)
+      + ' <span class="cc-inbox-status-badge ' + badgeClass + '">' + badgeLabel + '</span></div>'
       + '<div class="cc-inbox-preview">' + escHtml(preview.slice(0, 60)) + '</div>'
       + '<div class="cc-inbox-time">' + time + '</div>'
       + '</div>';
@@ -942,18 +1046,45 @@ async function openConversation(deliveryId) {
   _inboxSelectedId = deliveryId;
   var item = _inboxItems[deliveryId];
 
+  // Claim la conversation (verrouillage)
+  fetch(API + '/api/admin/inbox/' + deliveryId + '/claim', {
+    method: 'POST', headers: authHeaders(),
+  }).catch(function () {});
+
   // Mettre en évidence la ligne
   document.querySelectorAll('.cc-inbox-item').forEach(function (el) { el.classList.remove('active'); });
   var clicked = document.querySelector('.cc-inbox-item[onclick*="' + deliveryId + '"]');
   if (clicked) clicked.classList.add('active');
 
-  // Afficher le panneau chat
+  // Afficher le panneau chat (avec bouton Lancer — convo active)
   document.getElementById('cc-chat-empty').style.display = 'none';
   var chatView = document.getElementById('cc-chat-view');
   chatView.style.display = 'flex';
   document.getElementById('cc-chat-client-name').textContent = item ? item.clientAlias : '—';
+  // Réactiver le bouton Lancer (désactivé pour les archives)
+  var launchBtn = document.querySelector('.cc-chat-topbar .btn-danger');
+  if (launchBtn) launchBtn.style.display = '';
 
   // Charger les messages
+  await loadMessages(deliveryId);
+}
+
+async function openArchivedConversation(deliveryId) {
+  _inboxSelectedId = deliveryId;
+  var item = _archivedItems[deliveryId];
+
+  document.querySelectorAll('.cc-inbox-item').forEach(function (el) { el.classList.remove('active'); });
+  var clicked = document.querySelector('.cc-inbox-item[onclick*="' + deliveryId + '"]');
+  if (clicked) clicked.classList.add('active');
+
+  document.getElementById('cc-chat-empty').style.display = 'none';
+  var chatView = document.getElementById('cc-chat-view');
+  chatView.style.display = 'flex';
+  document.getElementById('cc-chat-client-name').textContent = item ? item.clientAlias : '—';
+  // Cacher le bouton "Lancer la course" pour les archives (read-only)
+  var launchBtn = document.querySelector('.cc-chat-topbar .btn-danger');
+  if (launchBtn) launchBtn.style.display = 'none';
+
   await loadMessages(deliveryId);
 }
 
@@ -1046,6 +1177,16 @@ function openLaunchPanel() {
   if (player)  player.src = '';
   document.getElementById('cc-launch-status').textContent = '';
   document.getElementById('cc-launch-status').className = 'cc-launch-status';
+  // Réinitialiser le champ description
+  var desc = document.getElementById('cc-description');
+  if (desc) desc.value = '';
+  // Afficher le nom du client
+  var item = _inboxItems[_inboxSelectedId];
+  var clientNameEl = document.getElementById('cc-launch-client-name');
+  if (clientNameEl) clientNameEl.textContent = item ? item.clientAlias : '—';
+  // Masquer le badge "Tous refusé" au départ
+  var refusedBadge = document.getElementById('cc-launch-refused-badge');
+  if (refusedBadge) refusedBadge.style.display = 'none';
   document.getElementById('cc-launch-panel').style.display = 'flex';
   document.querySelector('.cc-inbox-layout').classList.add('launch-open');
   populateLaunchAudios();
@@ -1534,6 +1675,8 @@ async function launchCourse() {
     return;
   }
 
+  var description = (document.getElementById('cc-description') ? document.getElementById('cc-description').value : '').trim() || undefined;
+
   var statusEl = document.getElementById('cc-launch-status');
   statusEl.textContent = 'Lancement en cours…';
   statusEl.className = 'cc-launch-status';
@@ -1542,7 +1685,17 @@ async function launchCourse() {
     var res = await fetch(API + '/api/admin/inbox/' + _inboxSelectedId + '/launch', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ pickupAddress: pickup, dropoffAddress: dropoff, price: price, forwardedAudioUrl: _forwardedAudioUrl || undefined }),
+      body: JSON.stringify({
+        pickupAddress: pickup,
+        dropoffAddress: dropoff,
+        price: price,
+        description: description,
+        forwardedAudioUrl: _forwardedAudioUrl || undefined,
+        pickupLat: _mmPickupCoords ? _mmPickupCoords[0] : undefined,
+        pickupLng: _mmPickupCoords ? _mmPickupCoords[1] : undefined,
+        dropoffLat: _mmDropoffCoords ? _mmDropoffCoords[0] : undefined,
+        dropoffLng: _mmDropoffCoords ? _mmDropoffCoords[1] : undefined,
+      }),
     });
     if (!res.ok) {
       statusEl.textContent = 'Erreur lors du lancement.';

@@ -27,7 +27,7 @@ export async function createAdminQueueDelivery(clientId) {
 }
 
 // Passe une admin_queue delivery en pending avec les adresses et l'émet aux livreurs
-export async function launchDelivery(deliveryId, { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, forwardedAudioUrl }) {
+export async function launchDelivery(deliveryId, { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description, forwardedAudioUrl }) {
   const delivery = await db('deliveries').where({ id: deliveryId }).first();
   if (!delivery) {
     const err = new Error('Course introuvable');
@@ -49,6 +49,7 @@ export async function launchDelivery(deliveryId, { pickupAddress, dropoffAddress
     dropoff_lat:     dropoffLat     ?? null,
     dropoff_lng:     dropoffLng     ?? null,
     price:           price          ?? null,
+    description:     description    ?? null,
   };
   if (forwardedAudioUrl) {
     updateData.initial_media_type = 'audio';
