@@ -1948,10 +1948,13 @@ async function launchCourse() {
     statusEl.textContent = 'Course envoyée aux livreurs !';
     statusEl.className = 'cc-launch-status success';
 
-    // Fermer le panneau après lancement — garder la conversation visible
+    // Fermer le panneau + la conversation après lancement
     setTimeout(function () {
       closeLaunchPanel();
       _forwardedAudioUrl = null;
+      _inboxSelectedId = null;
+      document.getElementById('cc-chat-empty').style.display = '';
+      document.getElementById('cc-chat-view').style.display = 'none';
       loadInbox();
     }, 1500);
   } catch {

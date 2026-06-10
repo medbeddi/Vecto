@@ -451,34 +451,6 @@
               </div>
             </div>
 
-            <!-- Bloc 3 : Note -->
-            <div class="cc-launch-section">
-              <div class="cc-launch-section-title">Note pour le livreur <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">— optionnel</span></div>
-              <textarea id="cc-description" placeholder="Ex : Fragile, appeler avant livraison, résidence gardée…" rows="3"
-                style="resize:none;font-family:inherit;font-size:13px;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text-1);width:100%;box-sizing:border-box;line-height:1.5"></textarea>
-            </div>
-
-            <!-- Bloc 4 : Vocal -->
-            <div class="cc-launch-section">
-              <div class="cc-launch-section-title">Message vocal <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3)">— optionnel</span></div>
-
-              <!-- Vocaux du client sélectionnables -->
-              <div id="cc-launch-audio-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
-
-              <!-- Enregistrer un nouveau vocal -->
-              <button id="cc-launch-rec-btn" class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;gap:6px" onclick="toggleLaunchRecording()">
-                <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0012 6.32V20h-3v2h8v-2h-3v-2.68A7 7 0 0019 11h-2z"/></svg>
-                Enregistrer un nouveau vocal
-              </button>
-
-              <!-- Prévisualisation du vocal sélectionné -->
-              <div id="cc-launch-audio-preview" style="display:none;background:var(--bg);border-radius:8px;padding:10px;border:1px solid var(--border);margin-top:8px">
-                <div style="font-size:11px;font-weight:600;color:var(--text-2);margin-bottom:6px">Vocal sélectionné :</div>
-                <audio id="cc-launch-audio-player" controls style="width:100%;height:32px;display:block"></audio>
-                <button onclick="clearLaunchAudio()" style="margin-top:6px;font-size:12px;color:#FF3B30;background:none;border:none;cursor:pointer;padding:0;font-family:inherit">✕ Retirer ce vocal</button>
-              </div>
-            </div>
-
             <!-- Statut -->
             <div class="cc-launch-status" id="cc-launch-status"></div>
 
@@ -669,6 +641,10 @@
     <div class="modal-title">Modifier le livreur</div>
     <label class="field-label">Nom complet</label>
     <div class="field-row"><input type="text" id="edit-driver-name" placeholder="Nom du livreur" /></div>
+    <div style="margin-top:16px;border-top:.5px solid var(--border);padding-top:16px">
+      <label class="field-label">Nouveau mot de passe <span style="font-weight:400;opacity:.5;font-size:11px">(laisser vide = ne pas changer)</span></label>
+      <div class="field-row"><input type="password" id="edit-driver-pwd" placeholder="Min. 6 caractères" autocomplete="new-password" /></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-driver')">Annuler</button>
       <button class="btn btn-dark" onclick="saveDriver()">Enregistrer</button>

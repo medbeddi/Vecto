@@ -259,6 +259,20 @@ router.post('/admin/drivers/:id/reactivate', requireAdmin, async (req, res) => {
   }
 });
 
+router.patch('/admin/drivers/:id/reset-password', requireAdmin, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password || password.trim().length < 6) return res.status(400).json({ error: 'PASSWORD_TOO_SHORT' });
+    const driver = await db('drivers').where({ id: req.params.id }).first('id');
+    if (!driver) return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
+    const hash = await bcrypt.hash(password.trim(), 12);
+    await db('drivers').where({ id: req.params.id }).update({ password_hash: hash });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 // ── Clients ───────────────────────────────────────────────────────────────────
 router.get('/admin/clients', requireCallCenter, async (req, res) => {
   try {
@@ -552,7 +566,9 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
         ? { type: lastMsg.type, content: lastMsg.content, meta: lastMsg.meta }
         : { type: 'text', content: pickupAddress ? `${pickupAddress} → ${dropoffAddress}` : 'Commande appel', meta: null };
 
-    await emitNewOrder({ ...updated, alias: client.clientAlias }, initialMessage);
+    emitNewOrder({ ...updated, alias: client.clientAlias }, initialMessage).catch((e) => {
+      console.error('[launch] emitNewOrder failed:', e.message);
+    });
 
     res.json({ delivery: { id: updated.id, status: updated.status } });
   } catch (err) {

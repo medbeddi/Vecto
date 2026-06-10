@@ -201,8 +201,12 @@ function CoursesTab() {
   const playAudio = async (url: string) => {
     try {
       if (soundRef.current) { await soundRef.current.unloadAsync(); soundRef.current = null; }
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
       const { sound } = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: true });
       soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((s) => {
+        if (s.isLoaded && s.didJustFinish) { sound.unloadAsync(); soundRef.current = null; }
+      });
     } catch {}
   };
 
