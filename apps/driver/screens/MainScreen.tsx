@@ -463,17 +463,43 @@ function AdminChatTab() {
 
   useEffect(() => {
     api<{ messages: CCMessage[] }>('/api/drivers/cc-chat')
-      .then((d) => setMessages(d.messages ?? []))
+      .then((d) => {
+        setMessages(d.messages ?? []);
+        setTimeout(() => flatRef.current?.scrollToEnd({ animated: false }), 120);
+      })
       .catch(() => {});
     api<{ ccPhone: string | null }>('/api/drivers/config')
       .then((d) => setCcPhone(d.ccPhone))
       .catch(() => {});
+
+    const merge = (fetched: CCMessage[]) => {
+      setMessages((prev) => {
+        const ids = new Set(prev.map((m) => m.id));
+        const added = fetched.filter((m) => !ids.has(m.id));
+        if (!added.length) return prev;
+        setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80);
+        return [...prev, ...added];
+      });
+    };
+
+    const pollId = setInterval(() => {
+      api<{ messages: CCMessage[] }>('/api/drivers/cc-chat')
+        .then((d) => merge(d.messages ?? []))
+        .catch(() => {});
+    }, 5000);
+
     const onMsg = (msg: CCMessage) => {
-      setMessages((prev) => [...prev, msg]);
-      setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80);
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) return prev;
+        setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80);
+        return [...prev, msg];
+      });
     };
     socketService.on('cc_message', onMsg);
-    return () => socketService.off('cc_message', onMsg);
+    return () => {
+      socketService.off('cc_message', onMsg);
+      clearInterval(pollId);
+    };
   }, []);
 
   const scrollBottom = () =>
@@ -627,18 +653,87 @@ function AdminChatTab() {
   );
 }
 
+const WAVE_HEIGHTS = [6, 10, 15, 20, 12, 18, 8, 14, 20, 10, 15, 6];
+
 function CCBubble({ message }: { message: CCMessage }) {
   const isAdmin = message.senderRole === 'admin';
   const time = new Date(message.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState<number | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  useEffect(() => {
+    return () => { soundRef.current?.unloadAsync().catch(() => {}); };
+  }, []);
+
+  const togglePlay = async () => {
+    if (!message.content) return;
+    try {
+      if (!soundRef.current) {
+        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+        const { sound, status } = await Audio.Sound.createAsync(
+          { uri: message.content },
+          { shouldPlay: true }
+        );
+        soundRef.current = sound;
+        if (status.isLoaded && status.durationMillis) {
+          setDuration(Math.round(status.durationMillis / 1000));
+        }
+        sound.setOnPlaybackStatusUpdate((s) => {
+          if (s.isLoaded) {
+            if (s.durationMillis) setDuration(Math.round(s.durationMillis / 1000));
+            if (s.didJustFinish) setPlaying(false);
+          }
+        });
+        setPlaying(true);
+      } else if (playing) {
+        await soundRef.current.pauseAsync();
+        setPlaying(false);
+      } else {
+        await soundRef.current.playAsync();
+        setPlaying(true);
+      }
+    } catch {}
+  };
+
+  const durStr = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   let content: React.ReactNode;
   if (message.type === 'image') {
-    content = <Image source={{ uri: message.content }} style={adminChat.msgImage} resizeMode="cover" />;
+    content = (
+      <Image
+        source={{ uri: message.content }}
+        style={adminChat.msgImage}
+        resizeMode="cover"
+      />
+    );
   } else if (message.type === 'audio') {
     content = (
       <View style={adminChat.audioRow}>
-        <Icon name="mic" size={14} color={isAdmin ? TEXT : '#fff'} strokeWidth={1.75} />
-        <Text style={[adminChat.audioText, isAdmin ? { color: TEXT2 } : { color: 'rgba(255,255,255,0.8)' }]}>Message vocal</Text>
+        <TouchableOpacity
+          style={[adminChat.audioPlayBtn, { backgroundColor: isAdmin ? TEXT : 'rgba(255,255,255,0.25)' }]}
+          onPress={togglePlay}
+          activeOpacity={0.75}
+        >
+          <Icon name={playing ? 'pause' : 'play'} size={13} color="#fff" strokeWidth={2.5} />
+        </TouchableOpacity>
+        <View style={adminChat.audioWaveArea}>
+          {WAVE_HEIGHTS.map((h, i) => (
+            <View
+              key={i}
+              style={[
+                adminChat.audioWaveBar,
+                { height: h },
+                { backgroundColor: isAdmin
+                    ? (playing ? PRIMARY : TEXT2)
+                    : (playing ? '#fff' : 'rgba(255,255,255,0.55)') },
+              ]}
+            />
+          ))}
+        </View>
+        <Text style={[adminChat.audioDur, { color: isAdmin ? TEXT2 : 'rgba(255,255,255,0.7)' }]}>
+          {duration !== null ? durStr(duration) : '0:00'}
+        </Text>
       </View>
     );
   } else {
@@ -677,8 +772,16 @@ const adminChat = StyleSheet.create({
   textOut: { color: '#fff', fontSize: 15, lineHeight: 20 },
   time: { fontSize: 11, color: 'rgba(128,128,128,0.7)', alignSelf: 'flex-end' },
   msgImage: { width: 200, height: 150, borderRadius: 10 },
-  audioRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2 },
-  audioText: { fontSize: 13, fontWeight: '500' },
+  audioRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2, minWidth: 160 },
+  audioPlayBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+  },
+  audioWaveArea: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 4,
+  },
+  audioWaveBar: { width: 3, borderRadius: 2, flexShrink: 0 },
+  audioDur: { fontSize: 12, fontWeight: '500' as const, flexShrink: 0 },
   // Input bar
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,

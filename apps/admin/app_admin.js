@@ -312,6 +312,8 @@ var _selectedDriverPhone = null;
 var _driverChatUnread = 0;
 var _driverMicRecorder = null;
 var _driverMicChunks = [];
+var _driverMsgIds = new Set();
+var _driverChatPollTimer = null;
 var _ccMapInitialized = false;
 
 function showPage(pageId) {
@@ -344,6 +346,7 @@ function showPage(pageId) {
     }, 30000);
   } else {
     if (_inboxPollTimer) { clearInterval(_inboxPollTimer); _inboxPollTimer = null; }
+    stopDriverChatPolling();
   }
   if (pageId === 'p-commandes') {
     _navBadgeOrders = 0; _updateNavBadge('nav-badge-orders', 0);
@@ -413,6 +416,7 @@ function selectDriverChat(driverId, driverName, driverPhone) {
   _selectedDriverId   = driverId;
   _selectedDriverName = driverName;
   _selectedDriverPhone = driverPhone || null;
+  _driverMsgIds = new Set();
   document.getElementById('cc-driver-chat-empty').style.display = 'none';
   document.getElementById('cc-driver-chat-view').style.display  = 'flex';
   document.getElementById('cc-driver-chat-name').textContent    = driverName;
@@ -420,6 +424,7 @@ function selectDriverChat(driverId, driverName, driverPhone) {
   if (callBtn) callBtn.style.display = driverPhone ? 'flex' : 'none';
   loadDriversChatList();
   loadDriverChatMessages(driverId);
+  startDriverChatPolling();
 }
 
 function callDriver() {
@@ -440,13 +445,25 @@ function _driverMsgBubble(m) {
   var inner = '';
   if (type === 'audio') {
     var uid = 'aud_' + m.id.replace(/-/g,'');
-    inner = '<button class="cc-msg-audio" onclick="toggleAudioMsg(\'' + uid + '\',\'' + escHtml(m.content) + '\')">'
-          + '<span class="cc-msg-audio-icon">▶</span>'
-          + '<span class="cc-msg-audio-label">Message vocal</span>'
+    inner = '<div class="cc-audio-wrap">'
+          + '<button class="cc-audio-btn" onclick="toggleAudioMsg(\'' + uid + '\')">'
+          + '<span class="cc-audio-icon" id="ico_' + uid + '">▶</span>'
           + '</button>'
-          + '<audio id="' + uid + '" src="' + escHtml(m.content) + '" style="display:none"></audio>';
+          + '<div class="cc-audio-body">'
+          + '<div class="cc-audio-wave">'
+          + '<span class="cc-audio-bar h2"></span><span class="cc-audio-bar h3"></span><span class="cc-audio-bar h4"></span>'
+          + '<span class="cc-audio-bar h2"></span><span class="cc-audio-bar h3"></span><span class="cc-audio-bar h1"></span>'
+          + '<span class="cc-audio-bar h4"></span><span class="cc-audio-bar h3"></span><span class="cc-audio-bar h2"></span>'
+          + '<span class="cc-audio-bar h1"></span><span class="cc-audio-bar h3"></span><span class="cc-audio-bar h2"></span>'
+          + '</div>'
+          + '<span class="cc-audio-dur" id="dur_' + uid + '">0:00</span>'
+          + '</div>'
+          + '</div>'
+          + '<audio id="' + uid + '" src="' + escHtml(m.content) + '" preload="metadata" style="display:none"'
+          + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0,el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"></audio>';
   } else if (type === 'image') {
-    inner = '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px;display:block" />';
+    inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img"'
+          + ' onerror="this.outerHTML=\'<span style=\\\"opacity:.5;font-size:13px\\\">🖼 Image non disponible</span>\'" />';
   } else {
     inner = '<div class="cc-msg-text">' + escHtml(m.content) + '</div>';
   }
@@ -457,39 +474,61 @@ function _driverMsgBubble(m) {
     + '</div></div>';
 }
 
-function toggleAudioMsg(uid, src) {
+function toggleAudioMsg(uid) {
   var audio = document.getElementById(uid);
   if (!audio) return;
   if (audio.paused) {
-    document.querySelectorAll('.cc-msg-audio-el').forEach(function(a) { if(a.id !== uid) a.pause(); });
-    audio.play();
-    var btn = audio.previousElementSibling;
-    if (btn) btn.querySelector('.cc-msg-audio-icon').textContent = '⏸';
+    document.querySelectorAll('audio').forEach(function(a) {
+      if (a.id !== uid && !a.paused) {
+        a.pause();
+        var ic = document.getElementById('ico_' + a.id);
+        if (ic) ic.textContent = '▶';
+      }
+    });
+    audio.play().catch(function() {});
+    var icon = document.getElementById('ico_' + uid);
+    if (icon) icon.textContent = '⏸';
     audio.onended = function() {
-      var b = document.getElementById(uid);
-      if (b) { var p = b.previousElementSibling; if(p) p.querySelector('.cc-msg-audio-icon').textContent = '▶'; }
+      var ic2 = document.getElementById('ico_' + uid);
+      if (ic2) ic2.textContent = '▶';
     };
   } else {
     audio.pause();
-    var btn2 = audio.previousElementSibling;
-    if (btn2) btn2.querySelector('.cc-msg-audio-icon').textContent = '▶';
+    var icon2 = document.getElementById('ico_' + uid);
+    if (icon2) icon2.textContent = '▶';
   }
 }
 
 function renderDriverChatMessages(messages) {
   var container = document.getElementById('cc-driver-messages');
   if (!container) return;
+  _driverMsgIds = new Set(messages.map(function(m) { return m.id; }));
   container.innerHTML = messages.map(_driverMsgBubble).join('');
   container.scrollTop = container.scrollHeight;
 }
 
 function appendDriverChatMessage(msg) {
+  if (_driverMsgIds.has(msg.id)) return;
   var container = document.getElementById('cc-driver-messages');
   if (!container) return;
-  var div = document.createElement('div');
-  div.outerHTML; // dummy
   container.insertAdjacentHTML('beforeend', _driverMsgBubble(msg));
+  _driverMsgIds.add(msg.id);
   container.scrollTop = container.scrollHeight;
+}
+
+function startDriverChatPolling() {
+  stopDriverChatPolling();
+  _driverChatPollTimer = setInterval(function() {
+    if (!_selectedDriverId) return;
+    fetch(API + '/api/admin/driver-chat/' + _selectedDriverId, { headers: { 'Authorization': 'Bearer ' + _token } })
+      .then(function(r) { return r.json(); })
+      .then(function(data) { (data.messages || []).forEach(appendDriverChatMessage); })
+      .catch(function() {});
+  }, 5000);
+}
+
+function stopDriverChatPolling() {
+  if (_driverChatPollTimer) { clearInterval(_driverChatPollTimer); _driverChatPollTimer = null; }
 }
 
 async function sendDriverChatMsg(content, type) {
