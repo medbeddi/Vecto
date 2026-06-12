@@ -32,6 +32,7 @@ import {
   PRIMARY, BG, CARD, BORDER, TEXT, TEXT2, SURFACE, BRAND,
 } from '../lib/config';
 import { Icon } from '../components/Icon';
+import { BANKILY_URI, SEDAD_URI, MASRIVI_URI } from '../assets/logos';
 import type { Delivery, CCMessage, RootStackParamList } from '../types';
 
 type Tab = 'courses' | 'chats' | 'admin' | 'profil';
@@ -138,6 +139,10 @@ function CoursesTab() {
     registerFCMToken();
     startLocationTracking();
 
+    // Re-poll après reconnexion pour rattraper les new_order manqués pendant la coupure
+    const onReconnect = () => loadAvailable();
+    socketService.on('connect', onReconnect);
+
     // Rechargement périodique en cas de socket déconnecté
     const pollInterval = setInterval(() => {
       if (!socketService.connected) loadAvailable();
@@ -199,6 +204,7 @@ function CoursesTab() {
     socketService.on('new_order', onNewOrder);
     socketService.on('order_taken', onOrderTaken);
     return () => {
+      socketService.off('connect', onReconnect);
       socketService.off('new_order', onNewOrder);
       socketService.off('order_taken', onOrderTaken);
       clearInterval(pollInterval);
@@ -1035,8 +1041,15 @@ function InfoRow({ label, value, last, colored }: { label: string; value: string
 }
 
 // ── Sous-page: Wallet ─────────────────────────────────────────────────────────
+const PROVIDERS = [
+  { id: 'bankily' as const, uri: BANKILY_URI,  label: 'Bankily'  },
+  { id: 'sedad'   as const, uri: SEDAD_URI,    label: 'Sedad'    },
+  { id: 'masrivi' as const, uri: MASRIVI_URI,  label: 'Masrivi'  },
+] as const;
+type Provider = typeof PROVIDERS[number]['id'];
+
 function WalletView({ onBack }: { onBack: () => void }) {
-  const [provider, setProvider] = useState<'bankily' | 'sedad'>('bankily');
+  const [provider, setProvider] = useState<Provider>('bankily');
   const [amount, setAmount] = useState('');
   const [balance, setBalance] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -1090,18 +1103,19 @@ function WalletView({ onBack }: { onBack: () => void }) {
       <View style={styles.infoCard}>
         <Text style={styles.cardTitle}>Recharger le wallet</Text>
         <Text style={styles.rechargeInfo}>
-          Payez via Bankily ou Sedad avec le code marchand VECTO, puis soumettez votre demande.
+          Payez via Bankily, Sedad ou Masrivi avec le code marchand VECTO, puis soumettez votre demande.
         </Text>
         <Text style={styles.fieldLabel}>Fournisseur</Text>
         <View style={styles.providerRow}>
-          {(['bankily', 'sedad'] as const).map((p) => (
+          {PROVIDERS.map((p) => (
             <TouchableOpacity
-              key={p}
-              style={[styles.providerBtn, provider === p && styles.providerBtnActive]}
-              onPress={() => setProvider(p)}
+              key={p.id}
+              style={[styles.providerBtn, provider === p.id && styles.providerBtnActive]}
+              onPress={() => setProvider(p.id)}
             >
-              <Text style={[styles.providerBtnText, provider === p && styles.providerBtnTextActive]}>
-                {p.charAt(0).toUpperCase() + p.slice(1)}
+              <Image source={{ uri: p.uri }} style={styles.providerLogo} resizeMode="contain" />
+              <Text style={[styles.providerBtnText, provider === p.id && styles.providerBtnTextActive]}>
+                {p.label}
               </Text>
             </TouchableOpacity>
           ))}
@@ -1558,12 +1572,13 @@ const styles = StyleSheet.create({
   fieldPlaceholder: { color: TEXT2, fontSize: 15 },
   providerRow: { flexDirection: 'row', gap: 8 },
   providerBtn: {
-    flex: 1, paddingVertical: 12, borderRadius: 10,
-    borderWidth: 1.5, borderColor: BORDER, alignItems: 'center',
+    flex: 1, paddingVertical: 10, borderRadius: 10,
+    borderWidth: 1.5, borderColor: BORDER, alignItems: 'center', gap: 6,
   },
-  providerBtnActive: { borderColor: PRIMARY, backgroundColor: BG },
-  providerBtnText: { fontSize: 14, fontWeight: '600', color: TEXT2 },
-  providerBtnTextActive: { color: TEXT },
+  providerBtnActive: { borderColor: BRAND, backgroundColor: '#FFF5F0' },
+  providerLogo: { width: '80%', height: 32 },
+  providerBtnText: { fontSize: 11, fontWeight: '600', color: TEXT2 },
+  providerBtnTextActive: { color: BRAND },
   otpRow: { flexDirection: 'row', gap: 12, marginVertical: 4 },
   otpDot: {
     width: 56, height: 58, borderRadius: 12,
