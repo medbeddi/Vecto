@@ -13,13 +13,14 @@ const GREEN = '#34C759';
 const RED   = '#FF3B30';
 const ACCEPT_GREEN = '#22C55E';
 
+const WINDOW_SEC = 20;
+
 type Props = {
   delivery: Delivery;
   onAccept: (delivery: Delivery) => void;
   onRefuse?: (delivery: Delivery) => void;
   onExpire?: (delivery: Delivery) => void;
   accepting: boolean;
-  autoRemoveSec?: number;
 };
 
 function genWave(n: number) {
@@ -35,7 +36,7 @@ function splitAddr(addr: string): [string, string | null] {
   return i === -1 ? [addr, null] : [addr.slice(0, i).trim(), addr.slice(i + 1).trim()];
 }
 
-export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting, autoRemoveSec }: Props) {
+export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting }: Props) {
   const hasAudio = delivery.initialMediaType === 'audio' && !!delivery.initialMediaUrl;
   const wave     = useMemo(() => genWave(WAVE_COUNT), [delivery.id]);
   const animVals = useRef(wave.map(() => new Animated.Value(1))).current;
@@ -45,8 +46,14 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
   const [playing,      setPlaying]      = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [durSec,       setDurSec]       = useState<number | null>(null);
-  const [countdown,    setCountdown]    = useState<number | null>(autoRemoveSec ?? null);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Compteur calculé en temps réel depuis broadcastAt (heure du lancement)
+  const calcRemaining = () => {
+    if (!delivery.broadcastAt) return null;
+    const elapsed = (Date.now() - new Date(delivery.broadcastAt).getTime()) / 1000;
+    return Math.max(0, Math.ceil(WINDOW_SEC - elapsed));
+  };
+  const [countdown, setCountdown] = useState<number | null>(calcRemaining);
 
   const [pickupMain,  pickupSub]  = delivery.pickupAddress  ? splitAddr(delivery.pickupAddress)  : ['', null];
   const [dropoffMain, dropoffSub] = delivery.dropoffAddress ? splitAddr(delivery.dropoffAddress) : ['', null];
@@ -54,27 +61,20 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
   useEffect(() => () => {
     soundRef.current?.unloadAsync();
     loopRef.current?.stop();
-    if (countdownRef.current) clearInterval(countdownRef.current);
   }, []);
 
   useEffect(() => {
-    if (autoRemoveSec == null) return;
-    setCountdown(autoRemoveSec);
-    countdownRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev == null || prev <= 1) {
-          clearInterval(countdownRef.current!);
-          return 0;
-        }
-        return prev - 1;
-      });
+    if (!delivery.broadcastAt) return;
+    const id = setInterval(() => {
+      const remaining = calcRemaining();
+      setCountdown(remaining);
+      if (remaining === 0) {
+        clearInterval(id);
+        onExpire?.(delivery);
+      }
     }, 1000);
-    return () => { if (countdownRef.current) clearInterval(countdownRef.current); };
-  }, [delivery.id, autoRemoveSec]);
-
-  useEffect(() => {
-    if (countdown === 0) onExpire?.(delivery);
-  }, [countdown]);
+    return () => clearInterval(id);
+  }, [delivery.broadcastAt]);
 
   const startWave = () => {
     const anims = animVals.map((v, i) =>

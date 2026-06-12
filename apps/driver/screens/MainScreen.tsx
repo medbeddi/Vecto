@@ -41,6 +41,7 @@ type IncomingOrder = {
   deliveryId: string;
   clientAlias: string;
   createdAt: string;
+  broadcastAt?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   price?: number | null;
@@ -165,6 +166,7 @@ function CoursesTab() {
         id: order.deliveryId,
         clientAlias: order.clientAlias,
         createdAt: order.createdAt,
+        broadcastAt: order.broadcastAt,
         status: 'pending',
         description: order.message.content ?? '',
         initialMediaType: order.message.type,
@@ -423,7 +425,6 @@ function CoursesTab() {
               removeAvailable(d.id);
             }}
             accepting={accepting === item.id}
-            autoRemoveSec={20}
           />
         )}
       />

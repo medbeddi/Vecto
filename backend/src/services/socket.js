@@ -114,6 +114,7 @@ export async function emitNewOrder(delivery, initialMessage) {
     deliveryId:      delivery.id,
     clientAlias:     delivery.alias,
     createdAt:       delivery.created_at,
+    broadcastAt:     delivery.last_broadcast_at,
     pickupAddress:   delivery.pickup_address  ?? null,
     dropoffAddress:  delivery.dropoff_address ?? null,
     price:           delivery.price           ?? null,

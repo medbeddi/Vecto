@@ -8,6 +8,7 @@ export type Delivery = {
   description: string | null;
   clientAlias: string;
   createdAt: string;
+  broadcastAt?: string | null;
   status?: 'pending' | 'assigned' | 'in_progress' | 'done' | 'cancelled';
   initialMediaType?: string | null;
   initialMediaUrl?: string | null;

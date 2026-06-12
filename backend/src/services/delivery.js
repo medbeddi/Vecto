@@ -42,6 +42,7 @@ export async function launchDelivery(deliveryId, { pickupAddress, dropoffAddress
 
   const updateData = {
     status: 'pending',
+    last_broadcast_at: db.fn.now(),
     pickup_address:  pickupAddress  ?? null,
     dropoff_address: dropoffAddress ?? null,
     pickup_lat:      pickupLat      ?? null,

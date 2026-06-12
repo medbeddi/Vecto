@@ -158,21 +158,26 @@ router.get('/drivers/me', requireAuth, async (req, res) => {
 
 router.get('/deliveries/available', requireAuth, async (req, res) => {
   try {
+    const twentySecAgo = new Date(Date.now() - 20 * 1000);
+
     const deliveries = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'pending')
+      // Seulement dans la fenêtre active des 20s
+      .where('deliveries.last_broadcast_at', '>', twentySecAgo)
       // Exclure les courses que ce livreur a explicitement refusées
       .whereNotExists(
         db('delivery_refusals')
           .whereRaw('delivery_refusals.delivery_id = deliveries.id')
           .where('delivery_refusals.driver_id', req.driver.id)
       )
-      .orderBy('deliveries.created_at', 'desc')
+      .orderBy('deliveries.last_broadcast_at', 'desc')
       .select(
         'deliveries.id',
         'deliveries.description',
         'deliveries.status',
         'deliveries.created_at as createdAt',
+        'deliveries.last_broadcast_at as broadcastAt',
         'deliveries.initial_media_type as initialMediaType',
         'deliveries.initial_media_url as initialMediaUrl',
         'deliveries.pickup_address as pickupAddress',
