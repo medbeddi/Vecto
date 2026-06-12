@@ -431,13 +431,155 @@
 <div class="modal-overlay" id="modal-add-livreur">
   <div class="modal">
     <div class="modal-title">Nouveau livreur</div>
+    <div id="add-livreur-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px;padding:8px 10px;background:#fff0f0;border-radius:8px"></div>
     <label class="field-label">Nom complet</label>
-    <div class="field-row"><input type="text" placeholder="Ex. Mohamed Ould Ahmed" /></div>
+    <div class="field-row"><input type="text" id="add-livreur-name" placeholder="Ex. Mohamed Ould Ahmed" /></div>
     <label class="field-label">Téléphone</label>
-    <div class="field-row"><input type="tel" placeholder="+222 XX XX XX XX" /></div>
+    <div class="field-row"><input type="tel" id="add-livreur-phone" placeholder="+222 XX XX XX XX" /></div>
+    <label class="field-label">Mot de passe</label>
+    <div class="field-row"><input type="password" id="add-livreur-pass" placeholder="6 caractères minimum" /></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-livreur')">Annuler</button>
-      <button class="btn btn-dark" onclick="addLivreur()">Créer le compte</button>
+      <button class="btn btn-dark" id="btn-add-livreur" onclick="addLivreur()">Créer le compte</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     MODAL — Modifier livreur (nom uniquement)
+================================================================ -->
+<div class="modal-overlay" id="modal-edit-driver">
+  <div class="modal">
+    <div class="modal-title">Modifier le livreur</div>
+    <label class="field-label">Nom complet</label>
+    <div class="field-row"><input type="text" id="edit-driver-name" placeholder="Nom du livreur" /></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-driver')">Annuler</button>
+      <button class="btn btn-dark" onclick="saveDriver()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     MODAL — Profil complet du livreur (documents)
+================================================================ -->
+<div class="modal-overlay" id="modal-driver-profile">
+  <div class="modal" style="max-width:520px;max-height:90vh;overflow-y:auto">
+    <div class="modal-title" id="profile-modal-title">Profil livreur</div>
+    <div style="color:var(--text-3);font-size:13px;margin-bottom:16px" id="profile-modal-sub"></div>
+
+    <!-- Photo du livreur -->
+    <div class="section-label" style="margin-bottom:8px">Photo du livreur</div>
+    <div class="doc-upload-row">
+      <div class="doc-thumb-wrap">
+        <img id="thumb-photo_driver" class="doc-thumb" style="display:none" />
+        <div class="doc-thumb-placeholder" id="ph-photo_driver">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--text-3)"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+        </div>
+      </div>
+      <div style="flex:1">
+        <div class="doc-field-label">Photo de profil</div>
+        <button class="btn-doc-upload" onclick="uploadDocForDriver('photo_driver')">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+          Choisir / Photographier
+        </button>
+      </div>
+    </div>
+
+    <!-- Carte grise -->
+    <div class="section-label" style="margin:16px 0 8px">Carte grise du véhicule</div>
+    <div class="doc-upload-row" style="margin-bottom:10px">
+      <div class="doc-thumb-wrap">
+        <img id="thumb-carte_grise_front" class="doc-thumb" style="display:none" />
+        <div class="doc-thumb-placeholder" id="ph-carte_grise_front">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--text-3)"><path d="M20 6h-2.18c.07-.44.18-.88.18-1.35C18 2.99 16.04 1 13.65 1c-1.3 0-2.44.54-3.29 1.39L9 3.76 7.64 2.39C6.79 1.54 5.66 1 4.35 1 1.96 1 0 2.99 0 5.35c0 .47.1.91.18 1.35H0c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h20c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-7.83-3.2c.49-.51 1.18-.8 1.88-.8 1.41 0 2.29 1.12 2.29 2.65S14.65 7 13.65 7c-.7 0-1.39-.29-1.88-.8L9 3.43l3.17-3.22z"/></svg>
+        </div>
+      </div>
+      <div style="flex:1">
+        <div class="doc-field-label">Recto (avant)</div>
+        <button class="btn-doc-upload" onclick="uploadDocForDriver('carte_grise_front')">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+          Choisir / Photographier
+        </button>
+      </div>
+    </div>
+    <div class="doc-upload-row">
+      <div class="doc-thumb-wrap">
+        <img id="thumb-carte_grise_back" class="doc-thumb" style="display:none" />
+        <div class="doc-thumb-placeholder" id="ph-carte_grise_back">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--text-3)"><path d="M20 6h-2.18c.07-.44.18-.88.18-1.35C18 2.99 16.04 1 13.65 1c-1.3 0-2.44.54-3.29 1.39L9 3.76 7.64 2.39C6.79 1.54 5.66 1 4.35 1 1.96 1 0 2.99 0 5.35c0 .47.1.91.18 1.35H0c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h20c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2z"/></svg>
+        </div>
+      </div>
+      <div style="flex:1">
+        <div class="doc-field-label">Verso (arrière)</div>
+        <button class="btn-doc-upload" onclick="uploadDocForDriver('carte_grise_back')">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+          Choisir / Photographier
+        </button>
+      </div>
+    </div>
+
+    <!-- Pièce d'identité / Passeport -->
+    <div class="section-label" style="margin:16px 0 8px">Pièce d'identité / Passeport</div>
+    <div class="doc-upload-row" style="margin-bottom:10px">
+      <div class="doc-thumb-wrap">
+        <img id="thumb-carte_identite_front" class="doc-thumb" style="display:none" />
+        <div class="doc-thumb-placeholder" id="ph-carte_identite_front">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--text-3)"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+        </div>
+      </div>
+      <div style="flex:1">
+        <div class="doc-field-label">Recto (avant)</div>
+        <button class="btn-doc-upload" onclick="uploadDocForDriver('carte_identite_front')">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+          Choisir / Photographier
+        </button>
+      </div>
+    </div>
+    <div class="doc-upload-row">
+      <div class="doc-thumb-wrap">
+        <img id="thumb-carte_identite_back" class="doc-thumb" style="display:none" />
+        <div class="doc-thumb-placeholder" id="ph-carte_identite_back">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--text-3)"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2z"/></svg>
+        </div>
+      </div>
+      <div style="flex:1">
+        <div class="doc-field-label">Verso (arrière)</div>
+        <button class="btn-doc-upload" onclick="uploadDocForDriver('carte_identite_back')">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+          Choisir / Photographier
+        </button>
+      </div>
+    </div>
+
+    <!-- Véhicule -->
+    <div class="section-label" style="margin:16px 0 8px">Véhicule</div>
+    <label class="field-label">Immatriculation (matricule)</label>
+    <div class="field-row" style="margin-bottom:12px">
+      <input type="text" id="profile-matricule" placeholder="Ex. 1234 TUN 1" style="text-transform:uppercase" />
+    </div>
+    <div class="doc-upload-row">
+      <div class="doc-thumb-wrap">
+        <img id="thumb-photo_vehicule" class="doc-thumb" style="display:none" />
+        <div class="doc-thumb-placeholder" id="ph-photo_vehicule">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="var(--text-3)"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>
+        </div>
+      </div>
+      <div style="flex:1">
+        <div class="doc-field-label">Photo du véhicule</div>
+        <button class="btn-doc-upload" onclick="uploadDocForDriver('photo_vehicule')">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+          Choisir / Photographier
+        </button>
+      </div>
+    </div>
+
+    <!-- Input file caché (réutilisé pour tous les champs) -->
+    <input type="file" id="admin-doc-file-input" accept="image/*" style="display:none" onchange="handleAdminDocFile(this)" />
+
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-ghost" onclick="closeModal('modal-driver-profile')">Fermer</button>
+      <button class="btn btn-dark" id="btn-save-driver-profile" onclick="saveDriverProfile()">Enregistrer le matricule</button>
     </div>
   </div>
 </div>

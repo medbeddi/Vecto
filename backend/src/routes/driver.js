@@ -14,6 +14,7 @@ import {
   messageSchema,
   fcmTokenSchema,
   presignQuerySchema,
+  documentsSchema,
 } from '../validation/schemas.js';
 import { hashWaId } from '../services/pii-filter.js';
 import { acceptDelivery, updateDeliveryStatus } from '../services/delivery.js';
@@ -146,9 +147,33 @@ router.get('/drivers/me', requireAuth, async (req, res) => {
   try {
     const driver = await db('drivers')
       .where({ id: req.driver.id })
-      .first('id', 'name', 'is_available as isAvailable');
+      .first(
+        'id', 'name', 'phone', 'is_available as isAvailable',
+        'photo_driver', 'carte_grise_front', 'carte_grise_back',
+        'carte_identite_front', 'carte_identite_back',
+        'matricule', 'photo_vehicule'
+      );
     if (!driver) return res.status(404).json({ error: 'NOT_FOUND' });
     res.json({ driver });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// PATCH /api/drivers/me/documents — sauvegarde les URLs des documents + matricule
+router.patch('/drivers/me/documents', requireAuth, validate(documentsSchema), async (req, res) => {
+  const allowed = [
+    'photo_driver', 'carte_grise_front', 'carte_grise_back',
+    'carte_identite_front', 'carte_identite_back', 'matricule', 'photo_vehicule',
+  ];
+  const update = {};
+  for (const field of allowed) {
+    if (req.body[field] !== undefined) update[field] = req.body[field];
+  }
+  if (!Object.keys(update).length) return res.status(400).json({ error: 'NO_FIELDS' });
+  try {
+    await db('drivers').where({ id: req.driver.id }).update(update);
+    res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }

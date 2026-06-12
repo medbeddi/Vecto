@@ -194,6 +194,27 @@ router.get('/admin/stats', requireAdmin, async (req, res) => {
 });
 
 // ── Livreurs ─────────────────────────────────────────────────────────────────
+
+// POST /admin/drivers — créer un compte livreur depuis l'admin
+router.post('/admin/drivers', requireAdmin, async (req, res) => {
+  const { name, phone, password } = req.body;
+  if (!name?.trim() || !phone?.trim() || !password || password.length < 6) {
+    return res.status(400).json({ error: 'INVALID_BODY' });
+  }
+  try {
+    const phoneHash = hashWaId(phone.trim());
+    const existing = await db('drivers').where({ phone_hash: phoneHash }).first('id');
+    if (existing) return res.status(409).json({ error: 'PHONE_ALREADY_USED' });
+    const passwordHash = await bcrypt.hash(password, 12);
+    const [driver] = await db('drivers')
+      .insert({ name: name.trim(), phone: phone.trim(), phone_hash: phoneHash, password_hash: passwordHash, status: 'offline' })
+      .returning(['id', 'name', 'phone', 'status', 'created_at as createdAt']);
+    res.status(201).json({ driver: { ...driver, courses: 0, balance: 0 } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 router.get('/admin/drivers', requireCallCenter, async (req, res) => {
   try {
     const drivers = await db('drivers')
@@ -235,6 +256,43 @@ router.put('/admin/drivers/:id', requireAdmin, async (req, res) => {
     const { name } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'NAME_REQUIRED' });
     await db('drivers').where({ id: req.params.id }).update({ name: name.trim() });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// GET /admin/drivers/:id/documents — documents + infos du livreur
+router.get('/admin/drivers/:id/documents', requireCallCenter, async (req, res) => {
+  try {
+    const driver = await db('drivers').where({ id: req.params.id }).first(
+      'id', 'name', 'phone',
+      'photo_driver', 'carte_grise_front', 'carte_grise_back',
+      'carte_identite_front', 'carte_identite_back',
+      'matricule', 'photo_vehicule'
+    );
+    if (!driver) return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
+    res.json({ driver });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// PATCH /admin/drivers/:id/documents — mettre à jour documents + matricule
+router.patch('/admin/drivers/:id/documents', requireAdmin, async (req, res) => {
+  const allowed = [
+    'photo_driver', 'carte_grise_front', 'carte_grise_back',
+    'carte_identite_front', 'carte_identite_back', 'matricule', 'photo_vehicule',
+  ];
+  const update = {};
+  for (const field of allowed) {
+    if (req.body[field] !== undefined) update[field] = req.body[field];
+  }
+  if (!Object.keys(update).length) return res.status(400).json({ error: 'NO_FIELDS' });
+  try {
+    const driver = await db('drivers').where({ id: req.params.id }).first('id');
+    if (!driver) return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
+    await db('drivers').where({ id: req.params.id }).update(update);
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });

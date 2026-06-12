@@ -258,6 +258,11 @@
           <div class="menu-text"><div class="menu-label">Informations personnelles</div><div class="menu-sub">Nom, téléphone</div></div>
           <svg class="menu-chevron" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </div>
+        <div class="menu-item tap" onclick="go('s-documents')">
+          <div class="menu-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 7V3.5L18.5 9H13zm-5 8v-2h8v2H8zm0-4v-2h8v2H8zm0-4V9h3v2H8z"/></svg></div>
+          <div class="menu-text"><div class="menu-label">Mes documents</div><div class="menu-sub" id="docs-status-sub">Carte grise, identité, véhicule</div></div>
+          <svg class="menu-chevron" viewBox="0 0 24 24"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+        </div>
         <div class="menu-item tap" onclick="go('s-wallet')">
           <div class="menu-icon orange"><svg viewBox="0 0 24 24"><path d="M21 18v1a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1h-9a2 2 0 00-2 2v8a2 2 0 002 2h9zm-9-2h10V8H12v8zm4-2.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></svg></div>
           <div class="menu-text"><div class="menu-label">Wallet & Transactions</div><div class="menu-sub">Recharge, historique</div></div>
@@ -389,6 +394,118 @@
           <div class="history-price green">+ 800 MRU</div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: Mes documents -->
+  <div class="screen" id="s-documents">
+    <div class="tb">
+      <span class="back" onclick="go('s-menu')">←</span>
+      <div class="tb-title">Mes documents</div>
+    </div>
+    <div class="scroll" style="padding:12px 16px 32px">
+
+      <!-- Photo du livreur -->
+      <div class="section-label" style="margin:8px 0 10px">Photo personnelle</div>
+      <div class="doc-row" onclick="uploadDocField('photo_driver')">
+        <div class="doc-row-thumb-wrap">
+          <img id="d-thumb-photo_driver" class="doc-row-thumb" style="display:none" />
+          <div class="doc-row-ph" id="d-ph-photo_driver">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="var(--text-3)"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+          </div>
+        </div>
+        <div class="doc-row-info">
+          <div class="doc-row-label">Photo du livreur</div>
+          <div class="doc-row-hint" id="d-hint-photo_driver">Appuyer pour ajouter</div>
+        </div>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--text-3)"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+      </div>
+
+      <!-- Carte grise -->
+      <div class="section-label" style="margin:16px 0 10px">Carte grise du véhicule</div>
+      <div class="doc-row" onclick="uploadDocField('carte_grise_front')">
+        <div class="doc-row-thumb-wrap">
+          <img id="d-thumb-carte_grise_front" class="doc-row-thumb" style="display:none" />
+          <div class="doc-row-ph" id="d-ph-carte_grise_front">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="var(--text-3)"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+          </div>
+        </div>
+        <div class="doc-row-info">
+          <div class="doc-row-label">Recto (avant)</div>
+          <div class="doc-row-hint" id="d-hint-carte_grise_front">Appuyer pour ajouter</div>
+        </div>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--text-3)"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+      </div>
+      <div class="doc-row" onclick="uploadDocField('carte_grise_back')" style="margin-top:6px">
+        <div class="doc-row-thumb-wrap">
+          <img id="d-thumb-carte_grise_back" class="doc-row-thumb" style="display:none" />
+          <div class="doc-row-ph" id="d-ph-carte_grise_back">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="var(--text-3)"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2z"/></svg>
+          </div>
+        </div>
+        <div class="doc-row-info">
+          <div class="doc-row-label">Verso (arrière)</div>
+          <div class="doc-row-hint" id="d-hint-carte_grise_back">Appuyer pour ajouter</div>
+        </div>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--text-3)"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+      </div>
+
+      <!-- Pièce d'identité -->
+      <div class="section-label" style="margin:16px 0 10px">Pièce d'identité / Passeport</div>
+      <div class="doc-row" onclick="uploadDocField('carte_identite_front')">
+        <div class="doc-row-thumb-wrap">
+          <img id="d-thumb-carte_identite_front" class="doc-row-thumb" style="display:none" />
+          <div class="doc-row-ph" id="d-ph-carte_identite_front">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="var(--text-3)"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>
+          </div>
+        </div>
+        <div class="doc-row-info">
+          <div class="doc-row-label">Recto (avant)</div>
+          <div class="doc-row-hint" id="d-hint-carte_identite_front">Appuyer pour ajouter</div>
+        </div>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--text-3)"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+      </div>
+      <div class="doc-row" onclick="uploadDocField('carte_identite_back')" style="margin-top:6px">
+        <div class="doc-row-thumb-wrap">
+          <img id="d-thumb-carte_identite_back" class="doc-row-thumb" style="display:none" />
+          <div class="doc-row-ph" id="d-ph-carte_identite_back">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="var(--text-3)"><path d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2z"/></svg>
+          </div>
+        </div>
+        <div class="doc-row-info">
+          <div class="doc-row-label">Verso (arrière)</div>
+          <div class="doc-row-hint" id="d-hint-carte_identite_back">Appuyer pour ajouter</div>
+        </div>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--text-3)"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+      </div>
+
+      <!-- Véhicule -->
+      <div class="section-label" style="margin:16px 0 10px">Véhicule</div>
+      <div style="margin-bottom:10px">
+        <label class="field-label" style="font-size:11px;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px">Immatriculation</label>
+        <div class="field-row" style="background:var(--card);border-radius:12px;padding:0 14px;height:44px;display:flex;align-items:center;border:.5px solid var(--border)">
+          <input type="text" id="d-matricule" placeholder="Ex. 1234 TUN 1" style="flex:1;border:none;background:transparent;font-size:14px;font-weight:600;text-transform:uppercase;outline:none" />
+        </div>
+      </div>
+      <div class="doc-row" onclick="uploadDocField('photo_vehicule')">
+        <div class="doc-row-thumb-wrap">
+          <img id="d-thumb-photo_vehicule" class="doc-row-thumb" style="display:none" />
+          <div class="doc-row-ph" id="d-ph-photo_vehicule">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="var(--text-3)"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4z"/></svg>
+          </div>
+        </div>
+        <div class="doc-row-info">
+          <div class="doc-row-label">Photo du véhicule</div>
+          <div class="doc-row-hint" id="d-hint-photo_vehicule">Appuyer pour ajouter</div>
+        </div>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--text-3)"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+      </div>
+
+      <!-- Bouton enregistrer matricule -->
+      <button class="btn btn-dark" style="margin-top:20px;width:100%;justify-content:center" onclick="saveMatricule()">Enregistrer l'immatriculation</button>
+
+      <!-- Input file caché (camera ou galerie) -->
+      <input type="file" id="d-file-input" accept="image/*" style="display:none" onchange="handleDocFile(this)" />
     </div>
   </div>
 

@@ -65,3 +65,19 @@ export const presignQuerySchema = z.object({
   type: z.enum(['audio', 'image']),
   ext: z.enum(['ogg', 'm4a', 'mp3', 'jpg', 'jpeg', 'png', 'webp', 'webm']),
 });
+
+export const documentsSchema = z.object({
+  photo_driver:          z.string().optional(),
+  carte_grise_front:     z.string().optional(),
+  carte_grise_back:      z.string().optional(),
+  carte_identite_front:  z.string().optional(),
+  carte_identite_back:   z.string().optional(),
+  matricule:             z.string().max(30).optional(),
+  photo_vehicule:        z.string().optional(),
+});
+
+export const adminCreateDriverSchema = z.object({
+  name:     z.string().min(2, 'Nom trop court').max(80),
+  phone:    z.string().min(8).max(20).regex(/^\+?[\d\s\-().]{7,20}$/, 'Format de numéro invalide'),
+  password: z.string().min(6, 'Mot de passe trop court').max(128),
+});

@@ -176,6 +176,7 @@ function onAuthSuccess(data) {
   connectSocket();
   loadAvailableDeliveries();
   loadActiveDeliveries();
+  loadDocuments();
   go('s-courses');
 }
 
@@ -746,6 +747,97 @@ function saveProfile() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  DOCUMENTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var _pendingDocField = null;
+var _docsData = {};
+
+var DOC_FIELDS = ['photo_driver', 'carte_grise_front', 'carte_grise_back', 'carte_identite_front', 'carte_identite_back', 'photo_vehicule'];
+
+async function loadDocuments() {
+  if (!token) return;
+  try {
+    var data = await apiFetch('/api/drivers/me');
+    var driver = data.driver || {};
+    _docsData = driver;
+    DOC_FIELDS.forEach(function(f) { _setDocRowThumb(f, driver[f]); });
+    var mat = document.getElementById('d-matricule');
+    if (mat) mat.value = driver.matricule || '';
+    var sub = document.getElementById('docs-status-sub');
+    if (sub) {
+      var filled = DOC_FIELDS.filter(function(f) { return !!driver[f]; }).length;
+      sub.textContent = filled + '/' + DOC_FIELDS.length + ' documents ajoutés';
+    }
+  } catch (e) {}
+}
+
+function _setDocRowThumb(field, url) {
+  var thumb = document.getElementById('d-thumb-' + field);
+  var ph    = document.getElementById('d-ph-' + field);
+  var hint  = document.getElementById('d-hint-' + field);
+  if (url) {
+    if (thumb) { thumb.src = url; thumb.style.display = 'block'; }
+    if (ph)    ph.style.display = 'none';
+    if (hint)  hint.textContent = 'Appuyer pour modifier';
+  } else {
+    if (thumb) thumb.style.display = 'none';
+    if (ph)    ph.style.display = 'flex';
+    if (hint)  hint.textContent = 'Appuyer pour ajouter';
+  }
+}
+
+function uploadDocField(field) {
+  _pendingDocField = field;
+  var inp = document.getElementById('d-file-input');
+  inp.value = '';
+  inp.click();
+}
+
+async function handleDocFile(input) {
+  if (!input.files || !input.files[0]) return;
+  var field = _pendingDocField;
+  if (!field || !token) return;
+  var file = input.files[0];
+  var hint = document.getElementById('d-hint-' + field);
+  if (hint) hint.textContent = '⏳ Upload…';
+  try {
+    var fd = new FormData();
+    fd.append('file', file);
+    var upRes = await fetch(API_BASE + '/api/upload', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: fd,
+    });
+    if (!upRes.ok) { if (hint) hint.textContent = 'Erreur upload'; return; }
+    var { url } = await upRes.json();
+    var patch = {}; patch[field] = url;
+    await apiFetch('/api/drivers/me/documents', { method: 'PATCH', body: JSON.stringify(patch) });
+    _docsData[field] = url;
+    _setDocRowThumb(field, url);
+    var sub = document.getElementById('docs-status-sub');
+    if (sub) {
+      var filled = DOC_FIELDS.filter(function(f) { return !!_docsData[f]; }).length;
+      sub.textContent = filled + '/' + DOC_FIELDS.length + ' documents ajoutés';
+    }
+  } catch (e) {
+    if (hint) hint.textContent = 'Erreur — réessayer';
+  }
+}
+
+async function saveMatricule() {
+  var mat = (document.getElementById('d-matricule').value || '').trim().toUpperCase();
+  if (!mat) return;
+  try {
+    await apiFetch('/api/drivers/me/documents', { method: 'PATCH', body: JSON.stringify({ matricule: mat }) });
+    _docsData.matricule = mat;
+    alert('Immatriculation enregistrée : ' + mat);
+  } catch (e) {
+    alert('Erreur enregistrement.');
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  WALLET — même que l'original
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function selectProvider(p) {
@@ -769,6 +861,7 @@ document.addEventListener('DOMContentLoaded', function() {
     connectSocket();
     loadAvailableDeliveries();
     loadActiveDeliveries();
+    loadDocuments();
     go('s-courses');
   } else {
     go('s-login');

@@ -439,6 +439,13 @@ function loadDriverChatMessages(driverId) {
     .catch(function () {});
 }
 
+function _imgErr(img) {
+  var span = document.createElement('span');
+  span.style.cssText = 'opacity:.5;font-size:13px';
+  span.textContent = 'Image non disponible';
+  if (img.parentNode) img.parentNode.replaceChild(span, img);
+}
+
 function _driverMsgBubble(m) {
   var isOut = m.senderRole === 'admin';
   var type  = m.type || 'text';
@@ -462,8 +469,7 @@ function _driverMsgBubble(m) {
           + '<audio id="' + uid + '" src="' + escHtml(m.content) + '" preload="metadata" style="display:none"'
           + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0,el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"></audio>';
   } else if (type === 'image') {
-    inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img"'
-          + ' onerror="this.outerHTML=\'<span style=\\\"opacity:.5;font-size:13px\\\">🖼 Image non disponible</span>\'" />';
+    inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img" onerror="_imgErr(this)" />';
   } else {
     inner = '<div class="cc-msg-text">' + escHtml(m.content) + '</div>';
   }
@@ -784,7 +790,8 @@ function renderLivreurs() {
       + '<td>' + l.courses + '</td>'
       + '<td style="font-weight:600">' + fmtMoney(l.balance) + '</td>'
       + '<td>' + fmtDate(l.createdAt) + '</td>'
-      + '<td style="display:flex;gap:4px">'
+      + '<td style="display:flex;gap:4px;flex-wrap:wrap">'
+        + '<button class="btn-table" onclick="openDriverProfile(\'' + l.id + '\')">Profil</button>'
         + '<button class="btn-table" onclick="openEditDriver(\'' + l.id + '\',' + i + ')">Modifier</button>'
         + (l.status !== 'suspended'
           ? '<button class="btn-table red" onclick="suspendLivreur(\'' + l.id + '\',' + i + ')">Suspendre</button>'
@@ -799,6 +806,104 @@ function openEditDriver(id, index) {
   _editDriverId = id;
   document.getElementById('edit-driver-name').value = _livreurs[index].name;
   showModal('modal-edit-driver');
+}
+
+// ── Profil complet (documents) ────────────────────────────────────────────────
+var _profileDriverId = null;
+var _pendingDocField = null;
+
+async function openDriverProfile(id) {
+  _profileDriverId = id;
+  document.getElementById('profile-modal-title').textContent = 'Chargement…';
+  document.getElementById('profile-modal-sub').textContent = '';
+  showModal('modal-driver-profile');
+  try {
+    var res = await fetch(API + '/api/admin/drivers/' + id + '/documents', { headers: authHeaders() });
+    if (!res.ok) { alert('Impossible de charger le profil.'); closeModal('modal-driver-profile'); return; }
+    var { driver } = await res.json();
+    document.getElementById('profile-modal-title').textContent = driver.name;
+    document.getElementById('profile-modal-sub').textContent = driver.phone || '';
+    document.getElementById('profile-matricule').value = driver.matricule || '';
+    var fields = ['photo_driver', 'carte_grise_front', 'carte_grise_back', 'carte_identite_front', 'carte_identite_back', 'photo_vehicule'];
+    fields.forEach(function(f) { _setDocThumb(f, driver[f]); });
+  } catch {
+    alert('Erreur réseau.');
+    closeModal('modal-driver-profile');
+  }
+}
+
+function _setDocThumb(field, url) {
+  var thumb = document.getElementById('thumb-' + field);
+  var ph    = document.getElementById('ph-' + field);
+  if (url) {
+    thumb.src = url; thumb.style.display = 'block';
+    if (ph) ph.style.display = 'none';
+  } else {
+    thumb.style.display = 'none';
+    if (ph) ph.style.display = 'flex';
+  }
+}
+
+function uploadDocForDriver(field) {
+  _pendingDocField = field;
+  var inp = document.getElementById('admin-doc-file-input');
+  inp.value = '';
+  inp.click();
+}
+
+async function handleAdminDocFile(input) {
+  if (!input.files || !input.files[0]) return;
+  var field = _pendingDocField;
+  if (!field || !_profileDriverId) return;
+  var file = input.files[0];
+  var btn = document.querySelector('button[onclick="uploadDocForDriver(\'' + field + '\')"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Upload…'; }
+  try {
+    var fd = new FormData();
+    fd.append('file', file);
+    var upRes = await fetch(API + '/api/admin/upload', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + _token },
+      body: fd,
+    });
+    if (!upRes.ok) { alert('Erreur upload.'); return; }
+    var { url } = await upRes.json();
+    var patch = {}; patch[field] = url;
+    var patchRes = await fetch(API + '/api/admin/drivers/' + _profileDriverId + '/documents', {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify(patch),
+    });
+    if (!patchRes.ok) { alert('Erreur sauvegarde.'); return; }
+    _setDocThumb(field, url);
+  } catch {
+    alert('Erreur réseau lors de l\'upload.');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M19.35 10.04A7.49 7.49 0 0012 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 000 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg> Choisir / Photographier';
+    }
+  }
+}
+
+async function saveDriverProfile() {
+  if (!_profileDriverId) return;
+  var matricule = document.getElementById('profile-matricule').value.trim();
+  var btn = document.getElementById('btn-save-driver-profile');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  try {
+    var res = await fetch(API + '/api/admin/drivers/' + _profileDriverId + '/documents', {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ matricule: matricule }),
+    });
+    if (!res.ok) { alert('Erreur lors de l\'enregistrement.'); return; }
+    closeModal('modal-driver-profile');
+  } catch {
+    alert('Erreur réseau.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Enregistrer le matricule'; }
+  }
 }
 
 async function saveDriver() {
@@ -842,9 +947,39 @@ async function reactivateLivreur(id, index) {
   } catch {}
 }
 
-function addLivreur() {
-  alert('Le livreur s\'inscrit lui-même via l\'app mobile et reçoit un SMS OTP pour valider son compte.');
-  closeModal('modal-add-livreur');
+async function addLivreur() {
+  var name     = (document.getElementById('add-livreur-name').value || '').trim();
+  var phone    = (document.getElementById('add-livreur-phone').value || '').trim();
+  var password = (document.getElementById('add-livreur-pass').value || '').trim();
+  var errEl    = document.getElementById('add-livreur-error');
+  errEl.style.display = 'none';
+  if (!name || name.length < 2) { errEl.textContent = 'Nom trop court.'; errEl.style.display = 'block'; return; }
+  if (!phone || phone.length < 8) { errEl.textContent = 'Numéro invalide.'; errEl.style.display = 'block'; return; }
+  if (!password || password.length < 6) { errEl.textContent = 'Mot de passe : 6 caractères minimum.'; errEl.style.display = 'block'; return; }
+  var btn = document.getElementById('btn-add-livreur');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  try {
+    var res = await fetch(API + '/api/admin/drivers', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ name, phone, password }),
+    });
+    var data = await res.json();
+    if (!res.ok) {
+      var msg = data.error === 'PHONE_ALREADY_USED' ? 'Ce numéro est déjà utilisé.' : 'Erreur création compte.';
+      errEl.textContent = msg; errEl.style.display = 'block'; return;
+    }
+    _livreurs.unshift(data.driver);
+    renderLivreurs();
+    closeModal('modal-add-livreur');
+    document.getElementById('add-livreur-name').value = '';
+    document.getElementById('add-livreur-phone').value = '';
+    document.getElementById('add-livreur-pass').value = '';
+  } catch {
+    errEl.textContent = 'Erreur réseau.'; errEl.style.display = 'block';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Créer le compte'; }
+  }
 }
 
 /* ================================================================
@@ -1302,7 +1437,7 @@ function renderMessages(messages) {
       }
     } else if (m.type === 'image') {
       body = m.content
-        ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px" />'
+        ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px" onerror="_imgErr(this)" />'
         : '[Image]';
     } else if (m.type === 'location') {
       var meta = m.meta || {};
