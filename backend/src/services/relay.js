@@ -25,9 +25,7 @@ export async function relayDriverMessage(deliveryId, driverId, { type, content, 
     throw Object.assign(new Error('Client introuvable'), { code: 'CLIENT_NOT_FOUND' });
   }
 
-  const waId = decryptWaId(client.wa_id_enc);
-  await dispatch(waId, type, content, meta);
-
+  // Sauvegarder d'abord — le message doit apparaître même si WhatsApp échoue
   const [message] = await db('messages')
     .insert({
       delivery_id: deliveryId,
@@ -39,6 +37,12 @@ export async function relayDriverMessage(deliveryId, driverId, { type, content, 
     .returning('*');
 
   emitDriverMessage(deliveryId, message);
+
+  // Relay WhatsApp en best-effort (ne bloque pas la réponse driver)
+  const waId = decryptWaId(client.wa_id_enc);
+  dispatch(waId, type, content, meta).catch((err) =>
+    console.error('[relay] WhatsApp échoué deliveryId=%s err=%s', deliveryId, err.message)
+  );
 
   return { delivery, message };
 }

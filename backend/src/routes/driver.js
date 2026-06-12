@@ -329,7 +329,11 @@ router.get('/deliveries/:id/messages', requireAuth, async (req, res) => {
     const messages = await db('messages')
       .where({ delivery_id: req.params.id })
       .orderBy('created_at', 'asc')
-      .select('id', 'sender_role', 'type', 'content', 'meta', 'created_at as createdAt');
+      .select(
+        'id', 'type', 'content', 'meta',
+        'created_at as createdAt',
+        db.raw('"sender_role" as "senderRole"')
+      );
 
     res.json({ messages });
   } catch {
