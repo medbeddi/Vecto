@@ -7,7 +7,11 @@ async function tick() {
     const rows = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'pending')
-      .where('deliveries.last_broadcast_at', '<', threeMinAgo)
+      .where(function () {
+        // NULL = jamais broadcast (ou migration) → éligible immédiatement
+        this.where('deliveries.last_broadcast_at', '<', threeMinAgo)
+            .orWhereNull('deliveries.last_broadcast_at');
+      })
       .select('deliveries.*', 'clients.alias');
 
     for (const row of rows) {

@@ -55,7 +55,11 @@ export const useDeliveriesStore = create<DeliveriesState>((set) => ({
   upsertAvailable: (d) =>
     set((s) => {
       const exists = s.available.some((x) => x.id === d.id);
-      return { available: exists ? s.available : [d, ...s.available] };
+      if (exists) {
+        // Mettre à jour broadcastAt + données si la course est déjà en liste (re-broadcast)
+        return { available: s.available.map((x) => x.id === d.id ? { ...x, ...d } : x) };
+      }
+      return { available: [d, ...s.available] };
     }),
 
   removeAvailable: (id) =>

@@ -65,6 +65,7 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
 
   useEffect(() => {
     if (!delivery.broadcastAt) return;
+    setCountdown(calcRemaining()); // mise à jour immédiate (important au re-broadcast)
     const id = setInterval(() => {
       const remaining = calcRemaining();
       setCountdown(remaining);
