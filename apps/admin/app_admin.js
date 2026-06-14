@@ -830,19 +830,21 @@ async function openDriverProfile(id) {
   var titleEl = document.getElementById('profile-modal-title');
   var subEl   = document.getElementById('profile-modal-sub');
   if (titleEl) titleEl.textContent = 'Chargement…';
+  if (subEl)   subEl.style.cssText = 'color:var(--text-3);font-size:13px;margin-bottom:16px';
   if (subEl)   subEl.textContent   = '';
   showModal('modal-driver-profile');
   try {
     var res = await fetch(API + '/api/admin/drivers/' + id + '/documents', { headers: authHeaders() });
     if (!res.ok) {
       var errData = await res.json().catch(function() { return {}; });
-      alert('Erreur ' + res.status + (errData.error ? ' — ' + errData.error : ''));
-      closeModal('modal-driver-profile');
+      if (titleEl) titleEl.textContent = 'Erreur ' + res.status;
+      if (subEl) { subEl.style.color = '#c0392b'; subEl.textContent = errData.error || 'Impossible de charger ce profil.'; }
       return;
     }
     var data = await res.json();
     var driver = data.driver || {};
     if (titleEl) titleEl.textContent = driver.name || '—';
+    if (subEl)   subEl.style.cssText = 'color:var(--text-3);font-size:13px;margin-bottom:16px';
     if (subEl)   subEl.textContent   = driver.phone || '';
     var matEl = document.getElementById('profile-matricule');
     if (matEl) matEl.value = driver.matricule || '';
@@ -850,8 +852,8 @@ async function openDriverProfile(id) {
     fields.forEach(function(f) { _setDocThumb(f, driver[f]); });
   } catch (err) {
     console.error('[openDriverProfile]', err);
-    alert('Erreur réseau : ' + (err && err.message ? err.message : String(err)));
-    closeModal('modal-driver-profile');
+    if (titleEl) titleEl.textContent = 'Erreur réseau';
+    if (subEl) { subEl.style.color = '#c0392b'; subEl.textContent = err && err.message ? err.message : 'Connexion impossible.'; }
   }
 }
 
