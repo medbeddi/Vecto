@@ -23,6 +23,9 @@ type DeliveriesState = {
 
   loadMessages: (deliveryId: string) => Promise<void>;
   appendMessage: (m: Message) => void;
+
+  pendingCancellation: { deliveryId: string; clientAlias: string } | null;
+  setPendingCancellation: (c: { deliveryId: string; clientAlias: string } | null) => void;
 };
 
 export const useDeliveriesStore = create<DeliveriesState>((set) => ({
@@ -77,9 +80,14 @@ export const useDeliveriesStore = create<DeliveriesState>((set) => ({
   setActiveDelivery: (d) => set({ activeDelivery: d, messages: [] }),
 
   updateActiveStatus: (status) =>
-    set((s) =>
-      s.activeDelivery ? { activeDelivery: { ...s.activeDelivery, status } } : {}
-    ),
+    set((s) => {
+      if (!s.activeDelivery) return {};
+      const updated = { ...s.activeDelivery, status };
+      return {
+        activeDelivery: updated,
+        activeCourses: s.activeCourses.map((d) => d.id === updated.id ? updated : d),
+      };
+    }),
 
   loadMessages: async (deliveryId) => {
     set({ loadingMessages: true });
@@ -93,5 +101,13 @@ export const useDeliveriesStore = create<DeliveriesState>((set) => ({
     }
   },
 
-  appendMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
+  appendMessage: (m) =>
+    set((s) =>
+      s.messages.some((msg) => msg.id === m.id)
+        ? s
+        : { messages: [...s.messages, m] }
+    ),
+
+  pendingCancellation: null,
+  setPendingCancellation: (c) => set({ pendingCancellation: c }),
 }));

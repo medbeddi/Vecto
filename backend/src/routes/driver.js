@@ -318,6 +318,33 @@ router.post('/deliveries/:id/status', requireAuth, validate(statusSchema), async
   }
 });
 
+// ─── Annulation livreur → remet en attente ───────────────────────────────────
+
+router.post('/deliveries/:id/driver-cancel', requireAuth, async (req, res) => {
+  try {
+    const delivery = await db('deliveries')
+      .where({ id: req.params.id, driver_id: req.driver.id })
+      .whereIn('status', ['assigned', 'in_progress'])
+      .first('id');
+
+    if (!delivery) return res.status(404).json({ error: 'DELIVERY_NOT_FOUND' });
+
+    await db('deliveries')
+      .where({ id: req.params.id })
+      .update({ status: 'pending', driver_id: null });
+
+    await db('drivers')
+      .where({ id: req.driver.id })
+      .update({ status: 'available' });
+
+    emitDeliveryCancelled(req.params.id);
+
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 // ─── Messagerie ───────────────────────────────────────────────────────────────
 
 router.post('/deliveries/:id/message', requireAuth, validate(messageSchema), async (req, res) => {

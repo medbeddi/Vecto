@@ -42,7 +42,7 @@ export default function ChatScreen() {
   const route = useRoute<Route>();
   const { delivery: initDelivery } = route.params;
 
-  const { activeDelivery, messages, loadingMessages, loadMessages, appendMessage, setActiveDelivery, updateActiveStatus, removeActiveCourse } =
+  const { activeDelivery, messages, loadingMessages, loadMessages, appendMessage, setActiveDelivery, updateActiveStatus, removeActiveCourse, setPendingCancellation } =
     useDeliveriesStore();
 
   const [text, setText] = useState('');
@@ -78,12 +78,16 @@ export default function ChatScreen() {
         Alert.alert('Course annulée', 'Cette course a été annulée.');
       }
     };
+    // Re-joindre la room après reconnexion socket (réseau coupé, app background)
+    const onConnect = () => socketService.joinRoom(initDelivery.id);
 
     socketService.on('client_message', onMsg);
     socketService.on('delivery_cancelled', onCancelled);
+    socketService.on('connect', onConnect);
     return () => {
       socketService.off('client_message', onMsg);
       socketService.off('delivery_cancelled', onCancelled);
+      socketService.off('connect', onConnect);
       setActiveDelivery(null);
     };
   }, []);
@@ -216,6 +220,28 @@ export default function ChatScreen() {
     }
   };
 
+  // ─── Navigation GPS ────────────────────────────────────────────────────────
+  const openNavigation = useCallback((address: string, label: string) => {
+    const encoded = encodeURIComponent(address);
+    Alert.alert(`Naviguer vers ${label}`, 'Ouvrir avec :', [
+      {
+        text: 'Google Maps',
+        onPress: () =>
+          Linking.openURL(
+            `https://www.google.com/maps/dir/?api=1&destination=${encoded}&travelmode=driving`
+          ),
+      },
+      {
+        text: 'Waze',
+        onPress: () =>
+          Linking.openURL(`waze://?q=${encoded}&navigate=yes`).catch(() =>
+            Linking.openURL(`https://waze.com/ul?q=${encoded}&navigate=yes`)
+          ),
+      },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  }, []);
+
   // ─── Mise à jour statut ───────────────────────────────────────────────────
   const updateStatus = useCallback(
     async (status: 'in_progress' | 'done' | 'cancelled') => {
@@ -236,6 +262,10 @@ export default function ChatScreen() {
                 body: { status },
               });
               updateActiveStatus(status);
+              // Proposer navigation après confirmation "En route" → restaurant en premier
+              if (status === 'in_progress' && delivery.pickupAddress) {
+                openNavigation(delivery.pickupAddress, 'le restaurant');
+              }
               if (status === 'done' || status === 'cancelled') {
                 removeActiveCourse(delivery.id);
                 setTimeout(() => navigation.goBack(), 1500);
@@ -247,8 +277,36 @@ export default function ChatScreen() {
         },
       ]);
     },
-    [delivery.id, navigation]
+    [delivery.id, delivery.pickupAddress, navigation, openNavigation]
   );
+
+  // ─── Annulation livreur ───────────────────────────────────────────────────
+  const handleDriverCancel = useCallback(() => {
+    Alert.alert(
+      'Annuler la course ?',
+      'La course sera remise en attente pour réassignation. Vous devrez indiquer la raison.',
+      [
+        { text: 'Non', style: 'cancel' },
+        {
+          text: 'Oui, annuler',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api(`/api/deliveries/${delivery.id}/driver-cancel`, { method: 'POST' });
+              removeActiveCourse(delivery.id);
+              setPendingCancellation({
+                deliveryId: delivery.id,
+                clientAlias: delivery.clientAlias ?? 'Course',
+              });
+              navigation.goBack();
+            } catch {
+              Alert.alert('Erreur', "Impossible d'annuler la course.");
+            }
+          },
+        },
+      ]
+    );
+  }, [delivery.id, delivery.clientAlias, navigation]);
 
   return (
     <KeyboardAvoidingView
@@ -307,7 +365,25 @@ export default function ChatScreen() {
             <StatusBtn label="✅  Terminé" color="#4caf50" onPress={() => updateStatus('done')} />
           )}
           {(delivery.status === 'assigned' || delivery.status === 'in_progress') && (
-            <StatusBtn label="✕  Annuler" color="#f44336" onPress={() => updateStatus('cancelled')} />
+            <StatusBtn label="✕  Annuler" color="#f44336" onPress={handleDriverCancel} />
+          )}
+        </View>
+      )}
+
+      {/* Boutons navigation GPS */}
+      {!isClosed && (delivery.pickupAddress || delivery.dropoffAddress) && (
+        <View style={styles.navBar}>
+          {delivery.pickupAddress && (
+            <NavBtn
+              label="🍽  Restaurant"
+              onPress={() => openNavigation(delivery.pickupAddress!, 'le restaurant')}
+            />
+          )}
+          {delivery.dropoffAddress && (
+            <NavBtn
+              label="📍  Client"
+              onPress={() => openNavigation(delivery.dropoffAddress!, 'le client')}
+            />
           )}
         </View>
       )}
@@ -391,6 +467,14 @@ function StatusBtn({
   );
 }
 
+function NavBtn({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.navBtn} onPress={onPress} activeOpacity={0.8}>
+      <Text style={styles.navBtnText}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F0F0F5' },
 
@@ -425,6 +509,19 @@ const styles = StyleSheet.create({
   },
   statusBtn: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
   statusBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // Navigation GPS
+  navBar: {
+    flexDirection: 'row', gap: 8,
+    paddingHorizontal: 10, paddingBottom: 10, paddingTop: 0,
+    backgroundColor: CARD,
+  },
+  navBtn: {
+    flex: 1, borderRadius: 10, paddingVertical: 9,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: SURFACE, borderWidth: 1, borderColor: BORDER,
+  },
+  navBtnText: { color: '#1565C0', fontWeight: '700', fontSize: 13 },
 
   // Input bar — screenshot exact
   inputBar: {

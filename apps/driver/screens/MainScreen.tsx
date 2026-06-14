@@ -64,6 +64,7 @@ export default function MainScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('courses');
   const [adminUnread, setAdminUnread] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
+  const { pendingCancellation, setPendingCancellation } = useDeliveriesStore();
 
   useEffect(() => {
     // Notification message call center
@@ -149,6 +150,12 @@ export default function MainScreen() {
         {activeTab === 'profil'     && <ProfilTab />}
       </View>
       <BottomTabBar active={activeTab} onSelect={handleTabSelect} adminUnread={adminUnread} chatUnread={chatUnread} />
+    {pendingCancellation && (
+      <CancellationReasonModal
+        clientAlias={pendingCancellation.clientAlias}
+        onSent={() => setPendingCancellation(null)}
+      />
+    )}
     </View>
   );
 }
@@ -2507,4 +2514,261 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center',
   },
   sedadRetourBtnText: { fontSize: 15, fontWeight: '600', color: TEXT },
+});
+
+// ─── Modal raison d'annulation ────────────────────────────────────────────────
+
+const CANCEL_REASONS = [
+  'Panne de véhicule',
+  'Zone inaccessible',
+  'Client injoignable',
+  'Adresse incorrecte',
+  'Urgence personnelle',
+];
+
+function CancellationReasonModal({
+  clientAlias,
+  onSent,
+}: {
+  clientAlias: string;
+  onSent: () => void;
+}) {
+  const [tab, setTab] = useState<'preset' | 'text' | 'audio'>('preset');
+  const [selectedReason, setSelectedReason] = useState<string | null>(null);
+  const [customText, setCustomText] = useState('');
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [audioUri, setAudioUri] = useState<string | null>(null);
+  const [recSeconds, setRecSeconds] = useState(0);
+  const [sending, setSending] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startRecording = async () => {
+    const { status } = await Audio.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission refusée', 'Activez le microphone dans les paramètres.');
+      return;
+    }
+    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+    const { recording: rec } = await Audio.Recording.createAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    );
+    setRecording(rec);
+    setRecSeconds(0);
+    timerRef.current = setInterval(() => setRecSeconds((t) => t + 1), 1000);
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+    if (timerRef.current) clearInterval(timerRef.current);
+    await recording.stopAndUnloadAsync();
+    const uri = recording.getURI();
+    setRecording(null);
+    if (uri) setAudioUri(uri);
+  };
+
+  const handleSend = async () => {
+    const prefix = `Annulation — ${clientAlias}`;
+
+    if (tab === 'preset' && !selectedReason) {
+      Alert.alert('', 'Veuillez choisir une raison.');
+      return;
+    }
+    if (tab === 'text' && !customText.trim()) {
+      Alert.alert('', 'Veuillez écrire un message.');
+      return;
+    }
+    if (tab === 'audio' && !audioUri) {
+      Alert.alert('', 'Veuillez enregistrer un message vocal.');
+      return;
+    }
+
+    setSending(true);
+    try {
+      if (tab === 'audio') {
+        await api('/api/drivers/cc-chat', {
+          method: 'POST',
+          body: { content: prefix, type: 'text' },
+        });
+        const fd = new FormData();
+        fd.append('file', { uri: audioUri, type: 'audio/mp4', name: 'annulation.m4a' } as any);
+        const { url } = await uploadFile('/api/upload', fd);
+        await api('/api/drivers/cc-chat', {
+          method: 'POST',
+          body: { content: url, type: 'audio' },
+        });
+      } else {
+        const reason = tab === 'preset' ? selectedReason! : customText.trim();
+        await api('/api/drivers/cc-chat', {
+          method: 'POST',
+          body: { content: `${prefix} : ${reason}`, type: 'text' },
+        });
+      }
+      onSent();
+    } catch {
+      Alert.alert('Erreur', "Impossible d'envoyer. Réessayez.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const fmtTime = (s: number) =>
+    `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+
+  return (
+    <View style={cancelStyles.overlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={cancelStyles.kvWrapper}
+      >
+        <View style={cancelStyles.box}>
+          <View style={cancelStyles.headerRow}>
+            <Icon name="alert-triangle" size={20} color="#f44336" />
+            <Text style={cancelStyles.title}>Raison de l'annulation</Text>
+          </View>
+          <Text style={cancelStyles.subtitle}>Course : {clientAlias}</Text>
+
+          <View style={cancelStyles.tabRow}>
+            {(['preset', 'text', 'audio'] as const).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[cancelStyles.tab, tab === t && cancelStyles.tabActive]}
+                onPress={() => setTab(t)}
+              >
+                <Text style={[cancelStyles.tabText, tab === t && cancelStyles.tabTextActive]}>
+                  {t === 'preset' ? 'Raison' : t === 'text' ? 'Message' : 'Vocal'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {tab === 'preset' && (
+            <ScrollView style={{ maxHeight: 200 }} showsVerticalScrollIndicator={false}>
+              {CANCEL_REASONS.map((r) => (
+                <TouchableOpacity
+                  key={r}
+                  style={[cancelStyles.reasonRow, selectedReason === r && cancelStyles.reasonRowActive]}
+                  onPress={() => setSelectedReason(r)}
+                >
+                  <View style={[cancelStyles.radioCircle, selectedReason === r && cancelStyles.radioFilled]} />
+                  <Text style={[cancelStyles.reasonText, selectedReason === r && cancelStyles.reasonTextActive]}>
+                    {r}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          {tab === 'text' && (
+            <TextInput
+              style={cancelStyles.textInput}
+              placeholder="Expliquez la raison de l'annulation..."
+              placeholderTextColor="#999"
+              multiline
+              numberOfLines={4}
+              value={customText}
+              onChangeText={setCustomText}
+            />
+          )}
+
+          {tab === 'audio' && (
+            <View style={cancelStyles.audioSection}>
+              {!audioUri ? (
+                <>
+                  <TouchableOpacity
+                    style={[cancelStyles.recordBtn, !!recording && cancelStyles.recordBtnActive]}
+                    onPress={recording ? stopRecording : startRecording}
+                  >
+                    <Icon name={recording ? 'square' : 'mic'} size={28} color="#fff" />
+                  </TouchableOpacity>
+                  {recording && <Text style={cancelStyles.recTimer}>{fmtTime(recSeconds)}</Text>}
+                  <Text style={cancelStyles.recHint}>
+                    {recording ? 'Appuyez pour arrêter' : 'Appuyez pour enregistrer'}
+                  </Text>
+                </>
+              ) : (
+                <View style={cancelStyles.audioReady}>
+                  <Icon name="check" size={22} color="#4CAF50" />
+                  <Text style={{ color: '#4CAF50', fontWeight: '600', marginLeft: 6 }}>
+                    Message vocal prêt
+                  </Text>
+                  <TouchableOpacity onPress={() => setAudioUri(null)} style={{ marginLeft: 'auto' }}>
+                    <Text style={{ color: '#f44336', fontSize: 13 }}>Recommencer</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[cancelStyles.sendBtn, sending && { opacity: 0.55 }]}
+            onPress={handleSend}
+            disabled={sending}
+          >
+            {sending ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={cancelStyles.sendBtnText}>Envoyer au centre d'appel</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+const cancelStyles = StyleSheet.create({
+  overlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center', alignItems: 'center',
+    zIndex: 999,
+  },
+  kvWrapper: { width: '100%', alignItems: 'center' },
+  box: {
+    width: '90%', backgroundColor: '#fff', borderRadius: 16,
+    padding: 20, gap: 12,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontSize: 17, fontWeight: '700', color: '#1a1a1a' },
+  subtitle: { fontSize: 13, color: '#666' },
+  tabRow: {
+    flexDirection: 'row', gap: 6,
+    borderBottomWidth: 1, borderBottomColor: '#eee', paddingBottom: 8,
+  },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 6, borderRadius: 8 },
+  tabActive: { backgroundColor: '#FFF0F0' },
+  tabText: { fontSize: 13, color: '#888', fontWeight: '500' },
+  tabTextActive: { color: '#f44336', fontWeight: '700' },
+  reasonRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 11, paddingHorizontal: 8, borderRadius: 8, marginBottom: 4,
+  },
+  reasonRowActive: { backgroundColor: '#FFF0F0' },
+  radioCircle: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: '#ccc' },
+  radioFilled: { backgroundColor: '#f44336', borderColor: '#f44336' },
+  reasonText: { fontSize: 14, color: '#333' },
+  reasonTextActive: { fontWeight: '600', color: '#c62828' },
+  textInput: {
+    borderWidth: 1, borderColor: '#ddd', borderRadius: 10,
+    padding: 12, fontSize: 14, color: '#333',
+    minHeight: 100, textAlignVertical: 'top',
+  },
+  audioSection: { alignItems: 'center', gap: 10, paddingVertical: 10 },
+  recordBtn: {
+    width: 68, height: 68, borderRadius: 34,
+    backgroundColor: '#f44336',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  recordBtnActive: { backgroundColor: '#b71c1c' },
+  recTimer: { fontSize: 20, fontWeight: '700', color: '#333', letterSpacing: 2 },
+  recHint: { fontSize: 12, color: '#888' },
+  audioReady: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#E8F5E9', borderRadius: 10, padding: 12, width: '100%',
+  },
+  sendBtn: {
+    backgroundColor: '#f44336', borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center', marginTop: 4,
+  },
+  sendBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
