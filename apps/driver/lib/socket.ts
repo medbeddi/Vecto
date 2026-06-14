@@ -32,6 +32,7 @@ type NewOrderPayload = {
   deliveryId: string;
   clientAlias: string;
   createdAt: string;
+  broadcastAt?: string | null;
   pickupAddress?: string | null;
   dropoffAddress?: string | null;
   price?: number | null;
@@ -39,6 +40,7 @@ type NewOrderPayload = {
 };
 
 type EventMap = {
+  connect: () => void;
   new_order: (data: NewOrderPayload) => void;
   order_taken: (data: { deliveryId: string }) => void;
   client_message: (data: Message) => void;
@@ -49,9 +51,14 @@ type EventMap = {
 
 class SocketService {
   private _socket: Socket | null = null;
+  // Stored handlers survive socket recreation (token expiry, auth error)
+  private _handlers = new Map<string, Set<Function>>();
 
   async connect(): Promise<void> {
-    if (this._socket?.connected) return;
+    // If a socket already exists (connected OR reconnecting), don't create another one.
+    // The connect_error handler sets _socket = null before calling connect() again,
+    // so legitimate AUTH-error reconnects are not blocked by this guard.
+    if (this._socket) return;
 
     const token = await getFreshToken();
     if (!token) throw new Error('AUTH_REQUIRED');
@@ -65,6 +72,9 @@ class SocketService {
       reconnectionDelayMax: 15000,
     });
 
+    // Re-attach any handlers registered before this socket was created
+    this._reattachHandlers();
+
     this._socket.on('connect', () =>
       console.info('[socket] connecté sid=' + this._socket?.id)
     );
@@ -74,10 +84,18 @@ class SocketService {
       console.warn('[socket] erreur:', err.message);
       if (err.message === 'AUTH_INVALID' || err.message === 'AUTH_REQUIRED') {
         this._socket?.disconnect();
-        this._socket = null;
+        this._socket = null;  // cleared before connect() so the guard lets it through
         try { await this.connect(); } catch {}
       }
     });
+  }
+
+  private _reattachHandlers() {
+    for (const [event, fns] of this._handlers) {
+      for (const fn of fns) {
+        this._socket?.on(event, fn as never);
+      }
+    }
   }
 
   disconnect() {
@@ -103,10 +121,13 @@ class SocketService {
   }
 
   on<K extends keyof EventMap>(event: K, handler: EventMap[K]) {
+    if (!this._handlers.has(event)) this._handlers.set(event, new Set());
+    this._handlers.get(event)!.add(handler as Function);
     this._socket?.on(event as string, handler as never);
   }
 
   off<K extends keyof EventMap>(event: K, handler: EventMap[K]) {
+    this._handlers.get(event)?.delete(handler as Function);
     this._socket?.off(event as string, handler as never);
   }
 

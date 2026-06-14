@@ -71,7 +71,8 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
       setCountdown(remaining);
       if (remaining === 0) {
         clearInterval(id);
-        onExpire?.(delivery);
+        // Don't remove the card — it stays visible until order_taken or explicit refusal.
+        // The rebroadcast will arrive shortly and reset the countdown.
       }
     }, 1000);
     return () => clearInterval(id);
@@ -131,8 +132,9 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
   const hasRoute = !!(delivery.pickupAddress || delivery.dropoffAddress);
   const hasStats = delivery.distanceKm != null || delivery.durationMin != null;
   const countdownColor = countdown == null ? GREEN
-    : countdown > 10 ? GREEN
-    : countdown > 5  ? '#FF9500'
+    : countdown === 0 ? '#888'
+    : countdown > 10  ? GREEN
+    : countdown > 5   ? '#FF9500'
     : '#FF3B30';
 
   return (
@@ -142,7 +144,7 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
       {countdown != null ? (
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, {
-            width: `${Math.max(0, (countdown / 20) * 100)}%` as `${number}%`,
+            width: countdown === 0 ? '100%' : `${Math.max(0, (countdown / 20) * 100)}%` as `${number}%`,
             backgroundColor: countdownColor,
           }]} />
         </View>
@@ -159,10 +161,16 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
             <Text style={styles.timeText}>{orderTime(delivery.createdAt)}</Text>
           </View>
           {/* CENTER: grand compteur */}
-          {countdown != null && countdown > 0 && (
+          {countdown != null && (
             <View style={[styles.countdownPill, { backgroundColor: countdownColor }]}>
-              <Text style={styles.countdownPillNum}>{countdown}</Text>
-              <Text style={styles.countdownPillS}>s</Text>
+              {countdown === 0 ? (
+                <Text style={[styles.countdownPillS, { fontSize: 12 }]}>En attente...</Text>
+              ) : (
+                <>
+                  <Text style={styles.countdownPillNum}>{countdown}</Text>
+                  <Text style={styles.countdownPillS}>s</Text>
+                </>
+              )}
             </View>
           )}
           {/* RIGHT: prix */}

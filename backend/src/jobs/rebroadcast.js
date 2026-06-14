@@ -9,7 +9,7 @@ async function tick() {
       .where('deliveries.status', 'pending')
       .where(function () {
         // NULL = jamais broadcast (ou migration) → éligible immédiatement
-        this.where('deliveries.last_broadcast_at', '<', threeMinAgo)
+        this.where('deliveries.last_broadcast_at', '<', windowAgo)
             .orWhereNull('deliveries.last_broadcast_at');
       })
       .select('deliveries.*', 'clients.alias');

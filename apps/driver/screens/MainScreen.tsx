@@ -150,23 +150,47 @@ function CoursesTab() {
 
     const onNewOrder = (order: IncomingOrder) => {
       socketDeliveryIds.current.add(order.deliveryId);
-      setIncomingOrder(order);
 
-      // Compte à rebours modal (20s)
-      if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
-      if (modalCountdownRef.current) clearInterval(modalCountdownRef.current);
-      setModalCountdown(20);
-      modalCountdownRef.current = setInterval(() => {
-        setModalCountdown((prev) => {
-          if (prev <= 1) { clearInterval(modalCountdownRef.current!); return 0; }
-          return prev - 1;
+      // Check if the order is already visible in the list (rebroadcast of existing card)
+      const alreadyVisible = useDeliveriesStore.getState().available.some(
+        (d) => d.id === order.deliveryId
+      );
+
+      // Only open modal + play audio + send notification for genuinely new orders
+      if (!alreadyVisible) {
+        setIncomingOrder(order);
+
+        // Compte à rebours modal (20s)
+        if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
+        if (modalCountdownRef.current) clearInterval(modalCountdownRef.current);
+        setModalCountdown(20);
+        modalCountdownRef.current = setInterval(() => {
+          setModalCountdown((prev) => {
+            if (prev <= 1) { clearInterval(modalCountdownRef.current!); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+        modalTimerRef.current = setTimeout(() => {
+          setIncomingOrder((prev) => prev?.deliveryId === order.deliveryId ? null : prev);
+          modalTimerRef.current = null;
+        }, 20 * 1000);
+
+        if (order.message.type === 'audio' && order.message.content) {
+          playAudio(order.message.content);
+        }
+        Notifications.scheduleNotificationAsync({
+          content: {
+            title: '🛵 Nouvelle course',
+            body: order.message.type === 'audio'
+              ? `Message vocal de ${order.clientAlias}`
+              : (order.message.content ?? `Course de ${order.clientAlias}`),
+            data: { deliveryId: order.deliveryId },
+          },
+          trigger: null,
         });
-      }, 1000);
-      modalTimerRef.current = setTimeout(() => {
-        setIncomingOrder((prev) => prev?.deliveryId === order.deliveryId ? null : prev);
-        modalTimerRef.current = null;
-      }, 20 * 1000);
+      }
 
+      // Always update the card (resets countdown on rebroadcast)
       upsertAvailable({
         id: order.deliveryId,
         clientAlias: order.clientAlias,
@@ -179,19 +203,6 @@ function CoursesTab() {
         pickupAddress: order.pickupAddress,
         dropoffAddress: order.dropoffAddress,
         price: order.price,
-      });
-      if (order.message.type === 'audio' && order.message.content) {
-        playAudio(order.message.content);
-      }
-      Notifications.scheduleNotificationAsync({
-        content: {
-          title: '🛵 Nouvelle course',
-          body: order.message.type === 'audio'
-            ? `Message vocal de ${order.clientAlias}`
-            : (order.message.content ?? `Course de ${order.clientAlias}`),
-          data: { deliveryId: order.deliveryId },
-        },
-        trigger: null,
       });
     };
 
@@ -428,7 +439,7 @@ function CoursesTab() {
             }}
             onExpire={(d) => {
               socketDeliveryIds.current.delete(d.id);
-              removeAvailable(d.id);
+              // Card stays visible — removed only by order_taken or explicit refusal
             }}
             accepting={accepting === item.id}
           />
@@ -869,13 +880,14 @@ const adminChat = StyleSheet.create({
 
 // ─── Onglet Profil — avec sous-pages ─────────────────────────────────────────
 
-type ProfileView = 'main' | 'info' | 'wallet' | 'history';
+type ProfileView = 'main' | 'info' | 'wallet' | 'history' | 'documents';
 
 function ProfilTab() {
   const [view, setView] = useState<ProfileView>('main');
-  if (view === 'info')    return <PersonalInfoView    onBack={() => setView('main')} />;
-  if (view === 'wallet')  return <WalletView          onBack={() => setView('main')} />;
-  if (view === 'history') return <HistoryView         onBack={() => setView('main')} />;
+  if (view === 'info')      return <PersonalInfoView onBack={() => setView('main')} />;
+  if (view === 'wallet')    return <WalletView       onBack={() => setView('main')} />;
+  if (view === 'history')   return <HistoryView      onBack={() => setView('main')} />;
+  if (view === 'documents') return <DocumentsView    onBack={() => setView('main')} />;
   return <ProfileMainView onNavigate={setView} />;
 }
 
@@ -943,6 +955,11 @@ function ProfileMainView({ onNavigate }: { onNavigate: (v: ProfileView) => void 
           iconName="history" iconBg="#F0F0F0" iconColor="#555"
           label="Historique des courses" sub="Courses passées, revenus"
           onPress={() => onNavigate('history')}
+        />
+        <PMenuItem
+          iconName="file-text" iconBg="#EDE7F6" iconColor="#5E35B1"
+          label="Mes documents" sub="Carte grise, identité, photo"
+          onPress={() => onNavigate('documents')}
         />
         <PMenuItem
           iconName="bell" iconBg="#F0F0F0" iconColor="#555"
@@ -1148,7 +1165,7 @@ function WalletView({ onBack }: { onBack: () => void }) {
               return (
                 <HistItem
                   key={tx.id}
-                  iconName={iconName} iconColor={color} iconBg={bg}
+                  iconName={icon} iconColor={color} iconBg={bg}
                   label={tx.description ?? tx.type}
                   date={date}
                   amount={`${isPos ? '+' : '-'} ${Math.abs(tx.amount).toFixed(0)} MRU`}
@@ -1237,6 +1254,208 @@ function HistoryView({ onBack }: { onBack: () => void }) {
     </ScrollView>
   );
 }
+
+// ── Sous-page: Mes documents ─────────────────────────────────────────────────
+type DocField = 'photo_driver' | 'carte_grise_front' | 'carte_grise_back'
+  | 'carte_identite_front' | 'carte_identite_back' | 'photo_vehicule';
+
+const DOC_ROWS: { field: DocField; label: string; hint: string }[] = [
+  { field: 'photo_driver',         label: 'Ma photo',                hint: 'Photo de profil du livreur' },
+  { field: 'carte_grise_front',    label: 'Carte grise recto',       hint: 'Face avant de la carte grise' },
+  { field: 'carte_grise_back',     label: 'Carte grise verso',       hint: 'Face arrière de la carte grise' },
+  { field: 'carte_identite_front', label: "Pièce d'identité recto",  hint: 'Carte nationale ou passeport' },
+  { field: 'carte_identite_back',  label: "Pièce d'identité verso",  hint: 'Face arrière' },
+  { field: 'photo_vehicule',       label: 'Photo du véhicule',       hint: 'Photo de votre moto ou véhicule' },
+];
+
+function DocumentsView({ onBack }: { onBack: () => void }) {
+  const [docs, setDocs] = useState<Record<string, string | null>>({
+    photo_driver: null, carte_grise_front: null, carte_grise_back: null,
+    carte_identite_front: null, carte_identite_back: null, photo_vehicule: null,
+  });
+  const [matricule, setMatricule] = useState('');
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api<{ driver: any }>('/api/drivers/me')
+      .then(({ driver: d }) => {
+        setDocs({
+          photo_driver: d.photo_driver ?? null,
+          carte_grise_front: d.carte_grise_front ?? null,
+          carte_grise_back: d.carte_grise_back ?? null,
+          carte_identite_front: d.carte_identite_front ?? null,
+          carte_identite_back: d.carte_identite_back ?? null,
+          photo_vehicule: d.photo_vehicule ?? null,
+        });
+        setMatricule(d.matricule ?? '');
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const doUpload = async (field: DocField, uri: string, mime: string) => {
+    setUploading(field);
+    try {
+      const ext = uri.split('.').pop() ?? 'jpg';
+      const fd = new FormData();
+      fd.append('file', { uri, type: mime, name: `${field}.${ext}` } as any);
+      const { url } = await uploadFile('/api/upload', fd);
+      await api('/api/drivers/me/documents', { method: 'PATCH', body: { [field]: url } });
+      setDocs((prev) => ({ ...prev, [field]: url }));
+    } catch {
+      Alert.alert('Erreur', "Impossible d'uploader la photo. Réessayez.");
+    } finally {
+      setUploading(null);
+    }
+  };
+
+  const pickFromLibrary = async (field: DocField) => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission refusée', "Activez l'accès à la galerie."); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    await doUpload(field, asset.uri, asset.mimeType ?? 'image/jpeg');
+  };
+
+  const pickFromCamera = async (field: DocField) => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission refusée', "Activez l'accès à la caméra."); return; }
+    const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    await doUpload(field, asset.uri, asset.mimeType ?? 'image/jpeg');
+  };
+
+  const showOptions = (field: DocField) => {
+    if (uploading) return;
+    Alert.alert('Ajouter une photo', 'Choisissez la source', [
+      { text: 'Prendre une photo', onPress: () => pickFromCamera(field) },
+      { text: 'Galerie',           onPress: () => pickFromLibrary(field) },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
+  };
+
+  const saveMatricule = async () => {
+    setSaving(true);
+    try {
+      await api('/api/drivers/me/documents', { method: 'PATCH', body: { matricule: matricule.trim() } });
+      Alert.alert('Enregistré', 'Matricule mis à jour.');
+    } catch {
+      Alert.alert('Erreur', "Impossible d'enregistrer le matricule.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ScrollView style={{ flex: 1, backgroundColor: BG }} contentContainerStyle={{ paddingBottom: 40 }}>
+      <View style={styles.subHeader}>
+        <TouchableOpacity onPress={onBack} style={styles.subBackBtn}>
+          <Icon name="chevron-left" size={24} color={TEXT} strokeWidth={2} />
+        </TouchableOpacity>
+        <Text style={styles.subTitle}>Mes documents</Text>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator color={PRIMARY} style={{ marginTop: 40 }} />
+      ) : (
+        <>
+          <View style={[styles.infoCard, { gap: 0 }]}>
+            <Text style={styles.sectionLabel}>DOCUMENTS</Text>
+            {DOC_ROWS.map(({ field, label, hint }, i) => {
+              const url = docs[field];
+              const isUp = uploading === field;
+              return (
+                <View
+                  key={field}
+                  style={[
+                    docStyles.row,
+                    i < DOC_ROWS.length - 1 && { borderBottomWidth: 0.5, borderBottomColor: BORDER },
+                  ]}
+                >
+                  <TouchableOpacity
+                    style={docStyles.thumbWrap}
+                    onPress={() => showOptions(field)}
+                    activeOpacity={0.75}
+                  >
+                    {isUp ? (
+                      <View style={docStyles.thumbPlaceholder}>
+                        <ActivityIndicator color={PRIMARY} size="small" />
+                      </View>
+                    ) : url ? (
+                      <Image source={{ uri: url }} style={docStyles.thumb} resizeMode="cover" />
+                    ) : (
+                      <View style={docStyles.thumbPlaceholder}>
+                        <Icon name="camera" size={22} color={TEXT2} strokeWidth={1.5} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                  <View style={{ flex: 1 }}>
+                    <Text style={docStyles.label}>{label}</Text>
+                    <Text style={docStyles.hint}>{url ? '✓ Ajouté' : hint}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[docStyles.uploadBtn, isUp && { opacity: 0.5 }]}
+                    onPress={() => showOptions(field)}
+                    disabled={!!uploading}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={docStyles.uploadBtnText}>{url ? 'Modifier' : 'Ajouter'}</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.infoCard}>
+            <Text style={styles.sectionLabel}>VÉHICULE</Text>
+            <Text style={styles.fieldLabel}>Matricule (immatriculation)</Text>
+            <TextInput
+              style={[styles.fieldBox, { color: TEXT, marginBottom: 12 }]}
+              placeholder="Ex: 1234 NKT A"
+              placeholderTextColor={TEXT2}
+              value={matricule}
+              onChangeText={setMatricule}
+              autoCapitalize="characters"
+            />
+            <TouchableOpacity
+              style={[styles.validateBtn, saving && { opacity: 0.5 }]}
+              onPress={saveMatricule}
+              disabled={saving}
+              activeOpacity={0.85}
+            >
+              {saving
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.validateBtnText}>Enregistrer le matricule</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+    </ScrollView>
+  );
+}
+
+const docStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  thumbWrap: { flexShrink: 0 },
+  thumb: { width: 64, height: 52, borderRadius: 10 },
+  thumbPlaceholder: {
+    width: 64, height: 52, borderRadius: 10,
+    backgroundColor: SURFACE, justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: BORDER,
+  },
+  label: { fontSize: 14, fontWeight: '600', color: TEXT },
+  hint: { fontSize: 12, color: TEXT2, marginTop: 2 },
+  uploadBtn: {
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
+    backgroundColor: SURFACE, borderWidth: 1, borderColor: BORDER,
+  },
+  uploadBtnText: { fontSize: 13, fontWeight: '600', color: TEXT2 },
+});
 
 // ─── Bottom Tab Bar ──────────────────────────────────────────────────────────
 

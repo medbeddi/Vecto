@@ -183,13 +183,11 @@ router.patch('/drivers/me/documents', requireAuth, validate(documentsSchema), as
 
 router.get('/deliveries/available', requireAuth, async (req, res) => {
   try {
-    const twentySecAgo = new Date(Date.now() - 20 * 1000);
-
     const deliveries = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'pending')
-      // Seulement dans la fenêtre active des 20s
-      .where('deliveries.last_broadcast_at', '>', twentySecAgo)
+      // Seulement les ordres déjà broadcastés (last_broadcast_at non null)
+      .whereNotNull('deliveries.last_broadcast_at')
       // Exclure les courses que ce livreur a explicitement refusées
       .whereNotExists(
         db('delivery_refusals')
