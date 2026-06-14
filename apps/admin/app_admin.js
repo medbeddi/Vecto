@@ -428,7 +428,16 @@ function selectDriverChat(driverId, driverName, driverPhone) {
 }
 
 function callDriver() {
-  if (!_selectedDriverPhone) return;
+  if (!_selectedDriverPhone || !_selectedDriverId) return;
+  // Enregistrer l'appel dans le chat avant d'ouvrir le téléphone
+  fetch(API + '/api/admin/driver-chat/' + _selectedDriverId, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ content: 'Appel vers le livreur', type: 'call' }),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.message) appendDriverChatMessage(d.message); })
+    .catch(function() {});
   window.open('tel:' + _selectedDriverPhone, '_self');
 }
 
@@ -470,6 +479,10 @@ function _driverMsgBubble(m) {
           + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0,el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"></audio>';
   } else if (type === 'image') {
     inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img" onerror="_imgErr(this)" />';
+  } else if (type === 'call') {
+    return '<div class="cc-msg-wrap cc-msg-system-wrap">'
+      + '<div class="cc-msg-system-bubble">📞 ' + escHtml(m.content || 'Appel') + ' · ' + fmtTime(m.createdAt) + '</div>'
+      + '</div>';
   } else {
     inner = '<div class="cc-msg-text">' + escHtml(m.content) + '</div>';
   }
@@ -814,20 +827,30 @@ var _pendingDocField = null;
 
 async function openDriverProfile(id) {
   _profileDriverId = id;
-  document.getElementById('profile-modal-title').textContent = 'Chargement…';
-  document.getElementById('profile-modal-sub').textContent = '';
+  var titleEl = document.getElementById('profile-modal-title');
+  var subEl   = document.getElementById('profile-modal-sub');
+  if (titleEl) titleEl.textContent = 'Chargement…';
+  if (subEl)   subEl.textContent   = '';
   showModal('modal-driver-profile');
   try {
     var res = await fetch(API + '/api/admin/drivers/' + id + '/documents', { headers: authHeaders() });
-    if (!res.ok) { alert('Impossible de charger le profil.'); closeModal('modal-driver-profile'); return; }
-    var { driver } = await res.json();
-    document.getElementById('profile-modal-title').textContent = driver.name;
-    document.getElementById('profile-modal-sub').textContent = driver.phone || '';
-    document.getElementById('profile-matricule').value = driver.matricule || '';
+    if (!res.ok) {
+      var errData = await res.json().catch(function() { return {}; });
+      alert('Erreur ' + res.status + (errData.error ? ' — ' + errData.error : ''));
+      closeModal('modal-driver-profile');
+      return;
+    }
+    var data = await res.json();
+    var driver = data.driver || {};
+    if (titleEl) titleEl.textContent = driver.name || '—';
+    if (subEl)   subEl.textContent   = driver.phone || '';
+    var matEl = document.getElementById('profile-matricule');
+    if (matEl) matEl.value = driver.matricule || '';
     var fields = ['photo_driver', 'carte_grise_front', 'carte_grise_back', 'carte_identite_front', 'carte_identite_back', 'photo_vehicule'];
     fields.forEach(function(f) { _setDocThumb(f, driver[f]); });
-  } catch {
-    alert('Erreur réseau.');
+  } catch (err) {
+    console.error('[openDriverProfile]', err);
+    alert('Erreur réseau : ' + (err && err.message ? err.message : String(err)));
     closeModal('modal-driver-profile');
   }
 }
@@ -835,6 +858,7 @@ async function openDriverProfile(id) {
 function _setDocThumb(field, url) {
   var thumb = document.getElementById('thumb-' + field);
   var ph    = document.getElementById('ph-' + field);
+  if (!thumb) return;
   if (url) {
     thumb.src = url; thumb.style.display = 'block';
     if (ph) ph.style.display = 'none';
