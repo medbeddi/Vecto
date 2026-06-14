@@ -34,9 +34,10 @@ import {
 } from '../lib/config';
 import { Icon } from '../components/Icon';
 import { BANKILY_URI, SEDAD_URI, MASRIVI_URI } from '../assets/logos';
-import type { Delivery, CCMessage, RootStackParamList } from '../types';
+import * as Clipboard from 'expo-clipboard';
+import type { Delivery, Message, CCMessage, RootStackParamList } from '../types';
 
-type Tab = 'courses' | 'chats' | 'admin' | 'profil';
+type Tab = 'courses' | 'historique' | 'chats' | 'admin' | 'profil';
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
 type IncomingOrder = {
@@ -59,34 +60,95 @@ Notifications.setNotificationHandler({
 });
 
 export default function MainScreen() {
+  const navigation = useNavigation<Nav>();
   const [activeTab, setActiveTab] = useState<Tab>('courses');
   const [adminUnread, setAdminUnread] = useState(0);
+  const [chatUnread, setChatUnread] = useState(0);
 
   useEffect(() => {
-    const onCCMsg = () => {
+    // Notification message call center
+    const onCCMsg = (msg: CCMessage) => {
       setActiveTab((t) => {
-        if (t !== 'admin') setAdminUnread((n) => n + 1);
+        if (t !== 'admin') {
+          setAdminUnread((n) => n + 1);
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: '📞 Centre d\'appels',
+              body: msg.type === 'audio' ? 'Message vocal du call center'
+                   : msg.type === 'image' ? 'Photo du call center'
+                   : (msg.content ?? 'Nouveau message'),
+              data: { type: 'cc_message' },
+            },
+            trigger: null,
+          });
+        }
         return t;
       });
     };
-    socketService.on('cc_message', onCCMsg);
-    return () => socketService.off('cc_message', onCCMsg);
-  }, []);
+
+    // Notification message client (si pas dans ChatScreen)
+    const onClientMsg = (msg: Message) => {
+      const { activeDelivery, activeCourses } = useDeliveriesStore.getState();
+      if (activeDelivery) return; // déjà dans le chat, pas besoin de notifier
+      const delivery = activeCourses[0];
+      if (!delivery) return;
+      setChatUnread((n) => n + 1);
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: `💬 ${delivery.clientAlias}`,
+          body: msg.type === 'audio' ? 'Message vocal'
+               : msg.type === 'image' ? 'Photo'
+               : msg.type === 'location' ? 'Position partagée'
+               : (msg.content ?? 'Nouveau message'),
+          data: { type: 'client_message', deliveryId: delivery.id },
+        },
+        trigger: null,
+      });
+    };
+
+    // Navigation depuis tap notification
+    const notifSub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as any;
+      if (data?.type === 'client_message') {
+        const { activeCourses } = useDeliveriesStore.getState();
+        const delivery = activeCourses.find((d) => d.id === data.deliveryId) ?? activeCourses[0];
+        if (delivery) {
+          setChatUnread(0);
+          navigation.navigate('Chat', { delivery });
+        }
+      } else if (data?.type === 'cc_message') {
+        setActiveTab('admin');
+        setAdminUnread(0);
+      } else if (data?.deliveryId) {
+        setActiveTab('courses');
+      }
+    });
+
+    socketService.on('cc_message', onCCMsg as any);
+    socketService.on('client_message', onClientMsg);
+    return () => {
+      socketService.off('cc_message', onCCMsg as any);
+      socketService.off('client_message', onClientMsg);
+      notifSub.remove();
+    };
+  }, [navigation]);
 
   const handleTabSelect = (t: Tab) => {
     setActiveTab(t);
     if (t === 'admin') setAdminUnread(0);
+    if (t === 'chats') setChatUnread(0);
   };
 
   return (
     <View style={styles.root}>
       <View style={styles.content}>
-        {activeTab === 'courses' && <CoursesTab />}
-        {activeTab === 'chats' && <ChatsTab />}
-        {activeTab === 'admin' && <AdminChatTab />}
-        {activeTab === 'profil' && <ProfilTab />}
+        {activeTab === 'courses'    && <CoursesTab />}
+        {activeTab === 'historique' && <HistoriqueTab />}
+        {activeTab === 'chats'      && <ChatsTab />}
+        {activeTab === 'admin'      && <AdminChatTab />}
+        {activeTab === 'profil'     && <ProfilTab />}
       </View>
-      <BottomTabBar active={activeTab} onSelect={handleTabSelect} adminUnread={adminUnread} />
+      <BottomTabBar active={activeTab} onSelect={handleTabSelect} adminUnread={adminUnread} chatUnread={chatUnread} />
     </View>
   );
 }
@@ -105,7 +167,7 @@ function CoursesTab() {
   const [dispo, setDispo] = useState(true);
   const [togglingDispo, setTogglingDispo] = useState(false);
   const [incomingOrder, setIncomingOrder] = useState<IncomingOrder | null>(null);
-  const [modalCountdown, setModalCountdown] = useState(20);
+  const [modalCountdown, setModalCountdown] = useState(60);
   const soundRef = useRef<Audio.Sound | null>(null);
   const socketDeliveryIds = useRef<Set<string>>(new Set());
   const modalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -135,13 +197,19 @@ function CoursesTab() {
   };
 
   useEffect(() => {
+    const joinActiveRooms = () =>
+      useDeliveriesStore.getState().activeCourses.forEach((d) => socketService.joinRoom(d.id));
+
     loadAvailable();
-    loadActiveCourses();
+    loadActiveCourses().then(joinActiveRooms);
     registerFCMToken();
     startLocationTracking();
 
-    // Re-poll après reconnexion pour rattraper les new_order manqués pendant la coupure
-    const onReconnect = () => { loadAvailable(); loadActiveCourses(); };
+    // Re-poll après reconnexion + re-join les rooms des livraisons actives
+    const onReconnect = () => {
+      loadAvailable();
+      loadActiveCourses().then(joinActiveRooms);
+    };
     socketService.on('connect', onReconnect);
 
     // Rechargement immédiat quand l'app revient au premier plan
@@ -170,10 +238,10 @@ function CoursesTab() {
       if (!alreadyVisible) {
         setIncomingOrder(order);
 
-        // Compte à rebours modal (20s)
+        // Compte à rebours modal (60s)
         if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
         if (modalCountdownRef.current) clearInterval(modalCountdownRef.current);
-        setModalCountdown(20);
+        setModalCountdown(60);
         modalCountdownRef.current = setInterval(() => {
           setModalCountdown((prev) => {
             if (prev <= 1) { clearInterval(modalCountdownRef.current!); return 0; }
@@ -183,7 +251,7 @@ function CoursesTab() {
         modalTimerRef.current = setTimeout(() => {
           setIncomingOrder((prev) => prev?.deliveryId === order.deliveryId ? null : prev);
           modalTimerRef.current = null;
-        }, 20 * 1000);
+        }, 60 * 1000);
 
         if (order.message.type === 'audio' && order.message.content) {
           playAudio(order.message.content);
@@ -320,7 +388,7 @@ function CoursesTab() {
           <View style={styles.modalCard}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={styles.modalTitle}>🛵 Nouvelle course</Text>
-              <View style={[styles.modalCountdown, modalCountdown <= 8 && styles.modalCountdownRed]}>
+              <View style={[styles.modalCountdown, modalCountdown <= 15 && styles.modalCountdownRed]}>
                 <Text style={styles.modalCountdownText}>{modalCountdown}s</Text>
               </View>
             </View>
@@ -912,13 +980,72 @@ const adminChat = StyleSheet.create({
 
 // ─── Onglet Profil — page unique complète ────────────────────────────────────
 
+// ── Onglet: Historique des courses ───────────────────────────────────────────
+function HistoriqueTab() {
+  const [courses, setCourses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api<{ deliveries: any[] }>('/api/deliveries/history')
+      .then((res) => setCourses(res.deliveries ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <ScrollView style={{ flex: 1, backgroundColor: BG }} contentContainerStyle={{ paddingBottom: 100, paddingTop: 8 }}>
+      <View style={{ paddingHorizontal: 16, paddingVertical: 14 }}>
+        <Text style={{ fontSize: 22, fontWeight: '800', color: TEXT }}>Historique</Text>
+        <Text style={{ fontSize: 13, color: TEXT2, marginTop: 2 }}>{courses.length} course{courses.length !== 1 ? 's' : ''} terminée{courses.length !== 1 ? 's' : ''}</Text>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator color={PRIMARY} style={{ marginVertical: 40 }} />
+      ) : courses.length === 0 ? (
+        <View style={{ alignItems: 'center', paddingVertical: 60, gap: 12 }}>
+          <Icon name="history" size={44} color={TEXT2} strokeWidth={1.5} />
+          <Text style={{ fontSize: 15, color: TEXT2 }}>Aucune course terminée</Text>
+        </View>
+      ) : (
+        <View style={[styles.infoCard, { gap: 0 }]}>
+          {courses.map((c, i) => {
+            const isDone = c.status === 'done';
+            const statusLabel = isDone ? 'Livrée' : 'Annulée';
+            const statusColor = isDone ? '#1a7a35' : '#c0392b';
+            const date = new Date(c.createdAt).toLocaleDateString('fr-FR', {
+              day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+            });
+            return (
+              <View key={c.id} style={[styles.histCourseRow, i === courses.length - 1 && { borderBottomWidth: 0 }]}>
+                <View style={styles.histCourseIcon}>
+                  <Text style={{ color: '#fff', fontSize: 16 }}>🛵</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.histCourseLabel}>{c.clientAlias ?? 'Course'}</Text>
+                  <Text style={styles.histCourseDate}>{date}</Text>
+                  {c.price != null && (
+                    <Text style={{ fontSize: 13, color: '#1a7a35', fontWeight: '600', marginTop: 2 }}>
+                      {c.price} MRU
+                    </Text>
+                  )}
+                </View>
+                <View style={[styles.histCourseBadge, { backgroundColor: statusColor + '20' }]}>
+                  <Text style={[styles.histCourseBadgeText, { color: statusColor }]}>{statusLabel}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
 function ProfilTab() {
   const { driver, phone, logout } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState<number | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [courses, setCourses] = useState<any[]>([]);
-  const [totalCourses, setTotalCourses] = useState<number>(0);
 
   // Edit mode
   const [editMode, setEditMode] = useState(false);
@@ -934,16 +1061,10 @@ function ProfilTab() {
 
   useEffect(() => {
     setEditName(driver?.name ?? '');
-    Promise.all([
-      api<{ balance: number; transactions: any[] }>('/api/wallet'),
-      api<{ deliveries: any[] }>('/api/deliveries/history'),
-    ])
-      .then(([walletRes, histRes]) => {
-        setBalance(walletRes.balance ?? 0);
-        setTransactions(walletRes.transactions ?? []);
-        const deliveries = histRes.deliveries ?? [];
-        setCourses(deliveries.slice(0, 10));
-        setTotalCourses(deliveries.length);
+    api<{ balance: number; transactions: any[] }>('/api/wallet')
+      .then((res) => {
+        setBalance(res.balance ?? 0);
+        setTransactions(res.transactions ?? []);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -1032,11 +1153,6 @@ function ProfilTab() {
       {/* Stats row */}
       <View style={profilStyles.statsRow}>
         <View style={profilStyles.statItem}>
-          <Text style={profilStyles.statValue}>{totalCourses}</Text>
-          <Text style={profilStyles.statLabel}>Courses</Text>
-        </View>
-        <View style={profilStyles.statDivider} />
-        <View style={profilStyles.statItem}>
           <Text style={profilStyles.statValue}>★ 4.8</Text>
           <Text style={profilStyles.statLabel}>Note</Text>
         </View>
@@ -1088,55 +1204,6 @@ function ProfilTab() {
                   <Text style={[styles.histAmount, { color: isPos ? '#1a7a35' : '#b86800' }]}>
                     {isPos ? '+' : '-'}{Math.abs(tx.amount).toFixed(0)} MRU
                   </Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </View>
-
-      {/* Historique des courses */}
-      <View style={profilStyles.section}>
-        <View style={profilStyles.sectionHeaderRow}>
-          <Text style={profilStyles.sectionTitle}>Mes courses</Text>
-          <Text style={profilStyles.sectionCount}>{totalCourses} au total</Text>
-        </View>
-        {loading ? (
-          <ActivityIndicator color={PRIMARY} style={{ marginVertical: 20 }} />
-        ) : courses.length === 0 ? (
-          <View style={[styles.infoCard, { alignItems: 'center', paddingVertical: 24 }]}>
-            <Text style={{ fontSize: 32 }}>🛵</Text>
-            <Text style={[styles.emptyText, { fontSize: 14, marginTop: 8 }]}>Aucune course terminée</Text>
-          </View>
-        ) : (
-          <View style={[styles.infoCard, { gap: 0 }]}>
-            {courses.map((c, i) => {
-              const isDone = c.status === 'done';
-              const statusLabel = isDone ? 'Livrée' : 'Annulée';
-              const statusColor = isDone ? '#1a7a35' : '#c0392b';
-              const date = new Date(c.createdAt).toLocaleDateString('fr-FR', {
-                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-              });
-              return (
-                <View
-                  key={c.id}
-                  style={[styles.histCourseRow, i === courses.length - 1 && { borderBottomWidth: 0 }]}
-                >
-                  <View style={styles.histCourseIcon}>
-                    <Text style={{ color: '#fff', fontSize: 16 }}>🛵</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.histCourseLabel}>{c.clientAlias ?? 'Course'}</Text>
-                    <Text style={styles.histCourseDate}>{date}</Text>
-                    {c.price != null && (
-                      <Text style={{ fontSize: 13, color: '#1a7a35', fontWeight: '600', marginTop: 2 }}>
-                        {c.price} MRU
-                      </Text>
-                    )}
-                  </View>
-                  <View style={[styles.histCourseBadge, { backgroundColor: statusColor + '20' }]}>
-                    <Text style={[styles.histCourseBadgeText, { color: statusColor }]}>{statusLabel}</Text>
-                  </View>
                 </View>
               );
             })}
@@ -1297,34 +1364,284 @@ const PROVIDERS = [
 ] as const;
 type Provider = typeof PROVIDERS[number]['id'];
 
-function WalletView({ onBack }: { onBack: () => void }) {
-  const [provider, setProvider] = useState<Provider>('bankily');
+const BANKILY_MERCHANT_CODE = '021065'; // Code marchand Bankily VECTO — à mettre à jour
+
+function BankilyPayModal({ visible, onClose, onSuccess }: {
+  visible: boolean; onClose: () => void; onSuccess: () => void;
+}) {
   const [amount, setAmount] = useState('');
-  const [balance, setBalance] = useState<number | null>(null);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [phone, setPhone] = useState('');
+  const [bpayCode, setBpayCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    api<{ balance: number; transactions: any[] }>('/api/wallet')
-      .then((d) => { setBalance(d.balance); setTransactions(d.transactions); })
-      .catch(() => {});
-  }, []);
+  const reset = () => { setAmount(''); setPhone(''); setBpayCode(''); };
 
   const handleRecharge = async () => {
-    const amt = parseInt(amount);
-    if (!amt || amt < 100) { Alert.alert('Erreur', 'Montant minimum : 100 MRU'); return; }
+    if (!parseInt(amount) || parseInt(amount) < 100) { Alert.alert('Erreur', 'Montant minimum : 100 MRU'); return; }
+    if (!phone.trim()) { Alert.alert('Erreur', 'Numéro Bankily requis.'); return; }
+    if (!bpayCode || bpayCode.length !== 4) { Alert.alert('Erreur', 'Code B-Pay à 4 chiffres requis.'); return; }
     setSubmitting(true);
     try {
       const res = await api<{ message: string }>('/api/wallet/recharge', {
-        method: 'POST', body: { amount: amt, provider },
+        method: 'POST',
+        body: { amount: parseInt(amount), provider: 'bankily', bpayCode, phoneNumber: phone.trim() },
       });
       Alert.alert('Demande envoyée', res.message);
-      setAmount('');
+      reset();
+      onSuccess();
     } catch {
-      Alert.alert('Erreur', 'Impossible d\'envoyer la demande.');
+      Alert.alert('Erreur', "Impossible d'envoyer la demande.");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={styles.modalBox}>
+          <Text style={styles.modalTitle}>Recharge B-Pay : {BANKILY_MERCHANT_CODE}</Text>
+          <TextInput style={styles.modalInput} placeholder="Montant en Ouguiya Nouvelle"
+            placeholderTextColor={TEXT2} keyboardType="numeric" value={amount} onChangeText={setAmount} />
+          <View style={styles.modalDivider} />
+          <TextInput style={styles.modalInput} placeholder="Bankily"
+            placeholderTextColor={TEXT2} keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
+          <View style={styles.modalDivider} />
+          <TextInput style={styles.modalInput} placeholder="Passcode"
+            placeholderTextColor={TEXT2} keyboardType="numeric" maxLength={4} value={bpayCode} onChangeText={setBpayCode} />
+          <View style={styles.modalBtns}>
+            <TouchableOpacity onPress={() => { reset(); onClose(); }}>
+              <Text style={styles.modalBtnCancel}>ANNULER</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleRecharge} disabled={submitting}>
+              {submitting ? <ActivityIndicator color={BRAND} size="small" /> : <Text style={styles.modalBtnOk}>RECHARGER</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function SedadInitModal({ visible, onClose, onInitiate, submitting }: {
+  visible: boolean; onClose: () => void; onInitiate: (amount: string) => void; submitting: boolean;
+}) {
+  const [amount, setAmount] = useState('');
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBox}>
+          <Text style={styles.modalTitle}>Recharge Sedad</Text>
+          <TextInput style={styles.modalInput} placeholder="Montant (MRU)"
+            placeholderTextColor={TEXT2} keyboardType="numeric" value={amount} onChangeText={setAmount} />
+          <View style={styles.modalBtns}>
+            <TouchableOpacity onPress={() => { setAmount(''); onClose(); }}>
+              <Text style={styles.modalBtnCancel}>ANNULER</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => onInitiate(amount)} disabled={submitting}>
+              {submitting ? <ActivityIndicator color={BRAND} size="small" /> : <Text style={styles.modalBtnOk}>INITIER</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function MasriviPayModal({ visible, onClose, onSuccess }: {
+  visible: boolean; onClose: () => void; onSuccess: () => void;
+}) {
+  const [amount, setAmount] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleRecharge = async () => {
+    if (!parseInt(amount) || parseInt(amount) < 100) { Alert.alert('Erreur', 'Montant minimum : 100 MRU'); return; }
+    setSubmitting(true);
+    try {
+      const res = await api<{ message: string }>('/api/wallet/recharge', {
+        method: 'POST', body: { amount: parseInt(amount), provider: 'masrivi' },
+      });
+      Alert.alert('Demande envoyée', res.message);
+      setAmount('');
+      onSuccess();
+    } catch {
+      Alert.alert('Erreur', "Impossible d'envoyer la demande.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalBox}>
+          <Text style={styles.modalTitle}>Recharge Masrivi</Text>
+          <TextInput style={styles.modalInput} placeholder="Montant (MRU)"
+            placeholderTextColor={TEXT2} keyboardType="numeric" value={amount} onChangeText={setAmount} />
+          <View style={styles.modalBtns}>
+            <TouchableOpacity onPress={() => { setAmount(''); onClose(); }}>
+              <Text style={styles.modalBtnCancel}>ANNULER</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleRecharge} disabled={submitting}>
+              {submitting ? <ActivityIndicator color={BRAND} size="small" /> : <Text style={styles.modalBtnOk}>RECHARGER</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SedadGuideView({
+  amount,
+  refCode,
+  onBack,
+}: {
+  amount: string;
+  refCode: string;
+  onBack: () => void;
+}) {
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copyText = async (text: string, key: string) => {
+    try { await Clipboard.setStringAsync(text); } catch {}
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={{ paddingTop: 8, paddingBottom: 20 }}>
+
+        {/* Étape 1 */}
+        <View style={styles.bpayCard}>
+          <View style={styles.bpayStepRow}>
+            <View style={styles.sedadStepBubble}><Text style={styles.bpayStepNum}>1</Text></View>
+            <Text style={styles.bpayStepTitle}>Étape 1</Text>
+          </View>
+          <Text style={styles.bpayStepDesc}>Copiez le code de paiement.</Text>
+          <View style={styles.sedadCodeBox}>
+            <Text style={styles.sedadCodeLabel}>Code de paiement :</Text>
+            <Text style={styles.sedadCodeValue}>{refCode}</Text>
+          </View>
+          <TouchableOpacity style={styles.sedadCopyBtnFull} onPress={() => copyText(refCode, 'ref')}>
+            <Icon name={copiedKey === 'ref' ? 'check' : 'copy'} size={16} color="#fff" strokeWidth={2.5} />
+            <Text style={styles.sedadCopyBtnFullText}>{copiedKey === 'ref' ? 'Copié !' : 'Copier'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Étape 2 */}
+        <View style={styles.bpayCard}>
+          <View style={styles.bpayStepRow}>
+            <View style={styles.sedadStepBubble}><Text style={styles.bpayStepNum}>2</Text></View>
+            <Text style={styles.bpayStepTitle}>Étape 2</Text>
+          </View>
+          <Text style={styles.bpayStepDesc}>Connectez-vous à l'application Sedad Bank.</Text>
+        </View>
+
+        {/* Étape 3 */}
+        <View style={styles.bpayCard}>
+          <View style={styles.bpayStepRow}>
+            <View style={styles.sedadStepBubble}><Text style={styles.bpayStepNum}>3</Text></View>
+            <Text style={styles.bpayStepTitle}>Étape 3</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[styles.bpayStepDesc, { flex: 1, marginBottom: 0 }]}>Choisissez l'option Paiements.</Text>
+            <View style={styles.sedadPayIconBox}>
+              <Icon name="credit-card" size={28} color={TEXT2} strokeWidth={1.5} />
+              <Text style={styles.sedadPayIconLabel}>Paiements</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Étape 4 */}
+        <View style={styles.bpayCard}>
+          <View style={styles.bpayStepRow}>
+            <View style={styles.sedadStepBubble}><Text style={styles.bpayStepNum}>4</Text></View>
+            <Text style={styles.bpayStepTitle}>Étape 4</Text>
+          </View>
+          <Text style={styles.bpayStepDesc}>Ajoutez le code de paiement copié, puis appuyez sur Payer.</Text>
+          <View style={styles.sedadMockScreen}>
+            <Text style={styles.sedadMockTitle}>Paiements</Text>
+            <View style={styles.sedadMockTabs}>
+              <View style={styles.sedadMockTabActive}><Text style={styles.sedadMockTabActiveText}>Sedad</Text></View>
+              <View><Text style={styles.sedadMockTabText}>GIMTEL</Text></View>
+            </View>
+            <Text style={styles.sedadMockHint}>Entrez un code de paiement ou scanner un QR Code</Text>
+            <View style={styles.sedadMockInput} />
+            <View style={styles.sedadMockBtns}>
+              <View style={styles.sedadMockPayBtn}><Text style={styles.sedadMockPayBtnText}>Payer</Text></View>
+              <View style={styles.sedadMockScanBtn}><Text style={styles.sedadMockScanBtnText}>Scanner</Text></View>
+            </View>
+          </View>
+        </View>
+
+        {/* Étape 5 */}
+        <View style={styles.bpayCard}>
+          <View style={styles.bpayStepRow}>
+            <View style={styles.sedadStepBubble}><Text style={styles.bpayStepNum}>5</Text></View>
+            <Text style={styles.bpayStepTitle}>Étape 5</Text>
+          </View>
+          <Text style={[styles.bpayStepDesc, { marginBottom: 0 }]}>Retournez dans l'application Vecto pour suivre votre commande.</Text>
+        </View>
+
+      </ScrollView>
+
+      {/* Barre basse fixe */}
+      <View style={styles.sedadFooter}>
+        <View style={styles.sedadFooterRow}>
+          <Text style={styles.bpayFooterLabel}>Total à payer :</Text>
+          <Text style={styles.sedadFooterAmount}>{amount} MRU</Text>
+        </View>
+        <TouchableOpacity style={styles.sedadRetourBtn} onPress={onBack}>
+          <Text style={styles.sedadRetourBtnText}>Retour</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function WalletView({ onBack }: { onBack: () => void }) {
+  const [balance, setBalance] = useState<number | null>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [activeModal, setActiveModal] = useState<Provider | null>(null);
+  const [showSedadGuide, setShowSedadGuide] = useState(false);
+  const [sedadRefCode, setSedadRefCode] = useState('');
+  const [sedadAmt, setSedadAmt] = useState('');
+  const [sedadSubmitting, setSedadSubmitting] = useState(false);
+
+  const refreshWallet = () => {
+    api<{ balance: number; transactions: any[] }>('/api/wallet')
+      .then((d) => { setBalance(d.balance); setTransactions(d.transactions); })
+      .catch(() => {});
+  };
+
+  useEffect(() => { refreshWallet(); }, []);
+
+  const handleSedadInitiate = async (amount: string) => {
+    const amt = parseInt(amount);
+    if (!amt || amt < 100) { Alert.alert('Erreur', 'Montant minimum : 100 MRU'); return; }
+    setSedadSubmitting(true);
+    try {
+      const res = await api<{ message: string; referenceCode: string }>('/api/wallet/recharge', {
+        method: 'POST', body: { amount: amt, provider: 'sedad' },
+      });
+      setSedadAmt(amount);
+      setSedadRefCode(res.referenceCode);
+      setActiveModal(null);
+      setShowSedadGuide(true);
+    } catch {
+      Alert.alert('Erreur', "Impossible d'initier le paiement.");
+    } finally {
+      setSedadSubmitting(false);
+    }
+  };
+
+  const closeSedadGuide = () => {
+    setShowSedadGuide(false);
+    setSedadAmt('');
+    setSedadRefCode('');
+    refreshWallet();
   };
 
   const txIcon = (type: string) =>
@@ -1332,84 +1649,95 @@ function WalletView({ onBack }: { onBack: () => void }) {
     : type === 'commission' ? { iconName: 'arrow-down-left', color: '#b86800', bg: 'rgba(255,149,0,.12)' }
     : { iconName: 'arrow-up-right', color: '#1a7a35', bg: 'rgba(52,199,89,.12)' };
 
-  return (
-    <ScrollView style={{ flex: 1, backgroundColor: BG }} contentContainerStyle={{ paddingBottom: 40 }}>
-      <View style={styles.subHeader}>
-        <TouchableOpacity onPress={onBack} style={styles.subBackBtn}>
-          <Icon name="chevron-left" size={24} color={TEXT} strokeWidth={2} />
-        </TouchableOpacity>
-        <Text style={styles.subTitle}>Mon Wallet</Text>
-      </View>
-
-      <View style={styles.walletHeroFull}>
-        <Text style={styles.walletHeroLabel}>Solde disponible</Text>
-        <Text style={styles.walletHeroAmount}>
-          {balance !== null ? `${balance.toFixed(0)} MRU` : '— MRU'}
-        </Text>
-        <Text style={styles.walletHeroSub}>Minimum requis : 200 MRU</Text>
-      </View>
-
-      <View style={styles.infoCard}>
-        <Text style={styles.cardTitle}>Recharger le wallet</Text>
-        <Text style={styles.rechargeInfo}>
-          Payez via Bankily, Sedad ou Masrivi avec le code marchand VECTO, puis soumettez votre demande.
-        </Text>
-        <Text style={styles.fieldLabel}>Fournisseur</Text>
-        <View style={styles.providerRow}>
-          {PROVIDERS.map((p) => (
-            <TouchableOpacity
-              key={p.id}
-              style={[styles.providerBtn, provider === p.id && styles.providerBtnActive]}
-              onPress={() => setProvider(p.id)}
-            >
-              <Image source={{ uri: p.uri }} style={styles.providerLogo} resizeMode="contain" />
-              <Text style={[styles.providerBtnText, provider === p.id && styles.providerBtnTextActive]}>
-                {p.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+  if (showSedadGuide) {
+    return (
+      <View style={{ flex: 1, backgroundColor: BG }}>
+        <View style={styles.subHeader}>
+          <TouchableOpacity onPress={closeSedadGuide} style={styles.subBackBtn}>
+            <Icon name="chevron-left" size={24} color={TEXT} strokeWidth={2} />
+          </TouchableOpacity>
+          <Text style={styles.subTitle}>Paiement Sedad</Text>
         </View>
-        <Text style={styles.fieldLabel}>Montant (MRU)</Text>
-        <TextInput
-          style={[styles.fieldBox, { color: TEXT }]}
-          placeholder="Ex: 500" placeholderTextColor={TEXT2}
-          keyboardType="numeric" value={amount} onChangeText={setAmount}
-        />
-        <TouchableOpacity
-          style={[styles.validateBtn, submitting && { opacity: 0.5 }]}
-          onPress={handleRecharge} disabled={submitting} activeOpacity={0.85}
-        >
-          {submitting
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.validateBtnText}>Valider le rechargement</Text>
-          }
-        </TouchableOpacity>
+        <SedadGuideView amount={sedadAmt} refCode={sedadRefCode} onBack={closeSedadGuide} />
       </View>
+    );
+  }
 
-      {transactions.length > 0 && (
-        <>
-          <Text style={styles.histSectionTitle}>Historique</Text>
-          <View style={styles.infoCard}>
-            {transactions.map((tx, i) => {
-              const { icon, color, bg } = txIcon(tx.type);
-              const isPos = tx.amount > 0;
-              const date = new Date(tx.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
-              return (
-                <HistItem
-                  key={tx.id}
-                  iconName={icon} iconColor={color} iconBg={bg}
-                  label={tx.description ?? tx.type}
-                  date={date}
-                  amount={`${isPos ? '+' : '-'} ${Math.abs(tx.amount).toFixed(0)} MRU`}
-                  amountColor={isPos ? '#1a7a35' : '#b86800'}
-                  last={i === transactions.length - 1}
-                />
-              );
-            })}
-          </View>
-        </>
-      )}
-    </ScrollView>
+  return (
+    <>
+      <ScrollView style={{ flex: 1, backgroundColor: '#ECECEC' }} contentContainerStyle={{ paddingBottom: 40 }}>
+        <View style={styles.subHeader}>
+          <TouchableOpacity onPress={onBack} style={styles.subBackBtn}>
+            <Icon name="chevron-left" size={24} color={TEXT} strokeWidth={2} />
+          </TouchableOpacity>
+          <Text style={styles.subTitle}>Portail de recharge</Text>
+        </View>
+
+        {/* Solde */}
+        <View style={styles.portalSoldeRow}>
+          <Text style={styles.portalSoldeLabel}>Solde :</Text>
+          <Text style={styles.portalSoldeAmount}>
+            {balance !== null ? balance.toFixed(1) : '—'}
+          </Text>
+        </View>
+        <View style={styles.portalDivider} />
+
+        {/* Cartes fournisseurs */}
+        {PROVIDERS.map((p) => (
+          <TouchableOpacity
+            key={p.id}
+            style={styles.portalCard}
+            onPress={() => setActiveModal(p.id)}
+            activeOpacity={0.7}
+          >
+            <Image source={{ uri: p.uri }} style={styles.portalCardLogo} resizeMode="contain" />
+            <Text style={styles.portalCardLabel}>{p.label.toUpperCase()}</Text>
+          </TouchableOpacity>
+        ))}
+
+        {/* Historique */}
+        {transactions.length > 0 && (
+          <>
+            <Text style={[styles.histSectionTitle, { marginTop: 12 }]}>Historique</Text>
+            <View style={styles.infoCard}>
+              {transactions.map((tx, i) => {
+                const { iconName, color, bg } = txIcon(tx.type);
+                const isPos = tx.amount > 0;
+                const date = new Date(tx.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+                return (
+                  <HistItem
+                    key={tx.id}
+                    iconName={iconName} iconColor={color} iconBg={bg}
+                    label={tx.description ?? tx.type}
+                    date={date}
+                    amount={`${isPos ? '+' : '-'} ${Math.abs(tx.amount).toFixed(0)} MRU`}
+                    amountColor={isPos ? '#1a7a35' : '#b86800'}
+                    last={i === transactions.length - 1}
+                  />
+                );
+              })}
+            </View>
+          </>
+        )}
+      </ScrollView>
+
+      <BankilyPayModal
+        visible={activeModal === 'bankily'}
+        onClose={() => setActiveModal(null)}
+        onSuccess={() => { setActiveModal(null); refreshWallet(); }}
+      />
+      <SedadInitModal
+        visible={activeModal === 'sedad'}
+        onClose={() => setActiveModal(null)}
+        onInitiate={handleSedadInitiate}
+        submitting={sedadSubmitting}
+      />
+      <MasriviPayModal
+        visible={activeModal === 'masrivi'}
+        onClose={() => setActiveModal(null)}
+        onSuccess={() => { setActiveModal(null); refreshWallet(); }}
+      />
+    </>
   );
 }
 
@@ -1618,13 +1946,14 @@ const docStyles = StyleSheet.create({
 // ─── Bottom Tab Bar ──────────────────────────────────────────────────────────
 
 function BottomTabBar({
-  active, onSelect, adminUnread,
-}: { active: Tab; onSelect: (t: Tab) => void; adminUnread: number }) {
-  const tabs: { key: Tab; icon: 'scooter' | 'chat' | 'headset' | 'person' }[] = [
-    { key: 'courses', icon: 'scooter' },
-    { key: 'chats',   icon: 'chat' },
-    { key: 'admin',   icon: 'headset' },
-    { key: 'profil',  icon: 'person' },
+  active, onSelect, adminUnread, chatUnread,
+}: { active: Tab; onSelect: (t: Tab) => void; adminUnread: number; chatUnread: number }) {
+  const tabs: { key: Tab; icon: 'scooter' | 'history' | 'chat' | 'headset' | 'person' }[] = [
+    { key: 'courses',    icon: 'scooter'  },
+    { key: 'historique', icon: 'history'  },
+    { key: 'chats',      icon: 'chat'     },
+    { key: 'admin',      icon: 'headset'  },
+    { key: 'profil',     icon: 'person'   },
   ];
 
   return (
@@ -1632,7 +1961,7 @@ function BottomTabBar({
       <View style={styles.tabBar}>
         {tabs.map((t) => {
           const isActive = active === t.key;
-          const showBadge = t.key === 'admin' && adminUnread > 0;
+          const badgeCount = t.key === 'admin' ? adminUnread : t.key === 'chats' ? chatUnread : 0;
           return (
             <TouchableOpacity
               key={t.key}
@@ -1647,9 +1976,9 @@ function BottomTabBar({
                   color={isActive ? '#fff' : 'rgba(255,255,255,0.45)'}
                   strokeWidth={isActive ? 2 : 1.5}
                 />
-                {showBadge && (
+                {badgeCount > 0 && (
                   <View style={tabBadgeStyle.dot}>
-                    <Text style={tabBadgeStyle.text}>{adminUnread > 9 ? '9+' : adminUnread}</Text>
+                    <Text style={tabBadgeStyle.text}>{badgeCount > 9 ? '9+' : badgeCount}</Text>
                   </View>
                 )}
               </View>
@@ -2018,4 +2347,164 @@ const styles = StyleSheet.create({
   tabItemActive: { backgroundColor: 'rgba(255,255,255,0.14)' },
   tabIcon: { fontSize: 20, opacity: 0.5 },
   tabIconActive: { opacity: 1 },
+
+  // B-Pay guide
+  bpayCard: {
+    backgroundColor: CARD, marginHorizontal: 16, borderRadius: 16,
+    padding: 18, marginBottom: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+  },
+  bpayStepRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  bpayStepBubble: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: PRIMARY, justifyContent: 'center', alignItems: 'center',
+  },
+  bpayStepNum: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  bpayStepTitle: { fontSize: 12, fontWeight: '700', color: TEXT2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  bpayStepDesc: { fontSize: 14, color: TEXT, lineHeight: 20, marginBottom: 12 },
+  bpayFieldRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  bpayFieldLabel: { fontSize: 12, color: TEXT2, marginBottom: 2 },
+  bpayFieldValue: { fontSize: 18, fontWeight: '700', color: TEXT },
+  bpayCopyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: PRIMARY, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9,
+  },
+  bpayCopyBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  bpayHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: BG, borderRadius: 8, padding: 10,
+  },
+  bpayHintText: { color: TEXT2, fontSize: 13 },
+  bpayBankilyCard: {
+    borderRadius: 12, overflow: 'hidden',
+    borderWidth: 1, borderColor: BORDER, marginTop: 4,
+  },
+  bpayBankilyHeader: {
+    backgroundColor: '#009EBD', paddingVertical: 14, paddingHorizontal: 16, alignItems: 'center', gap: 4,
+  },
+  bpayBankilyTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  bpayBankilyIconWrap: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)', justifyContent: 'center', alignItems: 'center',
+  },
+  bpayBankilySub: { color: 'rgba(255,255,255,0.75)', fontSize: 12 },
+  bpayCodePreview: { alignItems: 'center', paddingVertical: 16, gap: 10 },
+  bpayCodeCircle: {
+    width: 80, height: 80, borderRadius: 40,
+    borderWidth: 2.5, borderColor: BRAND,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  bpayCodeCircleText: { fontSize: 20, fontWeight: '800', color: BRAND, letterSpacing: 4 },
+  bpayCodePreviewLabel: { fontSize: 13, color: TEXT2 },
+  bpayFooter: {
+    backgroundColor: CARD, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20,
+    borderTopWidth: 1, borderTopColor: BORDER,
+  },
+  bpayFooterTotal: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  bpayFooterLabel: { fontSize: 14, color: TEXT },
+  bpayFooterAmount: { fontSize: 16, fontWeight: '800', color: TEXT, flex: 1 },
+  bpayFooterBtns: { flexDirection: 'row', gap: 10 },
+  bpayRetourBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: 12,
+    borderWidth: 1.5, borderColor: BORDER, alignItems: 'center',
+  },
+  bpayRetourBtnText: { fontSize: 15, fontWeight: '600', color: TEXT },
+  bpayContinuerBtn: {
+    flex: 2, paddingVertical: 14, borderRadius: 12,
+    backgroundColor: BRAND, alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'center', gap: 6,
+  },
+  bpayContinuerBtnFull: {
+    backgroundColor: BRAND, borderRadius: 12, paddingVertical: 16,
+    alignItems: 'center', marginTop: 8,
+    flexDirection: 'row', justifyContent: 'center', gap: 6,
+  },
+  bpayContinuerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  // Portail de recharge
+  portalSoldeRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#ECECEC',
+  },
+  portalSoldeLabel: { fontSize: 20, fontWeight: '600', color: TEXT },
+  portalSoldeAmount: { fontSize: 22, fontWeight: '800', color: '#4CAF50' },
+  portalDivider: { height: 1, backgroundColor: '#D0D0D0', marginHorizontal: 0, marginBottom: 4 },
+  portalCard: {
+    backgroundColor: '#D8D8D8', marginHorizontal: 0, marginBottom: 4,
+    paddingVertical: 18, paddingHorizontal: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12,
+  },
+  portalCardLogo: { width: 120, height: 44 },
+  portalCardLabel: { fontSize: 16, fontWeight: '700', color: TEXT },
+
+  // Modals
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  modalBox: {
+    backgroundColor: CARD, borderRadius: 8, padding: 20,
+    width: '85%', shadowColor: '#000', shadowOpacity: 0.2,
+    shadowRadius: 12, elevation: 8,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: TEXT, marginBottom: 16 },
+  modalInput: {
+    fontSize: 15, color: TEXT, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: BORDER,
+  },
+  modalDivider: { height: 1, backgroundColor: BORDER },
+  modalBtns: {
+    flexDirection: 'row', justifyContent: 'flex-end', gap: 24,
+    marginTop: 20,
+  },
+  modalBtnCancel: { fontSize: 14, fontWeight: '700', color: BRAND },
+  modalBtnOk: { fontSize: 14, fontWeight: '700', color: BRAND },
+
+  // Sedad guide
+  sedadStepBubble: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: '#8B7535', justifyContent: 'center', alignItems: 'center',
+  },
+  sedadCodeBox: {
+    backgroundColor: BG, borderRadius: 10, padding: 16, alignItems: 'center', marginBottom: 12,
+  },
+  sedadCodeLabel: { fontSize: 13, color: TEXT2, marginBottom: 4 },
+  sedadCodeValue: { fontSize: 26, fontWeight: '800', color: TEXT, letterSpacing: 2 },
+  sedadCopyBtnFull: {
+    backgroundColor: PRIMARY, borderRadius: 10, paddingVertical: 14,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+  },
+  sedadCopyBtnFullText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  sedadPayIconBox: {
+    borderWidth: 1, borderColor: BORDER, borderRadius: 12,
+    padding: 14, alignItems: 'center', gap: 6, minWidth: 80,
+  },
+  sedadPayIconLabel: { fontSize: 11, fontWeight: '600', color: TEXT2 },
+  sedadMockScreen: {
+    borderWidth: 1, borderColor: BORDER, borderRadius: 10, overflow: 'hidden', marginTop: 4,
+  },
+  sedadMockTitle: { fontSize: 14, fontWeight: '700', color: TEXT, textAlign: 'center', padding: 10, borderBottomWidth: 0.5, borderBottomColor: BORDER },
+  sedadMockTabs: { flexDirection: 'row', gap: 8, padding: 8 },
+  sedadMockTabActive: { backgroundColor: '#E6F2EA', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
+  sedadMockTabActiveText: { fontSize: 12, color: '#2E7D32', fontWeight: '600' },
+  sedadMockTabText: { fontSize: 12, color: TEXT2, paddingVertical: 4 },
+  sedadMockHint: { fontSize: 11, color: TEXT2, paddingHorizontal: 10, marginBottom: 6 },
+  sedadMockInput: { height: 28, borderWidth: 1, borderColor: BORDER, borderRadius: 4, marginHorizontal: 10, marginBottom: 8 },
+  sedadMockBtns: { flexDirection: 'row', gap: 8, paddingHorizontal: 10, paddingBottom: 10 },
+  sedadMockPayBtn: { backgroundColor: '#4CAF50', borderRadius: 6, paddingHorizontal: 16, paddingVertical: 6 },
+  sedadMockPayBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  sedadMockScanBtn: { borderWidth: 1, borderColor: BORDER, borderRadius: 6, paddingHorizontal: 16, paddingVertical: 6 },
+  sedadMockScanBtnText: { fontSize: 12, color: TEXT2 },
+  sedadFooter: {
+    backgroundColor: CARD, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20,
+    borderTopWidth: 1, borderTopColor: BORDER,
+  },
+  sedadFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sedadFooterAmount: { fontSize: 17, fontWeight: '800', color: TEXT },
+  sedadRetourBtn: {
+    borderWidth: 1.5, borderColor: BORDER, borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center',
+  },
+  sedadRetourBtnText: { fontSize: 15, fontWeight: '600', color: TEXT },
 });

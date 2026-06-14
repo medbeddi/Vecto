@@ -31,9 +31,22 @@ router.get('/wallet', requireAuth, async (req, res) => {
 // POST /api/wallet/recharge — demande de rechargement (admin valide manuellement)
 router.post('/wallet/recharge', requireAuth, async (req, res) => {
   try {
-    const { amount, provider } = req.body;
+    const { amount, provider, bpayCode, phoneNumber } = req.body;
     if (!amount || amount < 100) return res.status(400).json({ error: 'AMOUNT_TOO_LOW' });
     if (!['bankily', 'sedad', 'masrivi'].includes(provider)) return res.status(400).json({ error: 'INVALID_PROVIDER' });
+
+    let description = `Rechargement ${provider} — ${amount} MRU`;
+    let referenceCode = null;
+
+    if (provider === 'bankily' && bpayCode) {
+      description += ` | B-Pay: ${bpayCode}`;
+      if (phoneNumber) description += ` | Tél: ${phoneNumber}`;
+    }
+
+    if (provider === 'sedad') {
+      referenceCode = Math.floor(100000 + Math.random() * 900000).toString();
+      description += ` | Réf: ${referenceCode}`;
+    }
 
     const wallet = await ensureWallet(req.driver.id);
     const [tx] = await db('wallet_transactions')
@@ -41,12 +54,12 @@ router.post('/wallet/recharge', requireAuth, async (req, res) => {
         wallet_id: wallet.id,
         amount,
         type: 'recharge',
-        description: `Rechargement ${provider} — ${amount} MRU`,
+        description,
         status: 'pending',
       })
       .returning('*');
 
-    res.json({ transaction: tx, message: 'Demande envoyée. En attente de validation.' });
+    res.json({ transaction: tx, referenceCode, message: 'Demande envoyée. En attente de validation.' });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
