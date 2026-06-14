@@ -3,7 +3,6 @@ export async function up(knex) {
     ALTER TABLE deliveries
       ADD COLUMN IF NOT EXISTS last_broadcast_at TIMESTAMPTZ
   `);
-  // Initialiser avec created_at pour les lignes existantes
   await knex.raw(`
     UPDATE deliveries SET last_broadcast_at = created_at
     WHERE last_broadcast_at IS NULL
