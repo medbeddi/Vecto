@@ -160,6 +160,21 @@ router.get('/drivers/me', requireAuth, async (req, res) => {
   }
 });
 
+// PATCH /api/drivers/me — mise à jour du nom du livreur
+router.patch('/drivers/me', requireAuth, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || typeof name !== 'string' || name.trim().length < 2) {
+      return res.status(400).json({ error: 'INVALID_NAME' });
+    }
+    const trimmed = name.trim();
+    await db('drivers').where({ id: req.driver.id }).update({ name: trimmed });
+    res.json({ ok: true, driver: { name: trimmed } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 // PATCH /api/drivers/me/documents — sauvegarde les URLs des documents + matricule
 router.patch('/drivers/me/documents', requireAuth, validate(documentsSchema), async (req, res) => {
   const allowed = [

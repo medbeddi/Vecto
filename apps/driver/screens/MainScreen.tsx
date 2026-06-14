@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -140,13 +141,22 @@ function CoursesTab() {
     startLocationTracking();
 
     // Re-poll après reconnexion pour rattraper les new_order manqués pendant la coupure
-    const onReconnect = () => loadAvailable();
+    const onReconnect = () => { loadAvailable(); loadActiveCourses(); };
     socketService.on('connect', onReconnect);
+
+    // Rechargement immédiat quand l'app revient au premier plan
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        loadAvailable();
+        loadActiveCourses();
+        if (!socketService.connected) socketService.connect().catch(() => {});
+      }
+    });
 
     // Rechargement périodique en cas de socket déconnecté
     const pollInterval = setInterval(() => {
       if (!socketService.connected) loadAvailable();
-    }, 15000);
+    }, 8000);
 
     const onNewOrder = (order: IncomingOrder) => {
       socketDeliveryIds.current.add(order.deliveryId);
@@ -219,6 +229,7 @@ function CoursesTab() {
       socketService.off('new_order', onNewOrder);
       socketService.off('order_taken', onOrderTaken);
       clearInterval(pollInterval);
+      appStateSubscription.remove();
       if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
       if (modalCountdownRef.current) clearInterval(modalCountdownRef.current);
     };
@@ -899,23 +910,57 @@ const adminChat = StyleSheet.create({
   },
 });
 
-// ─── Onglet Profil — avec sous-pages ─────────────────────────────────────────
-
-type ProfileView = 'main' | 'info' | 'wallet' | 'history' | 'documents';
+// ─── Onglet Profil — page unique complète ────────────────────────────────────
 
 function ProfilTab() {
-  const [view, setView] = useState<ProfileView>('main');
-  if (view === 'info')      return <PersonalInfoView onBack={() => setView('main')} />;
-  if (view === 'wallet')    return <WalletView       onBack={() => setView('main')} />;
-  if (view === 'history')   return <HistoryView      onBack={() => setView('main')} />;
-  if (view === 'documents') return <DocumentsView    onBack={() => setView('main')} />;
-  return <ProfileMainView onNavigate={setView} />;
-}
-
-// ── Page principale Profil ────────────────────────────────────────────────────
-function ProfileMainView({ onNavigate }: { onNavigate: (v: ProfileView) => void }) {
   const { driver, phone, logout } = useAuthStore();
-  const initial = driver?.name?.charAt(0).toUpperCase() ?? '?';
+  const [loading, setLoading] = useState(true);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [courses, setCourses] = useState<any[]>([]);
+  const [totalCourses, setTotalCourses] = useState<number>(0);
+
+  // Edit mode
+  const [editMode, setEditMode] = useState(false);
+  const [editName, setEditName] = useState(driver?.name ?? '');
+  const [saving, setSaving] = useState(false);
+
+  // Documents sub-page
+  const [showDocs, setShowDocs] = useState(false);
+  // Wallet recharge sub-page
+  const [showWallet, setShowWallet] = useState(false);
+
+  const initial = (editName || driver?.name)?.charAt(0).toUpperCase() ?? '?';
+
+  useEffect(() => {
+    setEditName(driver?.name ?? '');
+    Promise.all([
+      api<{ balance: number; transactions: any[] }>('/api/wallet'),
+      api<{ deliveries: any[] }>('/api/deliveries/history'),
+    ])
+      .then(([walletRes, histRes]) => {
+        setBalance(walletRes.balance ?? 0);
+        setTransactions(walletRes.transactions ?? []);
+        const deliveries = histRes.deliveries ?? [];
+        setCourses(deliveries.slice(0, 10));
+        setTotalCourses(deliveries.length);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const saveProfile = async () => {
+    if (!editName.trim()) { Alert.alert('Erreur', 'Le nom ne peut pas être vide.'); return; }
+    setSaving(true);
+    try {
+      await api('/api/drivers/me', { method: 'PATCH', body: { name: editName.trim() } });
+      setEditMode(false);
+    } catch {
+      Alert.alert('Erreur', 'Impossible de sauvegarder les modifications.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleLogout = () =>
     Alert.alert('Déconnexion', 'Voulez-vous vous déconnecter ?', [
@@ -923,74 +968,229 @@ function ProfileMainView({ onNavigate }: { onNavigate: (v: ProfileView) => void 
       { text: 'Déconnecter', style: 'destructive', onPress: logout },
     ]);
 
+  if (showDocs) return <DocumentsView onBack={() => setShowDocs(false)} />;
+  if (showWallet) return <WalletView onBack={() => setShowWallet(false)} />;
+
   return (
     <ScrollView style={{ flex: 1, backgroundColor: BG }} contentContainerStyle={{ paddingBottom: 40 }}>
-      {/* Header sombre */}
-      <View style={styles.header}>
-        <Text style={styles.headerBrand}>Mon compte</Text>
+      {/* Header */}
+      <View style={[styles.header, { justifyContent: 'space-between' }]}>
+        <Text style={styles.headerBrand}>Mon profil</Text>
+        {editMode ? (
+          <TouchableOpacity
+            style={profilStyles.saveBtn}
+            onPress={saveProfile}
+            disabled={saving}
+            activeOpacity={0.8}
+          >
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={profilStyles.saveBtnText}>Enregistrer</Text>}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={profilStyles.editHeaderBtn}
+            onPress={() => setEditMode(true)}
+            activeOpacity={0.8}
+          >
+            <Icon name="edit" size={16} color="#fff" strokeWidth={1.75} />
+            <Text style={profilStyles.editHeaderBtnText}>Modifier</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Avatar + nom + rating */}
-      <View style={styles.profileHero}>
-        <View style={styles.profileAvatarWrap}>
-          <View style={styles.profileAvatar}>
-            <Text style={styles.profileAvatarText}>{initial}</Text>
+      {/* Hero — avatar + nom + téléphone */}
+      <View style={profilStyles.hero}>
+        <View style={profilStyles.avatarWrap}>
+          <View style={profilStyles.avatar}>
+            <Text style={profilStyles.avatarText}>{initial}</Text>
           </View>
           <View style={styles.profileAvatarBadge}>
             <Text style={{ fontSize: 10, color: '#fff' }}>★</Text>
           </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.profileName}>{driver?.name ?? '—'}</Text>
-          <Text style={styles.profileRating}>★ 4.8 · 248 courses</Text>
+        <View style={{ flex: 1, gap: 4 }}>
+          {editMode ? (
+            <TextInput
+              style={profilStyles.nameInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Votre nom"
+              placeholderTextColor={TEXT2}
+              autoFocus
+            />
+          ) : (
+            <Text style={profilStyles.heroName}>{driver?.name ?? '—'}</Text>
+          )}
+          <Text style={profilStyles.heroPhone}>{phone ?? '—'}</Text>
           <View style={styles.verifiedBadge}>
             <Text style={styles.verifiedText}>Compte vérifié</Text>
           </View>
         </View>
       </View>
 
-      {/* Wallet card */}
-      <TouchableOpacity style={styles.walletCard} onPress={() => onNavigate('wallet')} activeOpacity={0.85}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.walletLabel}>Solde disponible</Text>
-          <Text style={styles.walletAmount}>1 250 MRU</Text>
+      {/* Stats row */}
+      <View style={profilStyles.statsRow}>
+        <View style={profilStyles.statItem}>
+          <Text style={profilStyles.statValue}>{totalCourses}</Text>
+          <Text style={profilStyles.statLabel}>Courses</Text>
         </View>
-        <View style={styles.walletArrow}>
-          <Icon name="chevron-right" size={20} color="#fff" strokeWidth={2} />
+        <View style={profilStyles.statDivider} />
+        <View style={profilStyles.statItem}>
+          <Text style={profilStyles.statValue}>★ 4.8</Text>
+          <Text style={profilStyles.statLabel}>Note</Text>
         </View>
-      </TouchableOpacity>
+        <View style={profilStyles.statDivider} />
+        <View style={profilStyles.statItem}>
+          <Text style={profilStyles.statValue}>Jan 2025</Text>
+          <Text style={profilStyles.statLabel}>Membre depuis</Text>
+        </View>
+      </View>
 
-      {/* Menu */}
-      <View style={styles.menuCard}>
-        <PMenuItem
-          iconName="user" iconBg="#EBF5FF" iconColor="#1565C0"
-          label="Informations personnelles" sub="Nom, téléphone"
-          onPress={() => onNavigate('info')}
-        />
-        <PMenuItem
-          iconName="wallet" iconBg="#FFF3E0" iconColor="#E65100"
-          label="Wallet & Transactions" sub="Recharge, historique"
-          onPress={() => onNavigate('wallet')}
-        />
-        <PMenuItem
-          iconName="history" iconBg="#F0F0F0" iconColor="#555"
-          label="Historique des courses" sub="Courses passées, revenus"
-          onPress={() => onNavigate('history')}
-        />
-        <PMenuItem
-          iconName="file-text" iconBg="#EDE7F6" iconColor="#5E35B1"
-          label="Mes documents" sub="Carte grise, identité, photo"
-          onPress={() => onNavigate('documents')}
-        />
-        <PMenuItem
-          iconName="bell" iconBg="#F0F0F0" iconColor="#555"
-          label="Notifications" sub="Activées"
-          last onPress={() => {}}
-        />
+      {/* Wallet card */}
+      <View style={profilStyles.walletSection}>
+        <View style={profilStyles.walletHeader}>
+          <Text style={profilStyles.walletTitle}>Mon Wallet</Text>
+          <TouchableOpacity onPress={() => setShowWallet(true)} activeOpacity={0.7}>
+            <Text style={profilStyles.walletLink}>Recharger →</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={profilStyles.walletCard}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.walletLabel}>Solde disponible</Text>
+            <Text style={styles.walletAmount}>
+              {balance !== null ? `${balance.toFixed(0)} MRU` : '— MRU'}
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 2 }}>
+              Minimum requis : 200 MRU
+            </Text>
+          </View>
+        </View>
+        {/* Dernières transactions */}
+        {transactions.length > 0 && (
+          <View style={[styles.infoCard, { marginHorizontal: 0, marginTop: 10, marginBottom: 0 }]}>
+            <Text style={styles.sectionLabel}>DERNIÈRES TRANSACTIONS</Text>
+            {transactions.slice(0, 4).map((tx, i) => {
+              const isPos = tx.amount > 0;
+              const date = new Date(tx.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+              return (
+                <View
+                  key={tx.id}
+                  style={[styles.histRow, i === Math.min(transactions.length, 4) - 1 && { borderBottomWidth: 0 }]}
+                >
+                  <View style={[styles.histIcon, { backgroundColor: isPos ? 'rgba(52,199,89,.12)' : 'rgba(255,149,0,.12)' }]}>
+                    <Icon name={isPos ? 'arrow-down-left' : 'arrow-up-right'} size={16} color={isPos ? '#1a7a35' : '#b86800'} strokeWidth={2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.histLabel}>{tx.description ?? tx.type}</Text>
+                    <Text style={styles.histDate}>{date}</Text>
+                  </View>
+                  <Text style={[styles.histAmount, { color: isPos ? '#1a7a35' : '#b86800' }]}>
+                    {isPos ? '+' : '-'}{Math.abs(tx.amount).toFixed(0)} MRU
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      {/* Historique des courses */}
+      <View style={profilStyles.section}>
+        <View style={profilStyles.sectionHeaderRow}>
+          <Text style={profilStyles.sectionTitle}>Mes courses</Text>
+          <Text style={profilStyles.sectionCount}>{totalCourses} au total</Text>
+        </View>
+        {loading ? (
+          <ActivityIndicator color={PRIMARY} style={{ marginVertical: 20 }} />
+        ) : courses.length === 0 ? (
+          <View style={[styles.infoCard, { alignItems: 'center', paddingVertical: 24 }]}>
+            <Text style={{ fontSize: 32 }}>🛵</Text>
+            <Text style={[styles.emptyText, { fontSize: 14, marginTop: 8 }]}>Aucune course terminée</Text>
+          </View>
+        ) : (
+          <View style={[styles.infoCard, { gap: 0 }]}>
+            {courses.map((c, i) => {
+              const isDone = c.status === 'done';
+              const statusLabel = isDone ? 'Livrée' : 'Annulée';
+              const statusColor = isDone ? '#1a7a35' : '#c0392b';
+              const date = new Date(c.createdAt).toLocaleDateString('fr-FR', {
+                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+              });
+              return (
+                <View
+                  key={c.id}
+                  style={[styles.histCourseRow, i === courses.length - 1 && { borderBottomWidth: 0 }]}
+                >
+                  <View style={styles.histCourseIcon}>
+                    <Text style={{ color: '#fff', fontSize: 16 }}>🛵</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.histCourseLabel}>{c.clientAlias ?? 'Course'}</Text>
+                    <Text style={styles.histCourseDate}>{date}</Text>
+                    {c.price != null && (
+                      <Text style={{ fontSize: 13, color: '#1a7a35', fontWeight: '600', marginTop: 2 }}>
+                        {c.price} MRU
+                      </Text>
+                    )}
+                  </View>
+                  <View style={[styles.histCourseBadge, { backgroundColor: statusColor + '20' }]}>
+                    <Text style={[styles.histCourseBadgeText, { color: statusColor }]}>{statusLabel}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      {/* Informations personnelles */}
+      <View style={profilStyles.section}>
+        <View style={profilStyles.sectionHeaderRow}>
+          <Text style={profilStyles.sectionTitle}>Informations</Text>
+        </View>
+        <View style={styles.infoCard}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoKey}>Nom</Text>
+            {editMode ? (
+              <TextInput
+                style={profilStyles.inlineInput}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Votre nom"
+                placeholderTextColor={TEXT2}
+              />
+            ) : (
+              <Text style={styles.infoVal}>{driver?.name ?? '—'}</Text>
+            )}
+          </View>
+          <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+            <Text style={styles.infoKey}>Téléphone</Text>
+            <Text style={styles.infoVal}>{phone ?? '—'}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Documents */}
+      <View style={profilStyles.section}>
+        <TouchableOpacity
+          style={profilStyles.docsBtn}
+          onPress={() => setShowDocs(true)}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.menuIconWrap, { backgroundColor: '#EDE7F6' }]}>
+            <Icon name="file-text" size={20} color="#5E35B1" strokeWidth={1.75} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.menuLabel}>Mes documents</Text>
+            <Text style={styles.menuSub}>Carte grise, identité, photo véhicule</Text>
+          </View>
+          <Icon name="chevron-right" size={18} color={TEXT2} strokeWidth={1.5} />
+        </TouchableOpacity>
       </View>
 
       {/* Déconnexion */}
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.75}>
+      <TouchableOpacity style={[styles.logoutBtn, { marginTop: 8 }]} onPress={handleLogout} activeOpacity={0.75}>
         <Icon name="logout" size={18} color="#e53935" />
         <Text style={styles.logoutText}>Se déconnecter</Text>
       </TouchableOpacity>
@@ -998,82 +1198,93 @@ function ProfileMainView({ onNavigate }: { onNavigate: (v: ProfileView) => void 
   );
 }
 
-function PMenuItem({
-  iconName, iconBg, iconColor = '#555', label, sub, last, onPress,
-}: {
-  iconName: any; iconBg: string; iconColor?: string; label: string; sub: string; last?: boolean; onPress: () => void;
-}) {
+const profilStyles = StyleSheet.create({
+  hero: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    padding: 20, backgroundColor: CARD,
+    borderBottomWidth: 0.5, borderBottomColor: BORDER,
+  },
+  avatarWrap: { position: 'relative' },
+  avatar: {
+    width: 68, height: 68, borderRadius: 34,
+    backgroundColor: '#C7E0F4', justifyContent: 'center', alignItems: 'center',
+  },
+  avatarText: { fontSize: 28, fontWeight: '800', color: '#1565C0' },
+  heroName: { fontSize: 20, fontWeight: '800', color: TEXT },
+  heroPhone: { fontSize: 13, color: TEXT2 },
+  nameInput: {
+    fontSize: 18, fontWeight: '700', color: TEXT,
+    borderBottomWidth: 1.5, borderBottomColor: PRIMARY,
+    paddingVertical: 2, paddingHorizontal: 0,
+  },
+  statsRow: {
+    flexDirection: 'row', backgroundColor: CARD,
+    paddingVertical: 16, paddingHorizontal: 8,
+    marginBottom: 12,
+  },
+  statItem: { flex: 1, alignItems: 'center' },
+  statValue: { fontSize: 17, fontWeight: '800', color: TEXT },
+  statLabel: { fontSize: 11, color: TEXT2, marginTop: 2 },
+  statDivider: { width: 0.5, backgroundColor: BORDER, marginVertical: 4 },
+  walletSection: {
+    marginHorizontal: 16, marginBottom: 16,
+  },
+  walletHeader: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 10,
+  },
+  walletTitle: { fontSize: 17, fontWeight: '700', color: TEXT },
+  walletLink: { fontSize: 14, color: PRIMARY, fontWeight: '600' },
+  walletCard: {
+    borderRadius: 18, padding: 20,
+    backgroundColor: PRIMARY,
+    flexDirection: 'row', alignItems: 'center',
+  },
+  section: { marginHorizontal: 16, marginBottom: 12 },
+  sectionHeaderRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 10,
+  },
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: TEXT },
+  sectionCount: { fontSize: 13, color: TEXT2 },
+  inlineInput: {
+    fontSize: 14, color: TEXT, flex: 1, textAlign: 'right',
+    borderBottomWidth: 1, borderBottomColor: PRIMARY,
+    paddingVertical: 2,
+  },
+  docsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: CARD, borderRadius: 16,
+    paddingHorizontal: 18, paddingVertical: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
+  },
+  editHeaderBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+  },
+  editHeaderBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  saveBtn: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 16, paddingVertical: 7, borderRadius: 20,
+    minWidth: 90, alignItems: 'center',
+  },
+  saveBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+});
+
+function HistItem({ iconName, iconColor, iconBg, label, date, amount, amountColor, last }:
+  { iconName: any; iconColor: string; iconBg: string; label: string; date: string; amount: string; amountColor: string; last?: boolean }) {
   return (
-    <TouchableOpacity
-      style={[styles.menuItem, last && { borderBottomWidth: 0 }]}
-      onPress={onPress}
-      activeOpacity={0.6}
-    >
-      <View style={[styles.menuIconWrap, { backgroundColor: iconBg }]}>
-        <Icon name={iconName} size={20} color={iconColor} strokeWidth={1.75} />
+    <View style={[styles.histRow, last && { borderBottomWidth: 0 }]}>
+      <View style={[styles.histIcon, { backgroundColor: iconBg }]}>
+        <Icon name={iconName} size={18} color={iconColor} strokeWidth={2} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.menuLabel}>{label}</Text>
-        <Text style={styles.menuSub}>{sub}</Text>
+        <Text style={styles.histLabel}>{label}</Text>
+        <Text style={styles.histDate}>{date}</Text>
       </View>
-      <Icon name="chevron-right" size={18} color={TEXT2} strokeWidth={1.5} />
-    </TouchableOpacity>
-  );
-}
-
-// ── Sous-page: Informations personnelles ──────────────────────────────────────
-function PersonalInfoView({ onBack }: { onBack: () => void }) {
-  const { driver, phone } = useAuthStore();
-  const [editing, setEditing] = useState(false);
-  const initial = driver?.name?.charAt(0).toUpperCase() ?? '?';
-
-  return (
-    <ScrollView style={{ flex: 1, backgroundColor: BG }} contentContainerStyle={{ paddingBottom: 40 }}>
-      <View style={styles.subHeader}>
-        <TouchableOpacity onPress={onBack} style={styles.subBackBtn}>
-          <Icon name="chevron-left" size={24} color={TEXT} strokeWidth={2} />
-        </TouchableOpacity>
-        <Text style={styles.subTitle}>Informations personnelles</Text>
-      </View>
-
-      {/* Avatar + nom */}
-      <View style={styles.subProfileRow}>
-        <View style={styles.subAvatar}>
-          <Text style={styles.subAvatarText}>{initial}</Text>
-        </View>
-        <View>
-          <Text style={styles.subProfileName}>{driver?.name ?? '—'}</Text>
-          <Text style={styles.subProfilePhone}>{phone ?? '—'}</Text>
-        </View>
-      </View>
-
-      {/* MES INFORMATIONS */}
-      <View style={styles.infoCard}>
-        <Text style={styles.sectionLabel}>MES INFORMATIONS</Text>
-        <InfoRow label="Nom"      value={driver?.name ?? '—'} />
-        <InfoRow label="Téléphone" value={phone ?? '—'} last />
-        <TouchableOpacity style={styles.editBtn} activeOpacity={0.7}>
-          <Icon name="edit" size={16} color={TEXT2} strokeWidth={1.75} />
-          <Text style={styles.editBtnText}>Modifier</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* STATISTIQUES */}
-      <View style={styles.infoCard}>
-        <Text style={styles.sectionLabel}>STATISTIQUES</Text>
-        <InfoRow label="Membre depuis" value="Janvier 2025" colored />
-        <InfoRow label="Total courses"  value="248" />
-        <InfoRow label="Note moyenne"   value="★ 4.8" last colored />
-      </View>
-    </ScrollView>
-  );
-}
-
-function InfoRow({ label, value, last, colored }: { label: string; value: string; last?: boolean; colored?: boolean }) {
-  return (
-    <View style={[styles.infoRow, last && { borderBottomWidth: 0 }]}>
-      <Text style={styles.infoKey}>{label}</Text>
-      <Text style={[styles.infoVal, colored && { color: '#E85D04' }]}>{value}</Text>
+      <Text style={[styles.histAmount, { color: amountColor }]}>{amount}</Text>
     </View>
   );
 }
@@ -1197,80 +1408,6 @@ function WalletView({ onBack }: { onBack: () => void }) {
             })}
           </View>
         </>
-      )}
-    </ScrollView>
-  );
-}
-
-function HistItem({ iconName, iconColor, iconBg, label, date, amount, amountColor, last }:
-  { iconName: any; iconColor: string; iconBg: string; label: string; date: string; amount: string; amountColor: string; last?: boolean }) {
-  return (
-    <View style={[styles.histRow, last && { borderBottomWidth: 0 }]}>
-      <View style={[styles.histIcon, { backgroundColor: iconBg }]}>
-        <Icon name={iconName} size={18} color={iconColor} strokeWidth={2} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.histLabel}>{label}</Text>
-        <Text style={styles.histDate}>{date}</Text>
-      </View>
-      <Text style={[styles.histAmount, { color: amountColor }]}>{amount}</Text>
-    </View>
-  );
-}
-
-// ── Sous-page: Historique des courses ─────────────────────────────────────────
-function HistoryView({ onBack }: { onBack: () => void }) {
-  const [courses, setCourses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api<{ deliveries: any[] }>('/api/deliveries/history')
-      .then((d) => setCourses(d.deliveries ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  return (
-    <ScrollView style={{ flex: 1, backgroundColor: BG }} contentContainerStyle={{ paddingBottom: 40 }}>
-      <View style={styles.subHeader}>
-        <TouchableOpacity onPress={onBack} style={styles.subBackBtn}>
-          <Icon name="chevron-left" size={24} color={TEXT} strokeWidth={2} />
-        </TouchableOpacity>
-        <Text style={styles.subTitle}>Historique</Text>
-      </View>
-
-      {loading ? (
-        <ActivityIndicator color={PRIMARY} style={{ marginTop: 40 }} />
-      ) : courses.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>📋</Text>
-          <Text style={styles.emptyText}>Aucune course terminée</Text>
-        </View>
-      ) : (
-        <View style={[styles.infoCard, { gap: 0 }]}>
-          {courses.map((c, i) => {
-            const isDone = c.status === 'done';
-            const statusLabel = isDone ? 'Livrée' : 'Annulée';
-            const statusColor = isDone ? '#1a7a35' : '#c0392b';
-            const date = new Date(c.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-            return (
-              <View key={c.id} style={[styles.histCourseRow, i === courses.length - 1 && { borderBottomWidth: 0 }]}>
-                <View style={styles.histCourseIcon}>
-                  <Text style={{ color: '#fff', fontSize: 16 }}>🛵</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.histCourseLabel}>{c.clientAlias ?? `Course`}</Text>
-                  <Text style={styles.histCourseDate}>{date}</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                  <View style={[styles.histCourseBadge, { backgroundColor: statusColor + '20' }]}>
-                    <Text style={[styles.histCourseBadgeText, { color: statusColor }]}>{statusLabel}</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
-        </View>
       )}
     </ScrollView>
   );
