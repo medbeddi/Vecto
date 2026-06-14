@@ -43,9 +43,9 @@ async function handleUpload(req, res) {
     }
   }
 
-  // Fallback : URL locale
-  const host = `${req.protocol}://${req.headers.host}`;
-  res.json({ url: `${host}/uploads/${req.file.filename}`, key: req.file.filename });
+  // Fallback : URL locale (PUBLIC_URL prioritaire pour Railway/proxy)
+  const base = env.PUBLIC_URL || `${req.protocol}://${req.headers.host}`;
+  res.json({ url: `${base}/uploads/${req.file.filename}`, key: req.file.filename });
 }
 
 const router = Router();

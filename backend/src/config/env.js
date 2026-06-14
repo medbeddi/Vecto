@@ -67,6 +67,11 @@ export const env = {
     ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
     : '*',
 
+  // URL publique du serveur (ex: https://vecto-production.up.railway.app)
+  // Utilisée pour construire les URLs de médias uploadés. Sans cette variable,
+  // l'URL est déduite du header Host de la requête (fonctionnel mais moins fiable sur Railway).
+  PUBLIC_URL: (process.env.PUBLIC_URL || '').replace(/\/$/, ''),
+
   // Serveur
   PORT: parseInt(process.env.PORT || '3000', 10),
   NODE_ENV: process.env.NODE_ENV || 'development',

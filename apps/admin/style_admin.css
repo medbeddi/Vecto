@@ -639,6 +639,13 @@ input:focus, textarea:focus { outline: none; }
 .cc-audio-dur { font-size: 11px; opacity: .65; font-weight: 500; }
 /* Image dans la bulle */
 .cc-msg-img { max-width: 200px; border-radius: 8px; display: block; cursor: pointer; }
+/* Message système (appel, événement) */
+.cc-msg-system-wrap { justify-content: center; }
+.cc-msg-system-bubble {
+  font-size: 12px; color: var(--text-2); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 4px 12px; display: inline-block; max-width: 85%;
+}
 #cc-launch-rec-btn { color: var(--text-2); border: 1.5px solid var(--border); border-radius: var(--radius-md); }
 #cc-launch-rec-btn.recording { color: #FF3B30; border-color: #FF3B30; background: rgba(255,59,48,.08); animation: pulse-red 1s infinite; }
 @keyframes pulse-red { 0%,100% { opacity: 1 } 50% { opacity: .55 } }

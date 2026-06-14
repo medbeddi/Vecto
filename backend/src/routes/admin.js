@@ -775,7 +775,7 @@ router.post('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) 
     if (!content?.trim()) return res.status(400).json({ error: 'EMPTY_MESSAGE' });
     const driver = await db('drivers').where({ id: req.params.driverId }).first('id', 'name');
     if (!driver) return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
-    const msgType = ['text', 'audio', 'image'].includes(type) ? type : 'text';
+    const msgType = ['text', 'audio', 'image', 'call'].includes(type) ? type : 'text';
     const [msg] = await db('cc_driver_messages')
       .insert({ driver_id: req.params.driverId, sender_role: 'admin', type: msgType, content: content.trim() })
       .returning('id', 'sender_role', 'type', 'content', 'created_at');
@@ -826,8 +826,8 @@ router.post('/admin/upload', requireCallCenter, adminUpload.single('file'), asyn
       console.error('[admin/upload] R2 failed, falling back to disk:', err.message);
     }
   }
-  const host = `${req.protocol}://${req.headers.host}`;
-  res.json({ url: `${host}/uploads/${req.file.filename}` });
+  const base = env.PUBLIC_URL || `${req.protocol}://${req.headers.host}`;
+  res.json({ url: `${base}/uploads/${req.file.filename}` });
 });
 
 export default router;

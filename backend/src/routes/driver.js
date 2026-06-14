@@ -186,8 +186,8 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
     const deliveries = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'pending')
-      // Seulement les ordres déjà broadcastés (last_broadcast_at non null)
-      .whereNotNull('deliveries.last_broadcast_at')
+      // Seulement les ordres dans la fenêtre active des 20s
+      .where('deliveries.last_broadcast_at', '>', db.raw("NOW() - INTERVAL '20 seconds'"))
       // Exclure les courses que ce livreur a explicitement refusées
       .whereNotExists(
         db('delivery_refusals')
@@ -380,7 +380,7 @@ router.post('/drivers/cc-chat', requireAuth, async (req, res) => {
   try {
     const { content, type = 'text' } = req.body;
     if (!content?.trim()) return res.status(400).json({ error: 'EMPTY_MESSAGE' });
-    const validTypes = ['text', 'audio', 'image'];
+    const validTypes = ['text', 'audio', 'image', 'call'];
     const msgType = validTypes.includes(type) ? type : 'text';
     const [msg] = await db('cc_driver_messages')
       .insert({ driver_id: req.driver.id, sender_role: 'driver', type: msgType, content: content.trim() })

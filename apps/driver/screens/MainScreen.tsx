@@ -439,7 +439,7 @@ function CoursesTab() {
             }}
             onExpire={(d) => {
               socketDeliveryIds.current.delete(d.id);
-              // Card stays visible — removed only by order_taken or explicit refusal
+              removeAvailable(d.id);
             }}
             accepting={accepting === item.id}
           />
@@ -633,6 +633,12 @@ function AdminChatTab() {
 
   const callCC = () => {
     if (!ccPhone) { Alert.alert('Indisponible', 'Le numéro du Call Center n\'est pas configuré.'); return; }
+    // Enregistrer l'appel dans le chat
+    api<{ message: CCMessage }>('/api/drivers/cc-chat', {
+      method: 'POST', body: { content: 'Appel vers le centre d\'appels', type: 'call' },
+    }).then(({ message }) => {
+      setMessages((prev) => [...prev, message]);
+    }).catch(() => {});
     Linking.openURL(`tel:${ccPhone}`);
   };
 
@@ -728,6 +734,7 @@ function CCBubble({ message }: { message: CCMessage }) {
   const time = new Date(message.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState<number | null>(null);
+  const [imgError, setImgError] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
@@ -766,13 +773,24 @@ function CCBubble({ message }: { message: CCMessage }) {
 
   const durStr = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
+  if (message.type === 'call') {
+    return (
+      <View style={adminChat.systemRow}>
+        <Text style={adminChat.systemText}>📞 {message.content || 'Appel'} · {time}</Text>
+      </View>
+    );
+  }
+
   let content: React.ReactNode;
   if (message.type === 'image') {
-    content = (
+    content = imgError ? (
+      <Text style={adminChat.imgError}>Image non disponible</Text>
+    ) : (
       <Image
         source={{ uri: message.content }}
         style={adminChat.msgImage}
         resizeMode="cover"
+        onError={() => setImgError(true)}
       />
     );
   } else if (message.type === 'audio') {
@@ -840,6 +858,9 @@ const adminChat = StyleSheet.create({
   textOut: { color: '#fff', fontSize: 15, lineHeight: 20 },
   time: { fontSize: 11, color: 'rgba(128,128,128,0.7)', alignSelf: 'flex-end' },
   msgImage: { width: 200, height: 150, borderRadius: 10 },
+  imgError: { color: TEXT2, fontSize: 13, opacity: 0.6, fontStyle: 'italic' },
+  systemRow: { alignItems: 'center', marginVertical: 4 },
+  systemText: { color: TEXT2, fontSize: 12, backgroundColor: SURFACE, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 3 },
   audioRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2, minWidth: 160 },
   audioPlayBtn: {
     width: 32, height: 32, borderRadius: 16,
