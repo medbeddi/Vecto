@@ -889,4 +889,30 @@ router.put('/admin/settings/tarif', requireAdmin, async (req, res) => {
   }
 });
 
+// ── Settings : créneau de diffusion des courses ───────────────────
+router.get('/admin/settings/creneau', requireAdmin, async (req, res) => {
+  try {
+    const rows = await db('app_settings').where('key', 'creneau_duree_min');
+    const val = rows[0] ? parseInt(rows[0].value, 10) : 3;
+    res.json({ duree_min: val });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+router.put('/admin/settings/creneau', requireAdmin, async (req, res) => {
+  try {
+    const { duree_min } = req.body;
+    if (typeof duree_min !== 'number' || !Number.isInteger(duree_min) || duree_min < 1 || duree_min > 60) {
+      return res.status(400).json({ error: 'INVALID_PARAMS' });
+    }
+    await db('app_settings')
+      .insert({ key: 'creneau_duree_min', value: String(duree_min), updated_at: new Date() })
+      .onConflict('key').merge(['value', 'updated_at']);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 export default router;

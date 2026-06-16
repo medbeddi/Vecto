@@ -77,7 +77,7 @@ router.post('/auth/login', loginLimiter, validate(loginSchema), async (req, res)
       return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
     }
 
-    await db('drivers').where({ id: driver.id }).update({ status: 'available' });
+    await db('drivers').where({ id: driver.id }).update({ status: 'available', is_available: true });
 
     const payload = { id: driver.id, name: driver.name };
     const accessToken = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_EXPIRES });
@@ -198,6 +198,9 @@ router.patch('/drivers/me/documents', requireAuth, validate(documentsSchema), as
 
 router.get('/deliveries/available', requireAuth, async (req, res) => {
   try {
+    const driverRow = await db('drivers').where({ id: req.driver.id }).first('is_available');
+    if (!driverRow?.is_available) return res.json({ deliveries: [] });
+
     const deliveries = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'pending')

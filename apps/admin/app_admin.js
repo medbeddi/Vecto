@@ -67,7 +67,7 @@ async function saveTarifConfig() {
     _tarifConfig = { base_km, base_prix, prix_par_km };
     statusEl.textContent = 'Sauvegardé !';
     statusEl.style.color = '#34C759';
-    setTimeout(function() { closeModal('modal-tarif'); statusEl.textContent = ''; }, 1200);
+    setTimeout(function() { statusEl.textContent = ''; }, 1500);
   } catch {
     statusEl.textContent = 'Erreur réseau.';
     statusEl.style.color = '#FF3B30';
@@ -397,7 +397,7 @@ function showPage(pageId) {
   var titles = {
     'p-stats': 'Statistiques', 'p-commandes': 'Commandes', 'p-livreurs': 'Livreurs',
     'p-clients': 'Clients', 'p-wallet': 'Wallets', 'p-callcenter': 'Call Center',
-    'p-tracking': 'Tracking Livreurs', 'p-users': 'Utilisateurs',
+    'p-tracking': 'Tracking Livreurs', 'p-users': 'Utilisateurs', 'p-config': 'Configurer',
   };
   document.getElementById('page-title').textContent = titles[pageId] || '';
   _currentPage = pageId;
@@ -423,6 +423,9 @@ function showPage(pageId) {
       initTrackingMap();
       loadTrackingDrivers();
     }, 100);
+  }
+  if (pageId === 'p-config') {
+    loadConfigPage();
   }
 }
 
@@ -663,6 +666,51 @@ async function toggleDriverMic() {
     btn.classList.add('recording');
   } catch {
     alert('Permission microphone refusée.');
+  }
+}
+
+/* ================================================================
+   PAGE CONFIGURER
+================================================================ */
+async function loadConfigPage() {
+  await loadTarifConfig();
+  var bkmEl  = document.getElementById('tarif-base-km');
+  var bpxEl  = document.getElementById('tarif-base-prix');
+  var ppkmEl = document.getElementById('tarif-prix-par-km');
+  if (bkmEl)  bkmEl.value  = _tarifConfig.base_km;
+  if (bpxEl)  bpxEl.value  = _tarifConfig.base_prix;
+  if (ppkmEl) ppkmEl.value = _tarifConfig.prix_par_km;
+  _updateTarifPreview();
+
+  try {
+    var r = await fetch(API + '/api/admin/settings/creneau', { headers: authHeaders() });
+    if (r.ok) {
+      var d = await r.json();
+      var el = document.getElementById('config-creneau');
+      if (el) el.value = d.duree_min;
+    }
+  } catch {}
+}
+
+async function saveCreneauConfig() {
+  var el = document.getElementById('config-creneau');
+  var statusEl = document.getElementById('creneau-status');
+  var val = parseInt(el ? el.value : '', 10);
+  if (!val || val < 1 || val > 60) {
+    if (statusEl) { statusEl.textContent = 'Valeur invalide (1–60 min).'; statusEl.style.color = '#FF3B30'; }
+    return;
+  }
+  try {
+    var r = await fetch(API + '/api/admin/settings/creneau', {
+      method: 'PUT',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ duree_min: val }),
+    });
+    if (!r.ok) throw new Error();
+    if (statusEl) { statusEl.textContent = 'Sauvegardé !'; statusEl.style.color = '#34C759'; }
+    setTimeout(function () { if (statusEl) statusEl.textContent = ''; }, 2000);
+  } catch {
+    if (statusEl) { statusEl.textContent = 'Erreur réseau.'; statusEl.style.color = '#FF3B30'; }
   }
 }
 

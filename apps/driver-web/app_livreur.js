@@ -47,12 +47,30 @@ function setTab(el, screenId) {
 }
 
 // ── Dispo ─────────────────────────────────────────────────────────────────────
-function toggleDispo() {
-  dispo = !dispo;
+function applyDispoUI(isAvailable) {
   var t = document.getElementById('toggle-dispo');
   var l = document.getElementById('dispo-label');
-  if (t) t.classList.toggle('active', dispo);
-  if (l) l.textContent = dispo ? 'Disponible' : 'Indisponible';
+  if (t) t.classList.toggle('active', isAvailable);
+  if (l) l.textContent = isAvailable ? 'Disponible' : 'Indisponible';
+}
+
+async function toggleDispo() {
+  var next = !dispo;
+  applyDispoUI(next);
+  dispo = next;
+  try {
+    await apiFetch('/api/drivers/me/availability', {
+      method: 'PATCH',
+      body: JSON.stringify({ isAvailable: next })
+    });
+    if (!next) { COURSES = []; renderCourses(); }
+    else { loadAvailableDeliveries(); }
+  } catch (e) {
+    // Rollback UI on error
+    dispo = !next;
+    applyDispoUI(dispo);
+    console.warn('toggleDispo error:', e);
+  }
 }
 
 // ── API helper ────────────────────────────────────────────────────────────────
@@ -166,6 +184,14 @@ async function handleSetup() {
   }
 }
 
+async function syncDispoFromServer() {
+  try {
+    var data = await apiFetch('/api/drivers/me');
+    dispo = !!data.driver.isAvailable;
+    applyDispoUI(dispo);
+  } catch (e) { console.warn('syncDispo:', e); }
+}
+
 function onAuthSuccess(data) {
   token = data.accessToken;
   driverInfo = data.driver;
@@ -174,6 +200,7 @@ function onAuthSuccess(data) {
   localStorage.setItem('vecto_phone', phoneState);
   updateMenuProfile();
   connectSocket();
+  syncDispoFromServer();
   loadAvailableDeliveries();
   loadActiveDeliveries();
   loadDocuments();
@@ -859,6 +886,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Déjà connecté — aller directement aux courses
     updateMenuProfile();
     connectSocket();
+    syncDispoFromServer();
     loadAvailableDeliveries();
     loadActiveDeliveries();
     loadDocuments();

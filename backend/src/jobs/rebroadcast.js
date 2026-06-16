@@ -2,14 +2,16 @@ import db from '../config/db.js';
 import { emitNewOrder } from '../services/socket.js';
 
 async function tick() {
-  const threeMinAgo = new Date(Date.now() - 3 * 60 * 1000);
+  const cfg = await db('app_settings').where('key', 'creneau_duree_min').first().catch(() => null);
+  const dureeMin = cfg ? parseInt(cfg.value, 10) : 3;
+  const cutoff = new Date(Date.now() - dureeMin * 60 * 1000);
   try {
     const rows = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'pending')
       .where(function () {
         // NULL = jamais broadcast (ou migration) → éligible immédiatement
-        this.where('deliveries.last_broadcast_at', '<', threeMinAgo)
+        this.where('deliveries.last_broadcast_at', '<', cutoff)
             .orWhereNull('deliveries.last_broadcast_at');
       })
       .select('deliveries.*', 'clients.alias');
