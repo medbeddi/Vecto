@@ -88,6 +88,24 @@ router.get('/admin/orders/active', requireAdmin, async (req, res) => {
   }
 });
 
+// ── Annuler une commande ──────────────────────────────────────────────────────
+router.patch('/admin/orders/:id/cancel', requireAdmin, async (req, res) => {
+  try {
+    const delivery = await db('deliveries').where({ id: req.params.id }).first('id', 'status');
+    if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
+    if (!['pending', 'assigned'].includes(delivery.status)) {
+      return res.status(409).json({ error: 'CANNOT_CANCEL' });
+    }
+    await db('deliveries').where({ id: req.params.id }).update({
+      status: 'cancelled',
+      archived_at: db.fn.now(),
+    });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 // ── Archives ─────────────────────────────────────────────────────────────────
 router.get('/admin/archives', requireAdmin, async (req, res) => {
   try {
@@ -828,6 +846,47 @@ router.post('/admin/upload', requireCallCenter, adminUpload.single('file'), asyn
   }
   const base = env.PUBLIC_URL || `${req.protocol}://${req.headers.host}`;
   res.json({ url: `${base}/uploads/${req.file.filename}` });
+});
+
+// ── Settings : tarification des courses ───────────────────────────
+router.get('/admin/settings/tarif', requireAdmin, async (req, res) => {
+  try {
+    const rows = await db('app_settings')
+      .whereIn('key', ['tarif_base_km', 'tarif_base_prix', 'tarif_par_km_supp']);
+    const s = {};
+    rows.forEach((r) => { s[r.key] = parseFloat(r.value); });
+    res.json({
+      base_km:    s.tarif_base_km      ?? 3,
+      base_prix:  s.tarif_base_prix    ?? 100,
+      prix_par_km: s.tarif_par_km_supp ?? 20,
+    });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+router.put('/admin/settings/tarif', requireAdmin, async (req, res) => {
+  try {
+    const { base_km, base_prix, prix_par_km } = req.body;
+    if (
+      typeof base_km !== 'number'      || base_km < 0 ||
+      typeof base_prix !== 'number'    || base_prix < 0 ||
+      typeof prix_par_km !== 'number'  || prix_par_km < 0
+    ) return res.status(400).json({ error: 'INVALID_PARAMS' });
+
+    const now = new Date();
+    await db('app_settings')
+      .insert([
+        { key: 'tarif_base_km',     value: String(base_km),     updated_at: now },
+        { key: 'tarif_base_prix',   value: String(base_prix),   updated_at: now },
+        { key: 'tarif_par_km_supp', value: String(prix_par_km), updated_at: now },
+      ])
+      .onConflict('key').merge(['value', 'updated_at']);
+
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
 });
 
 export default router;

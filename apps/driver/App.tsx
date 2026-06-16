@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View } from 'react-native';
+import SplashAnimation from './components/SplashAnimation';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
@@ -12,22 +13,23 @@ import ResetPasswordScreen from './screens/ResetPasswordScreen';
 import MainScreen from './screens/MainScreen';
 import ChatScreen from './screens/ChatScreen';
 import type { RootStackParamList } from './types';
-import { PRIMARY, BG, CARD, BORDER, TEXT } from './lib/config';
+import { BG, CARD, TEXT } from './lib/config';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   const { driver, isReady, initialize } = useAuthStore();
+  const [splashDone, setSplashDone] = useState(false);
 
   useEffect(() => {
     initialize();
   }, []);
 
-  if (!isReady) {
+  if (!splashDone || !isReady) {
     return (
-      <View style={{ flex: 1, backgroundColor: BG, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color={PRIMARY} />
-        <StatusBar style="dark" />
+      <View style={{ flex: 1, backgroundColor: '#111111' }}>
+        <StatusBar style="light" />
+        {!splashDone && <SplashAnimation onFinish={() => setSplashDone(true)} />}
       </View>
     );
   }

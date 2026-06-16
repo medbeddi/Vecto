@@ -8,6 +8,72 @@ let _token = localStorage.getItem('vecto_admin_token');
 let _role  = localStorage.getItem('vecto_admin_role') || 'admin';
 let _socket = null;
 
+/* ── Config tarification ─────────────────────────────────────────── */
+var _tarifConfig = { base_km: 3, base_prix: 100, prix_par_km: 20 };
+
+async function loadTarifConfig() {
+  try {
+    var r = await fetch(API + '/api/admin/settings/tarif', { headers: authHeaders() });
+    if (r.ok) _tarifConfig = await r.json();
+  } catch {}
+}
+
+function _prixPourDist(dist) {
+  return Math.round(_tarifConfig.base_prix + Math.max(0, dist - _tarifConfig.base_km) * _tarifConfig.prix_par_km);
+}
+
+function _autoFillPrice(dist) {
+  var priceEl = document.getElementById('cc-price');
+  if (priceEl) priceEl.value = _prixPourDist(dist);
+}
+
+async function openTarifModal() {
+  await loadTarifConfig();
+  document.getElementById('tarif-base-km').value     = _tarifConfig.base_km;
+  document.getElementById('tarif-base-prix').value   = _tarifConfig.base_prix;
+  document.getElementById('tarif-prix-par-km').value = _tarifConfig.prix_par_km;
+  _updateTarifPreview();
+  document.getElementById('modal-tarif').style.display = 'flex';
+}
+
+function _updateTarifPreview() {
+  var bkm  = parseFloat(document.getElementById('tarif-base-km').value)     || 0;
+  var bpx  = parseFloat(document.getElementById('tarif-base-prix').value)   || 0;
+  var ppkm = parseFloat(document.getElementById('tarif-prix-par-km').value) || 0;
+  var ex1  = bpx;
+  var ex5  = Math.round(bpx + Math.max(0, 5 - bkm) * ppkm);
+  var ex10 = Math.round(bpx + Math.max(0, 10 - bkm) * ppkm);
+  var el = document.getElementById('tarif-preview');
+  if (el) el.textContent = 'Ex : ' + bkm + ' km → ' + ex1 + ' MRU | 5 km → ' + ex5 + ' MRU | 10 km → ' + ex10 + ' MRU';
+}
+
+async function saveTarifConfig() {
+  var base_km     = parseFloat(document.getElementById('tarif-base-km').value);
+  var base_prix   = parseFloat(document.getElementById('tarif-base-prix').value);
+  var prix_par_km = parseFloat(document.getElementById('tarif-prix-par-km').value);
+  var statusEl = document.getElementById('tarif-status');
+  if (isNaN(base_km) || isNaN(base_prix) || isNaN(prix_par_km) || base_km < 0 || base_prix < 0 || prix_par_km < 0) {
+    statusEl.textContent = 'Valeurs invalides.';
+    statusEl.style.color = '#FF3B30';
+    return;
+  }
+  try {
+    var r = await fetch(API + '/api/admin/settings/tarif', {
+      method: 'PUT',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_km, base_prix, prix_par_km }),
+    });
+    if (!r.ok) throw new Error();
+    _tarifConfig = { base_km, base_prix, prix_par_km };
+    statusEl.textContent = 'Sauvegardé !';
+    statusEl.style.color = '#34C759';
+    setTimeout(function() { closeModal('modal-tarif'); statusEl.textContent = ''; }, 1200);
+  } catch {
+    statusEl.textContent = 'Erreur réseau.';
+    statusEl.style.color = '#FF3B30';
+  }
+}
+
 /* ── Compteurs de notifications ─────────────────────────────────── */
 var _navBadgeCC     = 0;   // nouveaux messages Call Center (hors page active)
 var _navBadgeOrders = 0;   // nouvelles commandes (hors page active)
@@ -89,6 +155,7 @@ function showApp() {
 
   initSocket();
   _requestNotifPermission();
+  loadTarifConfig();
 
   if (_role === 'call_center') {
     showPage('p-callcenter');
@@ -755,10 +822,23 @@ function filterCommandes(filter, btn) {
 function cancelCommande(id) {
   document.getElementById('confirm-title').textContent   = 'Annuler cette commande ?';
   document.getElementById('confirm-message').textContent = 'La commande sera marquée annulée. Cette action est irréversible.';
-  document.getElementById('confirm-btn').onclick = function () {
-    if (_activeOrders[id]) _activeOrders[id]._status = 'cancelled';
-    renderCommandes();
+  document.getElementById('confirm-btn').onclick = async function () {
     closeModal('modal-confirm');
+    try {
+      const r = await fetch(API + '/api/admin/orders/' + id + '/cancel', {
+        method: 'PATCH',
+        headers: authHeaders(),
+      });
+      if (!r.ok) {
+        var err = await r.json().catch(() => ({}));
+        alert('Erreur : ' + (err.error || r.status));
+        return;
+      }
+      delete _activeOrders[id];
+      renderCommandes();
+    } catch (e) {
+      alert('Erreur réseau : ' + e.message);
+    }
   };
   showModal('modal-confirm');
 }
@@ -1165,10 +1245,8 @@ function calcDistanceCC() {
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLng / 2) * Math.sin(dLng / 2);
   var dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  var prix = dist <= 5.5 ? 100 : 150;
-  document.getElementById('cc-prix').textContent = prix + ' MRU';
-  document.getElementById('cc-prix-detail').textContent =
-    dist.toFixed(1) + ' km — ' + (dist <= 5.5 ? 'Zone courte (≤ 5,5 km)' : 'Zone longue (> 5,5 km)');
+  var prix = _prixPourDist(dist);
+  _autoFillPrice(dist);
   return { dist: dist, prix: prix };
 }
 
@@ -1624,6 +1702,11 @@ function refreshMapMarkers() {
     renderMiniMapRoute();
     var modal = document.getElementById('modal-map-fullscreen');
     if (modal && modal.style.display !== 'none') renderModalRoute();
+    // Calcul automatique du prix selon la distance
+    var lat1 = ptA[0], lng1 = ptA[1], lat2 = ptB[0], lng2 = ptB[1];
+    var R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
+    var aa = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    _autoFillPrice(R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa)));
   }
 }
 
