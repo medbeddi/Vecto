@@ -620,7 +620,7 @@
     <label class="field-label">Téléphone</label>
     <div class="field-row"><input type="tel" id="add-livreur-phone" placeholder="+222 XX XX XX XX" /></div>
     <label class="field-label">Mot de passe</label>
-    <div class="field-row"><input type="password" id="add-livreur-pass" placeholder="6 caractères minimum" /></div>
+    <div class="field-row"><input type="tel" id="add-livreur-pass" placeholder="4 chiffres minimum" inputmode="numeric" pattern="[0-9]*" /></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-livreur')">Annuler</button>
       <button class="btn btn-dark" id="btn-add-livreur" onclick="addLivreur()">Créer le compte</button>
@@ -671,7 +671,7 @@
     <div class="field-row"><input type="text" id="edit-driver-name" placeholder="Nom du livreur" /></div>
     <div style="margin-top:16px;border-top:.5px solid var(--border);padding-top:16px">
       <label class="field-label">Nouveau mot de passe <span style="font-weight:400;opacity:.5;font-size:11px">(laisser vide = ne pas changer)</span></label>
-      <div class="field-row"><input type="password" id="edit-driver-pwd" placeholder="Min. 6 caractères" autocomplete="new-password" /></div>
+      <div class="field-row"><input type="tel" id="edit-driver-pwd" placeholder="4 chiffres minimum" inputmode="numeric" pattern="[0-9]*" autocomplete="new-password" /></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-driver')">Annuler</button>
@@ -888,7 +888,7 @@
 
     <div style="padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border);font-size:12px;color:var(--text-2);margin-bottom:12px">
       <div style="font-weight:600;margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Formule</div>
-      <div style="font-family:monospace;margin-bottom:4px">prix_brut = 1000 + ⌈(dist − 4.5) / 0.1⌉ × 25</div>
+      <div style="font-family:monospace;margin-bottom:4px">prix_brut = 100 + ⌈(dist − 4.5) / 0.1⌉ × 25</div>
       <div style="font-family:monospace">prix_final = arrondi au 50 MRU le plus proche</div>
     </div>
 

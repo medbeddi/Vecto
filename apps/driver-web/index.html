@@ -51,7 +51,7 @@
         <div class="page-sub">Numéro enregistré<br><strong id="pw-phone-display"></strong></div>
       </div>
       <div class="field-row" style="margin-bottom:8px">
-        <input type="password" id="pw-input" placeholder="Votre mot de passe" onkeydown="if(event.key==='Enter')handleLogin()" />
+        <input type="tel" id="pw-input" placeholder="Votre code (chiffres)" inputmode="numeric" pattern="[0-9]*" onkeydown="if(event.key==='Enter')handleLogin()" />
       </div>
       <div id="pw-error" class="error-msg" style="display:none"></div>
       <button class="btn btn-dark" id="btn-login" onclick="handleLogin()" style="margin-top:16px">Se connecter</button>
@@ -90,9 +90,9 @@
       <label class="field-label">Nom complet</label>
       <div class="field-row"><input type="text" id="setup-name" placeholder="Ex. Karim Ben Ali" /></div>
       <label class="field-label">Mot de passe</label>
-      <div class="field-row"><input type="password" id="setup-pass" placeholder="6 caractères minimum" /></div>
+      <div class="field-row"><input type="tel" id="setup-pass" placeholder="4 chiffres minimum" inputmode="numeric" pattern="[0-9]*" /></div>
       <label class="field-label">Confirmer</label>
-      <div class="field-row"><input type="password" id="setup-confirm" placeholder="Répétez le mot de passe" onkeydown="if(event.key==='Enter')handleSetup()" /></div>
+      <div class="field-row"><input type="tel" id="setup-confirm" placeholder="Répétez le code" inputmode="numeric" pattern="[0-9]*" onkeydown="if(event.key==='Enter')handleSetup()" /></div>
       <div id="setup-error" class="error-msg" style="display:none"></div>
       <button class="btn btn-dark" id="btn-setup" onclick="handleSetup()" style="margin-top:8px">Créer mon compte</button>
     </div>

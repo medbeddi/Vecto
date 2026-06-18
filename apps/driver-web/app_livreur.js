@@ -163,7 +163,7 @@ async function handleSetup() {
   var pass    = (document.getElementById('setup-pass').value || '');
   var confirm = (document.getElementById('setup-confirm').value || '');
   if (name.length < 2)  { showErr('setup-error', 'Nom trop court'); return; }
-  if (pass.length < 6)  { showErr('setup-error', 'Mot de passe : 6 caractères minimum'); return; }
+  if (!/^\d{4,}$/.test(pass)) { showErr('setup-error', 'Mot de passe : 4 chiffres minimum (chiffres uniquement)'); return; }
   if (pass !== confirm) { showErr('setup-error', 'Les mots de passe ne correspondent pas'); return; }
   showErr('setup-error', '');
   var btn = document.getElementById('btn-setup');

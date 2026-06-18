@@ -9,11 +9,14 @@ let _role  = localStorage.getItem('vecto_admin_role') || 'admin';
 let _socket = null;
 
 /* ── Config tarification ─────────────────────────────────────────── */
-// prix_brut = 1000 + ⌈(distance - 4.5) / 0.1⌉ × 25 ; prix_final = arrondi au 50 le plus proche
+// prix_brut = 100 + ⌈(distance - 4.5) / 0.1⌉ × 25 ; arrondi au 50 le plus proche (25→bas, 75→haut)
 function _prixPourDist(dist) {
-  var steps = Math.ceil(Math.round((dist - 4.5) / 0.1 * 1e6) / 1e6);
-  var prix_brut = 1000 + steps * 25;
-  return Math.round(prix_brut / 50) * 50;
+  if (dist <= 4.5) return 100;
+  var prixBrut = 100 + Math.ceil((dist - 4.5) / 0.1) * 25;
+  var mod = prixBrut % 100;
+  if (mod === 25) return prixBrut - 25; // se terminant par 25 → vers le bas
+  if (mod === 75) return prixBrut + 25; // se terminant par 75 → vers le haut
+  return prixBrut;
 }
 
 function _autoFillPrice(dist) {
@@ -1020,7 +1023,12 @@ async function saveDriverProfile() {
 
 async function saveDriver() {
   const name = document.getElementById('edit-driver-name').value.trim();
+  const pwd  = (document.getElementById('edit-driver-pwd').value || '').trim();
   if (!name) return;
+  if (pwd && !/^\d{4,}$/.test(pwd)) {
+    alert('Mot de passe : 4 chiffres minimum, chiffres uniquement.');
+    return;
+  }
   try {
     const res = await fetch(API + '/api/admin/drivers/' + _editDriverId, {
       method: 'PUT',
@@ -1028,9 +1036,18 @@ async function saveDriver() {
       body: JSON.stringify({ name }),
     });
     if (!res.ok) { alert('Erreur lors de la modification.'); return; }
+    if (pwd) {
+      const resPwd = await fetch(API + '/api/admin/drivers/' + _editDriverId + '/reset-password', {
+        method: 'PATCH',
+        headers: authHeaders(),
+        body: JSON.stringify({ password: pwd }),
+      });
+      if (!resPwd.ok) { alert('Nom enregistré mais erreur lors du changement de mot de passe.'); }
+    }
     const idx = _livreurs.findIndex(function (l) { return l.id === _editDriverId; });
     if (idx !== -1) _livreurs[idx].name = name;
     renderLivreurs();
+    document.getElementById('edit-driver-pwd').value = '';
     closeModal('modal-edit-driver');
   } catch {
     alert('Erreur réseau.');
@@ -1067,7 +1084,7 @@ async function addLivreur() {
   errEl.style.display = 'none';
   if (!name || name.length < 2) { errEl.textContent = 'Nom trop court.'; errEl.style.display = 'block'; return; }
   if (!phone || phone.length < 8) { errEl.textContent = 'Numéro invalide.'; errEl.style.display = 'block'; return; }
-  if (!password || password.length < 6) { errEl.textContent = 'Mot de passe : 6 caractères minimum.'; errEl.style.display = 'block'; return; }
+  if (!password || !/^\d{4,}$/.test(password)) { errEl.textContent = 'Mot de passe : 4 chiffres minimum (chiffres uniquement).'; errEl.style.display = 'block'; return; }
   var btn = document.getElementById('btn-add-livreur');
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
   try {

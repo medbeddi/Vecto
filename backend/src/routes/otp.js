@@ -146,7 +146,7 @@ router.post('/otp/verify/driver', otpLimiter, async (req, res) => {
     if (!driver) {
       // Nouveau driver — nom + mot de passe requis
       if (!name || name.trim().length < 2) return res.status(400).json({ error: 'NAME_REQUIRED' });
-      if (!password || password.length < 6) return res.status(400).json({ error: 'PASSWORD_REQUIRED' });
+      if (!password || !/^\d{4,}$/.test(password)) return res.status(400).json({ error: 'PASSWORD_DIGITS_ONLY' });
 
       const passwordHash = await bcrypt.hash(password, 12);
       [driver] = await db('drivers')
@@ -171,8 +171,8 @@ router.post('/auth/reset-password', async (req, res) => {
     if (!phone || !code || !newPassword) {
       return res.status(400).json({ error: 'MISSING_FIELDS' });
     }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ error: 'PASSWORD_TOO_SHORT' });
+    if (!/^\d{4,}$/.test(newPassword)) {
+      return res.status(400).json({ error: 'PASSWORD_DIGITS_ONLY' });
     }
 
     const phoneHash = hashWaId(phone.trim());
