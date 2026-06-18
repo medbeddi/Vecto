@@ -1028,11 +1028,12 @@ async function saveDriverProfile() {
 }
 
 async function saveDriver() {
-  const name = document.getElementById('edit-driver-name').value.trim();
-  const pwd  = (document.getElementById('edit-driver-pwd').value || '').trim();
+  const name   = document.getElementById('edit-driver-name').value.trim();
+  const pwdEl  = document.getElementById('edit-driver-pwd');
+  const pwd    = pwdEl ? (pwdEl.value || '').replace(/\D/g, '').slice(0, 4) : '';
   if (!name) return;
-  if (pwd && !/^\d{4,}$/.test(pwd)) {
-    alert('Mot de passe : 4 chiffres minimum, chiffres uniquement.');
+  if (pwd && !/^\d{4}$/.test(pwd)) {
+    alert('Mot de passe : exactement 4 chiffres.');
     return;
   }
   try {
@@ -1090,7 +1091,7 @@ async function addLivreur() {
   errEl.style.display = 'none';
   if (!name || name.length < 2) { errEl.textContent = 'Nom trop court.'; errEl.style.display = 'block'; return; }
   if (!phone || phone.length < 8) { errEl.textContent = 'Numéro invalide.'; errEl.style.display = 'block'; return; }
-  if (!password || !/^\d{4,}$/.test(password)) { errEl.textContent = 'Mot de passe : 4 chiffres minimum (chiffres uniquement).'; errEl.style.display = 'block'; return; }
+  if (!password || !/^\d{4}$/.test(password)) { errEl.textContent = 'Mot de passe : exactement 4 chiffres.'; errEl.style.display = 'block'; return; }
   var btn = document.getElementById('btn-add-livreur');
   if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
   try {
@@ -1263,20 +1264,44 @@ function searchClient() {
   document.getElementById('cc-client-name').textContent = 'Client · ' + phone;
 }
 
-function calcDistanceCC() {
+function _haversineKm(ptA, ptB) {
+  var R = 6371, dLat = (ptB[0]-ptA[0])*Math.PI/180, dLng = (ptB[1]-ptA[1])*Math.PI/180;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(ptA[0]*Math.PI/180)*Math.cos(ptB[0]*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function _routeDistKm(ptA, ptB, cb) {
+  if (_useGoogleMaps && window.google) {
+    new google.maps.DirectionsService().route({
+      origin: { lat: ptA[0], lng: ptA[1] },
+      destination: { lat: ptB[0], lng: ptB[1] },
+      travelMode: google.maps.TravelMode.DRIVING,
+    }, function(result, status) {
+      if (status === 'OK' && result.routes[0] && result.routes[0].legs[0]) {
+        cb(result.routes[0].legs[0].distance.value / 1000);
+      } else {
+        cb(_haversineKm(ptA, ptB));
+      }
+    });
+  } else {
+    fetch('https://router.project-osrm.org/route/v1/driving/' + ptA[1]+','+ptA[0]+';'+ptB[1]+','+ptB[0] + '?overview=false')
+      .then(function(r) { return r.json(); })
+      .then(function(data) { cb(data.routes && data.routes[0] ? data.routes[0].distance / 1000 : _haversineKm(ptA, ptB)); })
+      .catch(function() { cb(_haversineKm(ptA, ptB)); });
+  }
+}
+
+async function calcDistanceCC() {
   if (!_ccDepartLocation || !_ccDestLocation) return null;
-  var lat1 = _ccDepartLocation.lat(), lng1 = _ccDepartLocation.lng();
-  var lat2 = _ccDestLocation.lat(),   lng2 = _ccDestLocation.lng();
-  var R = 6371;
-  var dLat = (lat2 - lat1) * Math.PI / 180;
-  var dLng = (lng2 - lng1) * Math.PI / 180;
-  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  var dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  var prix = _prixPourDist(dist);
-  _autoFillPrice(dist);
-  return { dist: dist, prix: prix };
+  var ptA = [_ccDepartLocation.lat(), _ccDepartLocation.lng()];
+  var ptB = [_ccDestLocation.lat(), _ccDestLocation.lng()];
+  return new Promise(function(resolve) {
+    _routeDistKm(ptA, ptB, function(distKm) {
+      var prix = _prixPourDist(distKm);
+      _autoFillPrice(distKm);
+      resolve({ dist: distKm, prix: prix });
+    });
+  });
 }
 
 function initCCMap() {
@@ -1340,7 +1365,7 @@ function initCCMap() {
 }
 
 async function createCommande() {
-  var result = calcDistanceCC();
+  var result = await calcDistanceCC();
   var noteEl = document.querySelector('#p-callcenter .textarea-field');
   var description = noteEl ? noteEl.value.trim() : '';
   if (!description) {
@@ -1731,11 +1756,8 @@ function refreshMapMarkers() {
     renderMiniMapRoute();
     var modal = document.getElementById('modal-map-fullscreen');
     if (modal && modal.style.display !== 'none') renderModalRoute();
-    // Calcul automatique du prix selon la distance
-    var lat1 = ptA[0], lng1 = ptA[1], lat2 = ptB[0], lng2 = ptB[1];
-    var R = 6371, dLat = (lat2-lat1)*Math.PI/180, dLng = (lng2-lng1)*Math.PI/180;
-    var aa = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
-    _autoFillPrice(R * 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa)));
+    // Calcul automatique du prix selon la distance routière réelle
+    _routeDistKm(ptA, ptB, function(distKm) { _autoFillPrice(distKm); });
   }
 }
 
