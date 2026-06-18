@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -29,10 +29,20 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [secure, setSecure] = useState(true);
 
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const logoScale = useRef(new Animated.Value(0.7)).current;
+
   const { loginWithPassword, sendOtp, isLoading, error, clearError } = useAuthStore();
 
   const phone = `${country.dial}${local.replace(/\D/g, '')}`;
   const isValid = local.replace(/\D/g, '').length >= 6 && password.length === 4;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(logoOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.spring(logoScale, { toValue: 1, friction: 5, tension: 70, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   useEffect(() => {
     if (error) {
@@ -79,9 +89,9 @@ export default function LoginScreen() {
       <StatusBar style="dark" />
 
       <View style={styles.logoBlock}>
-        <Image
+        <Animated.Image
           source={require('../assets/logo.png')}
-          style={styles.logoImage}
+          style={[styles.logoImage, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}
           resizeMode="contain"
         />
       </View>

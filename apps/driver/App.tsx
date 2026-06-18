@@ -27,8 +27,8 @@ export default function App() {
 
   if (!splashDone || !isReady) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#111111' }}>
-        <StatusBar style="light" />
+      <View style={{ flex: 1, backgroundColor: '#F5F5F5' }}>
+        <StatusBar style="dark" />
         {!splashDone && <SplashAnimation onFinish={() => setSplashDone(true)} />}
       </View>
     );

@@ -1955,12 +1955,12 @@ const docStyles = StyleSheet.create({
 function BottomTabBar({
   active, onSelect, adminUnread, chatUnread,
 }: { active: Tab; onSelect: (t: Tab) => void; adminUnread: number; chatUnread: number }) {
-  const tabs: { key: Tab; icon: 'scooter' | 'history' | 'chat' | 'headset' | 'person' }[] = [
-    { key: 'courses',    icon: 'scooter'  },
-    { key: 'historique', icon: 'history'  },
-    { key: 'chats',      icon: 'chat'     },
-    { key: 'admin',      icon: 'headset'  },
-    { key: 'profil',     icon: 'person'   },
+  const tabs: { key: Tab; icon: 'scooter' | 'history' | 'chat' | 'headset' | 'person'; label: string }[] = [
+    { key: 'courses',    icon: 'scooter',  label: 'Courses'    },
+    { key: 'chats',      icon: 'chat',     label: 'Chats'      },
+    { key: 'admin',      icon: 'headset',  label: 'Appels'     },
+    { key: 'historique', icon: 'history',  label: 'Historique' },
+    { key: 'profil',     icon: 'person',   label: 'Profil'     },
   ];
 
   return (
@@ -1979,7 +1979,7 @@ function BottomTabBar({
               <View style={{ position: 'relative' }}>
                 <Icon
                   name={t.icon}
-                  size={22}
+                  size={20}
                   color={isActive ? '#fff' : 'rgba(255,255,255,0.45)'}
                   strokeWidth={isActive ? 2 : 1.5}
                 />
@@ -1989,6 +1989,9 @@ function BottomTabBar({
                   </View>
                 )}
               </View>
+              <Text style={[tabBadgeStyle.label, isActive && tabBadgeStyle.labelActive]}>
+                {t.label}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -2005,6 +2008,11 @@ const tabBadgeStyle = StyleSheet.create({
     paddingHorizontal: 3,
   },
   text: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  label: {
+    fontSize: 9, fontWeight: '500', color: 'rgba(255,255,255,0.45)',
+    marginTop: 3, textAlign: 'center',
+  },
+  labelActive: { color: '#fff', fontWeight: '700' },
 });
 
 // ─── FCM ────────────────────────────────────────────────────────────────────
@@ -2337,8 +2345,8 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     backgroundColor: 'rgba(18,18,18,0.96)',
-    borderRadius: 100,
-    paddingVertical: 6,
+    borderRadius: 32,
+    paddingVertical: 8,
     paddingHorizontal: 8,
     gap: 4,
     shadowColor: '#000',
@@ -2348,8 +2356,8 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   tabItem: {
-    flex: 1, height: 44, borderRadius: 100,
-    justifyContent: 'center', alignItems: 'center',
+    flex: 1, height: 54, borderRadius: 24,
+    justifyContent: 'center', alignItems: 'center', gap: 2,
   },
   tabItemActive: { backgroundColor: 'rgba(255,255,255,0.14)' },
   tabIcon: { fontSize: 20, opacity: 0.5 },
