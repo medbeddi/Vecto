@@ -75,6 +75,7 @@ router.get('/admin/orders/active', requireAdmin, async (req, res) => {
     const orders = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .whereNull('deliveries.archived_at')
+      .whereIn('deliveries.status', ['pending', 'assigned', 'in_progress'])
       .orderBy('deliveries.created_at', 'desc')
       .select(
         'deliveries.id', 'deliveries.status', 'deliveries.created_at as createdAt',

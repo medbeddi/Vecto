@@ -201,17 +201,29 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
     const driverRow = await db('drivers').where({ id: req.driver.id }).first('is_available');
     if (!driverRow?.is_available) return res.json({ deliveries: [] });
 
+    const driverId = req.driver.id;
+
     const deliveries = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'pending')
-      // Seulement les ordres dans la fenêtre active des 20s
       .where('deliveries.last_broadcast_at', '>', db.raw("NOW() - INTERVAL '20 seconds'"))
       // Exclure les courses que ce livreur a explicitement refusées
       .whereNotExists(
         db('delivery_refusals')
           .whereRaw('delivery_refusals.delivery_id = deliveries.id')
-          .where('delivery_refusals.driver_id', req.driver.id)
+          .where('delivery_refusals.driver_id', driverId)
       )
+      // Dispatch prioritaire : si la fenêtre prioritaire est active, visible uniquement au livreur désigné
+      .where((qb) => {
+        qb
+          // Fenêtre prioritaire expirée ou pas de livreur désigné → visible à tous
+          .where((q) => {
+            q.whereNull('deliveries.nearest_driver_id')
+             .orWhere('deliveries.priority_expires_at', '<=', db.raw('NOW()'));
+          })
+          // Ou : c'est le livreur prioritaire (même dans la fenêtre active)
+          .orWhere('deliveries.nearest_driver_id', driverId);
+      })
       .orderBy('deliveries.last_broadcast_at', 'desc')
       .select(
         'deliveries.id',
@@ -237,12 +249,36 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
 // Livreur refuse explicitement une course (ne la reverra plus)
 router.post('/deliveries/:id/refuse', requireAuth, async (req, res) => {
   try {
-    const delivery = await db('deliveries').where({ id: req.params.id, status: 'pending' }).first('id');
+    const delivery = await db('deliveries')
+      .where({ id: req.params.id, status: 'pending' })
+      .first('id', 'nearest_driver_id', 'priority_expires_at',
+             'last_broadcast_at', 'pickup_address', 'dropoff_address',
+             'price', 'description', 'initial_media_type', 'initial_media_url',
+             'created_at', 'client_id');
     if (!delivery) return res.status(404).json({ error: 'DELIVERY_NOT_FOUND' });
 
     await db('delivery_refusals')
       .insert({ delivery_id: req.params.id, driver_id: req.driver.id })
       .onConflict(['delivery_id', 'driver_id']).ignore();
+
+    // Si le livreur prioritaire refuse pendant la fenêtre active → ouvrir immédiatement à tous
+    const isPriorityDriver = delivery.nearest_driver_id === req.driver.id;
+    const priorityActive = delivery.priority_expires_at && new Date(delivery.priority_expires_at) > new Date();
+
+    if (isPriorityDriver && priorityActive) {
+      // Effacer la priorité en base
+      await db('deliveries')
+        .where({ id: req.params.id })
+        .update({ nearest_driver_id: null, priority_expires_at: null });
+
+      // Re-broadcast aux autres livreurs disponibles
+      const { emitNewOrder } = await import('../services/socket.js');
+      const clientRow = await db('clients').where({ id: delivery.client_id }).first('alias');
+      await emitNewOrder(
+        { ...delivery, id: req.params.id, nearest_driver_id: null, alias: clientRow?.alias ?? '' },
+        { type: delivery.initial_media_type ?? 'text', content: delivery.initial_media_url ?? delivery.description ?? '', meta: null }
+      );
+    }
 
     // Notifier l'admin si tous les livreurs disponibles ont refusé
     const availableDriverIds = await db('drivers')
@@ -299,6 +335,7 @@ router.post('/deliveries/:id/accept', requireAuth, async (req, res) => {
     const delivery = await acceptDelivery(req.params.id, req.driver.id);
     res.json({ delivery });
   } catch (err) {
+    if (err.code === 'WALLET_BLOCKED') return res.status(402).json({ error: 'WALLET_BLOCKED' });
     const clientCodes = ['ALREADY_TAKEN', 'DELIVERY_NOT_FOUND'];
     if (clientCodes.includes(err.code)) return res.status(409).json({ error: err.code });
     res.status(500).json({ error: 'SERVER_ERROR' });

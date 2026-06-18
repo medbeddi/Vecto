@@ -9,17 +9,11 @@ let _role  = localStorage.getItem('vecto_admin_role') || 'admin';
 let _socket = null;
 
 /* ── Config tarification ─────────────────────────────────────────── */
-var _tarifConfig = { base_km: 3, base_prix: 100, prix_par_km: 20 };
-
-async function loadTarifConfig() {
-  try {
-    var r = await fetch(API + '/api/admin/settings/tarif', { headers: authHeaders() });
-    if (r.ok) _tarifConfig = await r.json();
-  } catch {}
-}
-
+// prix_brut = 1000 + ⌈(distance - 4.5) / 0.1⌉ × 25 ; prix_final = arrondi au 50 le plus proche
 function _prixPourDist(dist) {
-  return Math.round(_tarifConfig.base_prix + Math.max(0, dist - _tarifConfig.base_km) * _tarifConfig.prix_par_km);
+  var steps = Math.ceil(Math.round((dist - 4.5) / 0.1 * 1e6) / 1e6);
+  var prix_brut = 1000 + steps * 25;
+  return Math.round(prix_brut / 50) * 50;
 }
 
 function _autoFillPrice(dist) {
@@ -27,51 +21,18 @@ function _autoFillPrice(dist) {
   if (priceEl) priceEl.value = _prixPourDist(dist);
 }
 
-async function openTarifModal() {
-  await loadTarifConfig();
-  document.getElementById('tarif-base-km').value     = _tarifConfig.base_km;
-  document.getElementById('tarif-base-prix').value   = _tarifConfig.base_prix;
-  document.getElementById('tarif-prix-par-km').value = _tarifConfig.prix_par_km;
+function openTarifModal() {
   _updateTarifPreview();
   document.getElementById('modal-tarif').style.display = 'flex';
 }
 
 function _updateTarifPreview() {
-  var bkm  = parseFloat(document.getElementById('tarif-base-km').value)     || 0;
-  var bpx  = parseFloat(document.getElementById('tarif-base-prix').value)   || 0;
-  var ppkm = parseFloat(document.getElementById('tarif-prix-par-km').value) || 0;
-  var ex1  = bpx;
-  var ex5  = Math.round(bpx + Math.max(0, 5 - bkm) * ppkm);
-  var ex10 = Math.round(bpx + Math.max(0, 10 - bkm) * ppkm);
   var el = document.getElementById('tarif-preview');
-  if (el) el.textContent = 'Ex : ' + bkm + ' km → ' + ex1 + ' MRU | 5 km → ' + ex5 + ' MRU | 10 km → ' + ex10 + ' MRU';
+  if (el) el.textContent = 'Ex : 4.5 km → ' + _prixPourDist(4.5) + ' MRU | 7 km → ' + _prixPourDist(7) + ' MRU | 10 km → ' + _prixPourDist(10) + ' MRU';
 }
 
-async function saveTarifConfig() {
-  var base_km     = parseFloat(document.getElementById('tarif-base-km').value);
-  var base_prix   = parseFloat(document.getElementById('tarif-base-prix').value);
-  var prix_par_km = parseFloat(document.getElementById('tarif-prix-par-km').value);
-  var statusEl = document.getElementById('tarif-status');
-  if (isNaN(base_km) || isNaN(base_prix) || isNaN(prix_par_km) || base_km < 0 || base_prix < 0 || prix_par_km < 0) {
-    statusEl.textContent = 'Valeurs invalides.';
-    statusEl.style.color = '#FF3B30';
-    return;
-  }
-  try {
-    var r = await fetch(API + '/api/admin/settings/tarif', {
-      method: 'PUT',
-      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base_km, base_prix, prix_par_km }),
-    });
-    if (!r.ok) throw new Error();
-    _tarifConfig = { base_km, base_prix, prix_par_km };
-    statusEl.textContent = 'Sauvegardé !';
-    statusEl.style.color = '#34C759';
-    setTimeout(function() { statusEl.textContent = ''; }, 1500);
-  } catch {
-    statusEl.textContent = 'Erreur réseau.';
-    statusEl.style.color = '#FF3B30';
-  }
+function saveTarifConfig() {
+  closeModal('modal-tarif');
 }
 
 /* ── Compteurs de notifications ─────────────────────────────────── */
@@ -155,7 +116,6 @@ function showApp() {
 
   initSocket();
   _requestNotifPermission();
-  loadTarifConfig();
 
   if (_role === 'call_center') {
     showPage('p-callcenter');
@@ -235,19 +195,24 @@ function initSocket() {
   _socket = io(API, { auth: { token: _token } });
 
   _socket.on('new_order', function (order) {
+    var isNew = !_activeOrders[order.deliveryId];
+    // Conserver le _status déjà connu (order_taken peut l'avoir mis à jour)
+    order._status = order.status || (isNew ? 'pending' : (_activeOrders[order.deliveryId]._status || 'pending'));
     _activeOrders[order.deliveryId] = order;
     renderCommandes();
     renderStatsRecent();
-    // Badge + notification si on n'est pas sur la page Commandes
-    if (_currentPage !== 'p-commandes') {
+    // Badge + notification uniquement pour une vraie nouvelle commande
+    if (isNew && _currentPage !== 'p-commandes') {
       _navBadgeOrders++;
       _updateNavBadge('nav-badge-orders', _navBadgeOrders);
     }
-    _sendBrowserNotif(
-      '🛵 Nouvelle commande',
-      'Course de ' + (order.clientAlias || 'Client'),
-      'order-' + order.deliveryId
-    );
+    if (isNew) {
+      _sendBrowserNotif(
+        '🛵 Nouvelle commande',
+        'Course de ' + (order.clientAlias || 'Client'),
+        'order-' + order.deliveryId
+      );
+    }
   });
 
   _socket.on('order_taken', function (data) {
@@ -673,13 +638,6 @@ async function toggleDriverMic() {
    PAGE CONFIGURER
 ================================================================ */
 async function loadConfigPage() {
-  await loadTarifConfig();
-  var bkmEl  = document.getElementById('tarif-base-km');
-  var bpxEl  = document.getElementById('tarif-base-prix');
-  var ppkmEl = document.getElementById('tarif-prix-par-km');
-  if (bkmEl)  bkmEl.value  = _tarifConfig.base_km;
-  if (bpxEl)  bpxEl.value  = _tarifConfig.base_prix;
-  if (ppkmEl) ppkmEl.value = _tarifConfig.prix_par_km;
   _updateTarifPreview();
 
   try {
@@ -2403,26 +2361,19 @@ function initTrackingMap() {
 
 function trackingIcon(driver) {
   var status = driver.status || 'offline';
-  var isAvailable = driver.isAvailable !== false; // true par défaut
-  // Couleur : vert=dispo, orange=en course, gris=indisponible/hors ligne
+  var isAvailable = driver.isAvailable !== false;
   var color = status === 'busy' ? '#FF9500' : isAvailable ? '#34C759' : '#AEAEB2';
-  var shadow = status === 'busy' ? '0 0 0 3px rgba(255,149,0,.35)' : isAvailable ? '0 0 0 3px rgba(52,199,89,.35)' : 'none';
-  var moto = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="26" height="26" fill="' + color + '">'
-    + '<circle cx="5.5" cy="17.5" r="3" stroke="#fff" stroke-width="1.2" fill="' + color + '"/>'
-    + '<circle cx="18.5" cy="17.5" r="3" stroke="#fff" stroke-width="1.2" fill="' + color + '"/>'
-    + '<path stroke="#fff" stroke-width="1" fill="' + color + '" d="M5.5 17.5 L9 10 L14 10 L18 14 L18.5 17.5 M9 10 L12 7 L16 7 L18 10"/>'
-    + '</svg>';
-  // Icône moto SVG simplifiée (scooter Unicode fallback)
-  var html = '<div style="display:flex;align-items:center;justify-content:center;'
-    + 'width:32px;height:32px;border-radius:50%;background:' + color + ';'
-    + 'border:2px solid #fff;box-shadow:' + shadow + ',0 2px 8px rgba(0,0,0,.25);'
-    + 'font-size:16px;line-height:1">🛵</div>';
+  var html = '<div style="position:relative;display:flex;flex-direction:column;align-items:center;width:42px">'
+    + '<img src="moto.svg" style="width:42px;height:75px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))" />'
+    + '<div style="width:12px;height:12px;border-radius:50%;background:' + color + ';border:2px solid #fff;'
+    + 'margin-top:-5px;box-shadow:0 0 0 2px ' + color + '66,0 1px 4px rgba(0,0,0,.3)"></div>'
+    + '</div>';
   return L.divIcon({
     className: '',
     html: html,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    popupAnchor: [0, -18],
+    iconSize: [42, 90],
+    iconAnchor: [21, 90],
+    popupAnchor: [0, -92],
   });
 }
 

@@ -118,6 +118,7 @@ export async function emitNewOrder(delivery, initialMessage) {
     pickupAddress:   delivery.pickup_address  ?? null,
     dropoffAddress:  delivery.dropoff_address ?? null,
     price:           delivery.price           ?? null,
+    status:          delivery.status          ?? 'pending',
     message: {
       type:    initialMessage.type,
       content: initialMessage.content,
@@ -125,14 +126,44 @@ export async function emitNewOrder(delivery, initialMessage) {
     },
   };
 
-  // N'envoyer qu'aux drivers disponibles qui n'ont pas refusé cette course
+  // Si un livreur prioritaire est défini, envoyer uniquement à lui d'abord
+  if (delivery.nearest_driver_id) {
+    io.to(`driver:${delivery.nearest_driver_id}`).emit('new_order', payload);
+    io.to(ADMINS_ROOM).emit('new_order', payload);
+
+    // Après 30s, si la course est toujours pending → re-broadcast à tous les autres
+    setTimeout(async () => {
+      try {
+        const current = await db('deliveries').where({ id: delivery.id }).first('status', 'nearest_driver_id');
+        if (!current || current.status !== 'pending') return;
+
+        const refusedDriverIds = await db('delivery_refusals')
+          .where('delivery_id', delivery.id)
+          .pluck('driver_id');
+
+        const remainingDrivers = await db('drivers')
+          .where({ is_available: true, suspended: false })
+          .where('id', '!=', delivery.nearest_driver_id)
+          .whereNotIn('id', refusedDriverIds.length ? refusedDriverIds : [null])
+          .select('id');
+
+        for (const { id } of remainingDrivers) {
+          io.to(`driver:${id}`).emit('new_order', payload);
+        }
+      } catch {}
+    }, 30_000);
+
+    return;
+  }
+
+  // Pas de livreur proche connu → broadcast à tous les disponibles
   const refusedDriverIds = await db('delivery_refusals')
     .where('delivery_id', delivery.id)
     .pluck('driver_id');
 
   const availableDrivers = await db('drivers')
     .where({ is_available: true, suspended: false })
-    .whereNotIn('id', refusedDriverIds.length ? refusedDriverIds : [-1])
+    .whereNotIn('id', refusedDriverIds.length ? refusedDriverIds : [null])
     .select('id');
   for (const { id } of availableDrivers) {
     io.to(`driver:${id}`).emit('new_order', payload);

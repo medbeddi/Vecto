@@ -420,24 +420,12 @@
       <!-- Tarification -->
       <div class="section-card" style="max-width:520px">
         <div class="section-title">Tarification des courses</div>
-        <label class="field-label">DISTANCE MINIMALE INCLUSE (km)</label>
-        <div class="field-row">
-          <input type="number" id="tarif-base-km" min="0" step="0.5" placeholder="Ex: 3"
-                 oninput="_updateTarifPreview()" />
+        <div style="padding:12px 14px;background:var(--bg-2,#f5f5f5);border-radius:8px;border:1px solid var(--border);font-size:13px;color:var(--text-2);margin-bottom:12px">
+          <div style="font-weight:600;margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Formule appliquée</div>
+          <div style="font-family:monospace;margin-bottom:4px">prix_brut = 1000 + ⌈(dist − 4.5) / 0.1⌉ × 25</div>
+          <div style="font-family:monospace">prix_final = arrondi au 50 MRU le plus proche</div>
         </div>
-        <label class="field-label">PRIX DE BASE (MRU)</label>
-        <div class="field-row">
-          <input type="number" id="tarif-base-prix" min="0" step="10" placeholder="Ex: 100"
-                 oninput="_updateTarifPreview()" />
-        </div>
-        <label class="field-label">PRIX PAR KM SUPPLÉMENTAIRE (MRU/km)</label>
-        <div class="field-row">
-          <input type="number" id="tarif-prix-par-km" min="0" step="5" placeholder="Ex: 20"
-                 oninput="_updateTarifPreview()" />
-        </div>
-        <div id="tarif-preview" style="font-size:13px;color:var(--text-3);margin:4px 0 12px"></div>
-        <div id="tarif-status" style="font-size:13px;margin-bottom:8px;min-height:18px"></div>
-        <button class="btn btn-dark" onclick="saveTarifConfig()">Enregistrer la tarification</button>
+        <div id="tarif-preview" style="font-size:13px;color:var(--text-3);margin:4px 0 0"></div>
       </div>
 
       <!-- Créneau de diffusion -->

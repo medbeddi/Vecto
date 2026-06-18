@@ -57,6 +57,32 @@ export async function launchDelivery(deliveryId, { pickupAddress, dropoffAddress
     updateData.initial_media_url  = forwardedAudioUrl;
   }
 
+  // Trouver le livreur disponible le plus proche du point de prise en charge
+  if (pickupLat != null && pickupLng != null) {
+    const nearest = await db('drivers')
+      .where({ is_available: true, suspended: false })
+      .whereNotNull('last_lat')
+      .whereNotNull('last_lng')
+      .select(
+        'id',
+        db.raw(`
+          (6371 * acos(
+            cos(radians(?)) * cos(radians(last_lat)) *
+            cos(radians(last_lng) - radians(?)) +
+            sin(radians(?)) * sin(radians(last_lat))
+          )) AS distance_km
+        `, [pickupLat, pickupLng, pickupLat])
+      )
+      .orderBy('distance_km', 'asc')
+      .first();
+
+    if (nearest) {
+      updateData.nearest_driver_id = nearest.id;
+      // Fenêtre prioritaire : 30 secondes
+      updateData.priority_expires_at = db.raw("NOW() + INTERVAL '30 seconds'");
+    }
+  }
+
   const [updated] = await db('deliveries')
     .where({ id: deliveryId })
     .update(updateData)
@@ -68,6 +94,14 @@ export async function launchDelivery(deliveryId, { pickupAddress, dropoffAddress
 // Assignation atomique d'une course à un livreur
 export async function acceptDelivery(deliveryId, driverId) {
   return db.transaction(async (trx) => {
+    // Vérifier le solde wallet du livreur avant d'accepter
+    const wallet = await trx('wallets').where({ driver_id: driverId }).first('balance');
+    if (wallet && parseFloat(wallet.balance) < 0) {
+      const err = new Error('Solde wallet négatif — rechargez pour continuer');
+      err.code = 'WALLET_BLOCKED';
+      throw err;
+    }
+
     // Verrouillage pessimiste : empêche deux livreurs d'accepter simultanément
     const delivery = await trx('deliveries')
       .where({ id: deliveryId })
@@ -141,6 +175,24 @@ export async function updateDeliveryStatus(deliveryId, driverId, newStatus) {
     .where({ id: deliveryId })
     .update(patch)
     .returning('*');
+
+  // Déduire la commission du wallet quand la course est terminée
+  if (newStatus === 'done') {
+    const commRow = await db('app_settings').where({ key: 'commission_par_course' }).first('value');
+    const commission = parseFloat(commRow?.value || '5');
+    const wallet = await db('wallets').where({ driver_id: driverId }).first('id', 'balance');
+    if (wallet && commission > 0) {
+      const newBalance = parseFloat(wallet.balance) - commission;
+      await db('wallets').where({ id: wallet.id }).update({ balance: newBalance, updated_at: db.fn.now() });
+      await db('wallet_transactions').insert({
+        wallet_id: wallet.id,
+        amount: -commission,
+        type: 'commission',
+        description: `Commission course #${deliveryId.slice(-6)}`,
+        status: 'completed',
+      });
+    }
+  }
 
   return updated;
 }

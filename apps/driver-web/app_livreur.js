@@ -451,7 +451,13 @@ async function accepterCourse(id) {
   } catch (e) {
     course.accepted = false;
     if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>Accepter'; }
-    alert(e.code === 'ALREADY_TAKEN' ? 'Cette course a déjà été prise.' : 'Erreur lors de l\'acceptation.');
+    if (e.code === 'ALREADY_TAKEN') {
+      alert('Cette course a déjà été prise.');
+    } else if (e.code === 'WALLET_BLOCKED') {
+      alert('Votre solde est négatif. Rechargez votre wallet pour accepter des courses.');
+    } else {
+      alert('Erreur lors de l\'acceptation.');
+    }
   }
 }
 

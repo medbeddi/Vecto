@@ -614,13 +614,16 @@
 <div class="modal-overlay" id="modal-add-livreur">
   <div class="modal">
     <div class="modal-title">Nouveau livreur</div>
+    <div id="add-livreur-error" style="display:none;color:#c0392b;font-size:13px;margin-bottom:8px;padding:8px 10px;background:#fff0f0;border-radius:8px"></div>
     <label class="field-label">Nom complet</label>
-    <div class="field-row"><input type="text" placeholder="Ex. Mohamed Ould Ahmed" /></div>
+    <div class="field-row"><input type="text" id="add-livreur-name" placeholder="Ex. Mohamed Ould Ahmed" /></div>
     <label class="field-label">Téléphone</label>
-    <div class="field-row"><input type="tel" placeholder="+222 XX XX XX XX" /></div>
+    <div class="field-row"><input type="tel" id="add-livreur-phone" placeholder="+222 XX XX XX XX" /></div>
+    <label class="field-label">Mot de passe</label>
+    <div class="field-row"><input type="password" id="add-livreur-pass" placeholder="6 caractères minimum" /></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-livreur')">Annuler</button>
-      <button class="btn btn-dark" onclick="addLivreur()">Créer le compte</button>
+      <button class="btn btn-dark" id="btn-add-livreur" onclick="addLivreur()">Créer le compte</button>
     </div>
   </div>
 </div>
@@ -883,31 +886,16 @@
       Le prix est calculé automatiquement selon la distance parcourue.
     </div>
 
-    <label class="field-label">Distance de base incluse (km)</label>
-    <div class="field-row">
-      <input type="number" id="tarif-base-km" min="0" step="0.5" oninput="_updateTarifPreview()"
-        style="width:100%;box-sizing:border-box" />
+    <div style="padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border);font-size:12px;color:var(--text-2);margin-bottom:12px">
+      <div style="font-weight:600;margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Formule</div>
+      <div style="font-family:monospace;margin-bottom:4px">prix_brut = 1000 + ⌈(dist − 4.5) / 0.1⌉ × 25</div>
+      <div style="font-family:monospace">prix_final = arrondi au 50 MRU le plus proche</div>
     </div>
 
-    <label class="field-label" style="margin-top:10px">Prix pour cette distance (MRU)</label>
-    <div class="field-row">
-      <input type="number" id="tarif-base-prix" min="0" step="5" oninput="_updateTarifPreview()"
-        style="width:100%;box-sizing:border-box" />
-    </div>
-
-    <label class="field-label" style="margin-top:10px">Prix par km supplémentaire (MRU)</label>
-    <div class="field-row">
-      <input type="number" id="tarif-prix-par-km" min="0" step="1" oninput="_updateTarifPreview()"
-        style="width:100%;box-sizing:border-box" />
-    </div>
-
-    <div id="tarif-preview" style="margin-top:12px;padding:10px 12px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--text-2);border:1px solid var(--border)"></div>
-
-    <div id="tarif-status" style="margin-top:8px;font-size:13px;font-weight:600;min-height:18px"></div>
+    <div id="tarif-preview" style="padding:10px 12px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--text-2);border:1px solid var(--border)"></div>
 
     <div class="modal-actions" style="margin-top:14px">
-      <button class="btn btn-ghost" onclick="closeModal('modal-tarif')">Annuler</button>
-      <button class="btn btn-dark" onclick="saveTarifConfig()">Enregistrer</button>
+      <button class="btn btn-dark" onclick="closeModal('modal-tarif')">Fermer</button>
     </div>
   </div>
 </div>
