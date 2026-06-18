@@ -10,16 +10,17 @@ let _socket = null;
 
 /* ── Config tarification ─────────────────────────────────────────── */
 // ≤4.5 km → 100 MRU ; sinon +2.5 MRU/tranche de 100 m
-// Arrondi bancaire : x.0 → multiple de 5 pair (ex: 102.5→100, 107.5→110, 112.5→110, 117.5→120)
+// Arrondi : .5 → arrondi inférieur (102.5→100, 112.5→110, 267.5→265)
+//           autre → arrondi supérieur
 function _prixPourDist(dist) {
   if (dist <= 4.5) return 100;
-  // toFixed(6) élimine le bruit virgule flottante de Math.ceil (ex: 4.7-4.5)/0.1 ≈ 2.0000000000000018)
+  // toFixed(6) élimine le bruit virgule flottante de Math.ceil
   var tranches = Math.ceil(+((dist - 4.5) / 0.1).toFixed(6));
   var prixBrut = 100 + tranches * 2.5;
   var rem = prixBrut % 5;
-  if (rem === 0) return prixBrut;
-  var lower = prixBrut - rem;
-  return lower % 10 === 0 ? lower : lower + 5;
+  if (rem === 2.5) return prixBrut - 2.5;
+  if (rem === 0)   return prixBrut;
+  return prixBrut + (5 - rem);
 }
 
 function _autoFillPrice(dist) {
