@@ -166,7 +166,7 @@ function CoursesTab() {
   const navigation = useNavigation<Nav>();
   const { driver } = useAuthStore();
   const {
-    available, loadingDeliveries, loadAvailable, loadActiveCourses,
+    available, loadingDeliveries, loadAvailable, silentRefreshAvailable, loadActiveCourses,
     upsertAvailable, removeAvailable, activeCourses, addActiveCourse,
   } = useDeliveriesStore();
 
@@ -228,10 +228,10 @@ function CoursesTab() {
       }
     });
 
-    // Rechargement périodique en cas de socket déconnecté
+    // Rechargement périodique — toujours actif (filet de sécurité si socket rate un événement)
     const pollInterval = setInterval(() => {
-      if (!socketService.connected) loadAvailable();
-    }, 8000);
+      silentRefreshAvailable();
+    }, 5000);
 
     const onNewOrder = (order: IncomingOrder) => {
       socketDeliveryIds.current.add(order.deliveryId);

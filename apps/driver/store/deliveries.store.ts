@@ -11,6 +11,7 @@ type DeliveriesState = {
   loadingMessages: boolean;
 
   loadAvailable: () => Promise<void>;
+  silentRefreshAvailable: () => Promise<void>;
   loadActiveCourses: () => Promise<void>;
   upsertAvailable: (d: Delivery) => void;
   removeAvailable: (id: string) => void;
@@ -46,6 +47,13 @@ export const useDeliveriesStore = create<DeliveriesState>((set) => ({
     } catch {
       set({ loadingDeliveries: false });
     }
+  },
+
+  silentRefreshAvailable: async () => {
+    try {
+      const { deliveries } = await api<{ deliveries: Delivery[] }>('/api/deliveries/available');
+      set({ available: deliveries });
+    } catch {}
   },
 
   loadActiveCourses: async () => {

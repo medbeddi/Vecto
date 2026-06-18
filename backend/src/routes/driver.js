@@ -206,7 +206,7 @@ router.get('/deliveries/available', requireAuth, async (req, res) => {
     const deliveries = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'pending')
-      .where('deliveries.last_broadcast_at', '>', db.raw("NOW() - INTERVAL '20 seconds'"))
+      .where('deliveries.last_broadcast_at', '>', db.raw("NOW() - INTERVAL '1 minute'"))
       // Exclure les courses que ce livreur a explicitement refusées
       .whereNotExists(
         db('delivery_refusals')
