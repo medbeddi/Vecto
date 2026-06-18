@@ -166,12 +166,15 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
             </View>
           )}
           {/* RIGHT: prix */}
-          {delivery.price != null && (
-            <View style={styles.priceGroup}>
-              <Text style={styles.priceAmount}>{Number.isInteger(delivery.price) ? delivery.price : delivery.price?.toFixed(2)} MRU</Text>
-              <Text style={styles.priceLabel}>Prix de la course</Text>
-            </View>
-          )}
+          {delivery.price != null && (() => {
+            const p = Number(delivery.price);
+            return (
+              <View style={styles.priceGroup}>
+                <Text style={styles.priceAmount}>{Number.isInteger(p) ? p : p.toFixed(2)} MRU</Text>
+                <Text style={styles.priceLabel}>Prix de la course</Text>
+              </View>
+            );
+          })()}
         </View>
       </View>
 
