@@ -168,7 +168,7 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
           {/* RIGHT: prix */}
           {delivery.price != null && (
             <View style={styles.priceGroup}>
-              <Text style={styles.priceAmount}>{delivery.price} MRU</Text>
+              <Text style={styles.priceAmount}>{Number.isInteger(delivery.price) ? delivery.price : delivery.price?.toFixed(2)} MRU</Text>
               <Text style={styles.priceLabel}>Prix de la course</Text>
             </View>
           )}

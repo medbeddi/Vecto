@@ -403,7 +403,7 @@ function CoursesTab() {
 
             {incomingOrder?.price != null && (
               <View style={styles.modalPriceBadge}>
-                <Text style={styles.modalPriceText}>{incomingOrder.price} MRU</Text>
+                <Text style={styles.modalPriceText}>{Number.isInteger(incomingOrder.price) ? incomingOrder.price : incomingOrder.price?.toFixed(2)} MRU</Text>
               </View>
             )}
 
@@ -2117,7 +2117,7 @@ const styles = StyleSheet.create({
   dismissBtnText: { color: TEXT2, fontSize: 15, fontWeight: '600' },
   acceptModalBtn: {
     flex: 2, paddingVertical: 14, borderRadius: 12,
-    backgroundColor: PRIMARY, alignItems: 'center',
+    backgroundColor: '#22C55E', alignItems: 'center',
   },
   acceptModalBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   btnOff: { opacity: 0.5 },
