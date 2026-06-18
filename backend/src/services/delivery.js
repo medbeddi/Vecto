@@ -78,8 +78,8 @@ export async function launchDelivery(deliveryId, { pickupAddress, dropoffAddress
 
     if (nearest) {
       updateData.nearest_driver_id = nearest.id;
-      // Fenêtre prioritaire : 30 secondes
-      updateData.priority_expires_at = db.raw("NOW() + INTERVAL '30 seconds'");
+      // Fenêtre prioritaire : 1 minute
+      updateData.priority_expires_at = db.raw("NOW() + INTERVAL '1 minute'");
     }
   }
 
