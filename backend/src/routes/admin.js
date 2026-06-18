@@ -339,7 +339,7 @@ router.post('/admin/drivers/:id/reactivate', requireAdmin, async (req, res) => {
 router.patch('/admin/drivers/:id/reset-password', requireAdmin, async (req, res) => {
   try {
     const { password } = req.body;
-    if (!password || !/^\d{4,}$/.test(password.trim())) return res.status(400).json({ error: 'PASSWORD_DIGITS_ONLY' });
+    if (!password || !/^\d{4}$/.test(password.trim())) return res.status(400).json({ error: 'PASSWORD_DIGITS_ONLY' });
     const driver = await db('drivers').where({ id: req.params.id }).first('id');
     if (!driver) return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
     const hash = await bcrypt.hash(password.trim(), 12);

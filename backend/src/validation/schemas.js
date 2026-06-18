@@ -7,7 +7,7 @@ export const registerSchema = z.object({
     .min(8, 'Numéro trop court')
     .max(20, 'Numéro trop long')
     .regex(/^\+?[\d\s\-().]{7,20}$/, 'Format de numéro invalide'),
-  password: z.string().regex(/^\d{4,}$/, 'Le mot de passe doit contenir uniquement des chiffres (min. 4)'),
+  password: z.string().regex(/^\d{4}$/, 'Le mot de passe doit contenir uniquement des chiffres (min. 4)'),
 });
 
 export const loginSchema = z.object({
@@ -79,5 +79,5 @@ export const documentsSchema = z.object({
 export const adminCreateDriverSchema = z.object({
   name:     z.string().min(2, 'Nom trop court').max(80),
   phone:    z.string().min(8).max(20).regex(/^\+?[\d\s\-().]{7,20}$/, 'Format de numéro invalide'),
-  password: z.string().regex(/^\d{4,}$/, 'Le mot de passe doit contenir uniquement des chiffres (min. 4)'),
+  password: z.string().regex(/^\d{4}$/, 'Le mot de passe doit contenir uniquement des chiffres (min. 4)'),
 });

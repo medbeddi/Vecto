@@ -26,7 +26,7 @@ export default function PasswordScreen({ navigation }: Props) {
   const { loginWithPassword, sendOtp, isLoading, error, clearError } = useAuthStore();
 
   const phone = `${country.dial}${local.replace(/\D/g, '')}`;
-  const isValid = local.replace(/\D/g, '').length >= 6 && password.length >= 1;
+  const isValid = local.replace(/\D/g, '').length >= 6 && password.length === 4;
 
   useEffect(() => {
     if (error) {
@@ -97,11 +97,12 @@ export default function PasswordScreen({ navigation }: Props) {
         <View style={styles.inputWrap}>
           <TextInput
             style={styles.inputFlex}
-            placeholder="Code (chiffres)"
+            placeholder="4 chiffres"
             placeholderTextColor={TEXT2}
             keyboardType="number-pad"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={(t) => setPassword(t.replace(/\D/g, '').slice(0, 4))}
+            maxLength={4}
             returnKeyType="done"
             onSubmitEditing={handleLogin}
             editable={!isLoading}

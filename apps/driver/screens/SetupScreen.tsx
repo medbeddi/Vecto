@@ -26,7 +26,7 @@ export default function SetupScreen({ route, navigation }: Props) {
   const { verifyOtp, isLoading, error, clearError } = useAuthStore();
 
   const nameOk = name.trim().length >= 2;
-  const passOk = /^\d{4,}$/.test(password);
+  const passOk = /^\d{4}$/.test(password);
   const confirmOk = password === confirm;
   const canSubmit = nameOk && passOk && confirmOk && !isLoading;
 
@@ -75,11 +75,12 @@ export default function SetupScreen({ route, navigation }: Props) {
             <Text style={styles.label}>Mot de passe</Text>
             <TextInput
               style={styles.input}
-              placeholder="4 chiffres minimum"
+              placeholder="4 chiffres"
               placeholderTextColor={TEXT2}
               keyboardType="number-pad"
               value={password}
-              onChangeText={(t) => setPassword(t.replace(/\D/g, ''))}
+              onChangeText={(t) => setPassword(t.replace(/\D/g, '').slice(0, 4))}
+              maxLength={4}
               returnKeyType="next"
               editable={!isLoading}
             />
@@ -94,7 +95,8 @@ export default function SetupScreen({ route, navigation }: Props) {
               placeholderTextColor={TEXT2}
               keyboardType="number-pad"
               value={confirm}
-              onChangeText={(t) => setConfirm(t.replace(/\D/g, ''))}
+              onChangeText={(t) => setConfirm(t.replace(/\D/g, '').slice(0, 4))}
+              maxLength={4}
               returnKeyType="done"
               onSubmitEditing={handleCreate}
               editable={!isLoading}
