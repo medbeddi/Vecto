@@ -217,7 +217,7 @@ router.get('/admin/stats', requireAdmin, async (req, res) => {
 // POST /admin/drivers — créer un compte livreur depuis l'admin
 router.post('/admin/drivers', requireAdmin, async (req, res) => {
   const { name, phone, password } = req.body;
-  if (!name?.trim() || !phone?.trim() || !password || password.length < 6) {
+  if (!name?.trim() || !phone?.trim() || !password || !/^\d{4}$/.test(password.trim())) {
     return res.status(400).json({ error: 'INVALID_BODY' });
   }
   try {

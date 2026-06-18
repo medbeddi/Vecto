@@ -475,7 +475,7 @@
     <label class="field-label">Téléphone</label>
     <div class="field-row"><input type="tel" id="add-livreur-phone" placeholder="+222 XX XX XX XX" /></div>
     <label class="field-label">Mot de passe</label>
-    <div class="field-row"><input type="password" id="add-livreur-pass" placeholder="6 caractères minimum" /></div>
+    <div class="field-row"><input type="tel" id="add-livreur-pass" placeholder="4 chiffres" inputmode="numeric" pattern="[0-9]*" maxlength="4" /></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-add-livreur')">Annuler</button>
       <button class="btn btn-dark" id="btn-add-livreur" onclick="addLivreur()">Créer le compte</button>
@@ -484,13 +484,17 @@
 </div>
 
 <!-- ================================================================
-     MODAL — Modifier livreur (nom uniquement)
+     MODAL — Modifier un livreur
 ================================================================ -->
 <div class="modal-overlay" id="modal-edit-driver">
   <div class="modal">
     <div class="modal-title">Modifier le livreur</div>
     <label class="field-label">Nom complet</label>
     <div class="field-row"><input type="text" id="edit-driver-name" placeholder="Nom du livreur" /></div>
+    <div style="margin-top:16px;border-top:.5px solid var(--border);padding-top:16px">
+      <label class="field-label">Nouveau mot de passe <span style="font-weight:400;opacity:.5;font-size:11px">(laisser vide = ne pas changer)</span></label>
+      <div class="field-row"><input type="tel" id="edit-driver-pwd" placeholder="4 chiffres" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="new-password" /></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-driver')">Annuler</button>
       <button class="btn btn-dark" onclick="saveDriver()">Enregistrer</button>

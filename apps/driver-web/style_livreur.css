@@ -177,11 +177,11 @@ input:focus, textarea:focus { outline: none; }
 .brand { text-align:center; margin-bottom:40px; }
 .brand-logo {
   width:72px; height:72px; border-radius:22px;
-  background:var(--text-1); color:#fff;
-  font-size:32px; font-weight:800;
+  overflow:hidden;
   display:flex; align-items:center; justify-content:center;
   margin:0 auto 16px; box-shadow:0 8px 24px rgba(0,0,0,.18);
 }
+.brand-logo img { width:100%; height:100%; object-fit:cover; display:block; }
 .brand-name { font-size:32px; font-weight:800; letter-spacing:-1px; color:var(--text-1); }
 .brand-sub  { font-size:14px; color:var(--text-2); margin-top:6px; }
 .welcome-title { font-size:26px; font-weight:700; color:var(--text-1); margin-bottom:6px; }

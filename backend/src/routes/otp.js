@@ -143,6 +143,10 @@ router.post('/otp/verify/driver', otpLimiter, async (req, res) => {
 
     // Compte existant — connexion directe après OTP
     let driver = await db('drivers').where({ phone_hash: phoneHash }).first();
+    if (driver && !driver.phone) {
+      await db('drivers').where({ id: driver.id }).update({ phone: phone.trim() });
+      driver.phone = phone.trim();
+    }
     if (!driver) {
       // Nouveau driver — nom + mot de passe requis
       if (!name || name.trim().length < 2) return res.status(400).json({ error: 'NAME_REQUIRED' });

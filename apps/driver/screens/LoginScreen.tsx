@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -78,10 +79,11 @@ export default function LoginScreen() {
       <StatusBar style="dark" />
 
       <View style={styles.logoBlock}>
-        <View style={styles.logoSquare}>
-          <Text style={styles.logoLetter}>V</Text>
-        </View>
-        <Text style={styles.logoText}>VECTO</Text>
+        <Image
+          source={require('../assets/logo.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
       </View>
 
       <View style={styles.form}>
@@ -151,13 +153,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG, justifyContent: 'center', paddingHorizontal: 28 },
   logoBlock: { alignItems: 'center', marginBottom: 36 },
-  logoSquare: {
-    width: 64, height: 64, borderRadius: 16,
-    backgroundColor: PRIMARY, justifyContent: 'center', alignItems: 'center',
-    marginBottom: 10,
-  },
-  logoLetter: { color: '#fff', fontSize: 32, fontWeight: '900' },
-  logoText: { fontSize: 22, fontWeight: '900', color: PRIMARY, letterSpacing: 4 },
+  logoImage: { width: 80, height: 80, borderRadius: 20 },
   form: { gap: 14 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
