@@ -403,7 +403,7 @@ function CoursesTab() {
 
             {incomingOrder?.price != null && (
               <View style={styles.modalPriceBadge}>
-                <Text style={styles.modalPriceText}>{Number.isInteger(incomingOrder.price) ? incomingOrder.price : incomingOrder.price?.toFixed(2)} MRU</Text>
+                <Text style={styles.modalPriceText}>{(() => { const p = Number(incomingOrder.price); return Number.isInteger(p) ? p : p.toFixed(2); })()} MRU</Text>
               </View>
             )}
 
