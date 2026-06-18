@@ -13,7 +13,7 @@ const GREEN = '#34C759';
 const RED   = '#FF3B30';
 const ACCEPT_GREEN = '#22C55E';
 
-const WINDOW_SEC = 20;
+const WINDOW_SEC = 60;
 
 type Props = {
   delivery: Delivery;
@@ -131,8 +131,8 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
   const hasRoute = !!(delivery.pickupAddress || delivery.dropoffAddress);
   const hasStats = delivery.distanceKm != null || delivery.durationMin != null;
   const countdownColor = countdown == null ? GREEN
-    : countdown > 10 ? GREEN
-    : countdown > 5  ? '#FF9500'
+    : countdown > 30 ? GREEN
+    : countdown > 15 ? '#FF9500'
     : '#FF3B30';
 
   return (
@@ -142,7 +142,7 @@ export function DeliveryCard({ delivery, onAccept, onRefuse, onExpire, accepting
       {countdown != null ? (
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, {
-            width: `${Math.max(0, ((countdown ?? 0) / 20) * 100)}%` as `${number}%`,
+            width: `${Math.max(0, ((countdown ?? 0) / WINDOW_SEC) * 100)}%` as `${number}%`,
             backgroundColor: countdownColor,
           }]} />
         </View>
