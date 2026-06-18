@@ -522,7 +522,9 @@ function _driverMsgBubble(m) {
   } else {
     inner = '<div class="cc-msg-text">' + escHtml(m.content) + '</div>';
   }
-  return '<div class="cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in') + '">'
+  var avatar = isOut ? '' : '<img src="moto.svg" style="width:22px;height:22px;object-fit:contain;flex-shrink:0;margin-right:6px;margin-top:4px;opacity:.85" />';
+  return '<div class="cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in') + '" style="' + (isOut ? '' : 'align-items:flex-start') + '">'
+    + (isOut ? '' : avatar)
     + '<div class="cc-msg-bubble ' + (isOut ? 'cc-msg-bubble-out' : 'cc-msg-bubble-in') + '">'
     + inner
     + '<div class="cc-msg-time">' + fmtTime(m.createdAt) + '</div>'
@@ -2379,17 +2381,17 @@ function trackingIcon(driver) {
   var status = driver.status || 'offline';
   var isAvailable = driver.isAvailable !== false;
   var color = status === 'busy' ? '#FF9500' : isAvailable ? '#34C759' : '#AEAEB2';
-  var html = '<div style="position:relative;display:flex;flex-direction:column;align-items:center;width:42px">'
-    + '<img src="moto.svg" style="width:42px;height:75px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))" />'
-    + '<div style="width:12px;height:12px;border-radius:50%;background:' + color + ';border:2px solid #fff;'
-    + 'margin-top:-5px;box-shadow:0 0 0 2px ' + color + '66,0 1px 4px rgba(0,0,0,.3)"></div>'
+  var html = '<div style="position:relative;display:flex;flex-direction:column;align-items:center;width:28px">'
+    + '<img src="moto.svg" style="width:28px;height:50px;object-fit:contain;filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))" />'
+    + '<div style="width:9px;height:9px;border-radius:50%;background:' + color + ';border:2px solid #fff;'
+    + 'margin-top:-4px;box-shadow:0 0 0 2px ' + color + '66,0 1px 4px rgba(0,0,0,.3)"></div>'
     + '</div>';
   return L.divIcon({
     className: '',
     html: html,
-    iconSize: [42, 90],
-    iconAnchor: [21, 90],
-    popupAnchor: [0, -92],
+    iconSize: [28, 62],
+    iconAnchor: [14, 62],
+    popupAnchor: [0, -64],
   });
 }
 

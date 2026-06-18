@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Icon } from '../components/Icon';
 import { StatusBar } from 'expo-status-bar';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuthStore } from '../store/auth.store';
@@ -24,8 +23,6 @@ export default function PasswordScreen({ navigation }: Props) {
   const [country, setCountry] = useState<Country>(COUNTRIES[0]);
   const [local, setLocal] = useState('');
   const [password, setPassword] = useState('');
-  const [secure, setSecure] = useState(true);
-
   const { loginWithPassword, sendOtp, isLoading, error, clearError } = useAuthStore();
 
   const phone = `${country.dial}${local.replace(/\D/g, '')}`;
@@ -100,9 +97,9 @@ export default function PasswordScreen({ navigation }: Props) {
         <View style={styles.inputWrap}>
           <TextInput
             style={styles.inputFlex}
-            placeholder="Mot de passe"
+            placeholder="Code (chiffres)"
             placeholderTextColor={TEXT2}
-            secureTextEntry={secure}
+            keyboardType="number-pad"
             value={password}
             onChangeText={setPassword}
             returnKeyType="done"
@@ -110,9 +107,6 @@ export default function PasswordScreen({ navigation }: Props) {
             editable={!isLoading}
             autoFocus
           />
-          <TouchableOpacity onPress={() => setSecure((s) => !s)} style={styles.eyeBtn}>
-            <Icon name={secure ? 'eye' : 'eye-off'} size={20} color={TEXT2} strokeWidth={1.75} />
-          </TouchableOpacity>
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
