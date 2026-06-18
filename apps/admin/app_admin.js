@@ -9,14 +9,12 @@ let _role  = localStorage.getItem('vecto_admin_role') || 'admin';
 let _socket = null;
 
 /* ── Config tarification ─────────────────────────────────────────── */
-// prix_brut = 100 + ⌈(distance - 4.5) / 0.1⌉ × 25 ; arrondi au 50 le plus proche (25→bas, 75→haut)
+// ≤4.5 km → 1000 MRU fixe ; sinon prix_brut = 100 + ⌈(dist-4.5)/0.1⌉ × 2.5, arrondi au 5 le plus proche
 function _prixPourDist(dist) {
-  if (dist <= 4.5) return 100;
-  var prixBrut = 100 + Math.ceil((dist - 4.5) / 0.1) * 25;
-  var mod = prixBrut % 100;
-  if (mod === 25) return prixBrut - 25; // se terminant par 25 → vers le bas
-  if (mod === 75) return prixBrut + 25; // se terminant par 75 → vers le haut
-  return prixBrut;
+  if (dist <= 4.5) return 1000;
+  var tranches = Math.ceil((dist - 4.5) / 0.1);
+  var prixBrut = 100 + tranches * 2.5;
+  return Math.round(prixBrut / 5) * 5;
 }
 
 function _autoFillPrice(dist) {
@@ -880,7 +878,7 @@ function renderLivreurs() {
   var tbody = document.getElementById('livreurs-tbody');
   if (!tbody) return;
   if (!_livreurs.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:24px">Aucun livreur</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-3);padding:24px">Aucun livreur</td></tr>';
     return;
   }
   var html = '';
@@ -888,6 +886,7 @@ function renderLivreurs() {
     html += '<tr>'
       + '<td style="font-weight:700;color:var(--text-2)">#' + (i + 1) + '</td>'
       + '<td style="font-weight:600">' + l.name + '</td>'
+      + '<td style="color:var(--text-2);font-size:13px">' + (l.phone || '—') + '</td>'
       + '<td>' + (STATUT_LIVREUR[l.status] || '') + '</td>'
       + '<td>' + l.courses + '</td>'
       + '<td style="font-weight:600">' + fmtMoney(l.balance) + '</td>'
