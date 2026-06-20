@@ -14,6 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
+      "bundleIdentifier": "com.medbeddi.vecto.driver",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Pour partager votre position avec le client.",
         "NSMicrophoneUsageDescription": "Pour envoyer des messages audio.",
@@ -21,6 +22,7 @@
       }
     },
     "android": {
+      "package": "com.medbeddi.vecto.driver",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#111111"
@@ -28,8 +30,12 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
         "android.permission.POST_NOTIFICATIONS"
       ],
       "googleServicesFile": "./google-services.json"
@@ -59,6 +65,18 @@
     ],
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1d2bbdce-9330-4d2c-bed8-11367bd541c0"
+      }
+    },
+    "owner": "beddimed",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/1d2bbdce-9330-4d2c-bed8-11367bd541c0"
     }
   }
 }

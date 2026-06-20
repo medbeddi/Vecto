@@ -495,11 +495,14 @@ function CoursesTab() {
                     onPress={() => navigation.navigate('Chat', { delivery: d })}
                     activeOpacity={0.75}
                   >
-                    <View style={styles.activeCourseLeft}>
-                      <View style={styles.activeDot} />
-                      <Text style={styles.activeCourseAlias}>{d.clientAlias}</Text>
+                    <View style={styles.activeCourseHeader}>
+                      <View style={styles.activeCourseLeft}>
+                        <View style={styles.activeDot} />
+                        <Text style={styles.activeCourseAlias}>{d.clientAlias}</Text>
+                      </View>
+                      <Text style={styles.activeCourseArrow}>→ Ouvrir</Text>
                     </View>
-                    <Text style={styles.activeCourseArrow}>→ Ouvrir</Text>
+                    <CourseProgressBar status={d.status} />
                   </TouchableOpacity>
                 ))}
               </View>
@@ -718,7 +721,8 @@ function AdminChatTab() {
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission refusée', 'Activez la galerie.'); return; }
+    // 'limited' = iOS 14 accès partiel, on autorise quand même
+    if (status === 'denied') { Alert.alert('Permission refusée', 'Activez la galerie dans les paramètres.'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.75 });
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
@@ -849,26 +853,31 @@ function CCBubble({ message }: { message: CCMessage }) {
     if (!message.content) return;
     try {
       if (!soundRef.current) {
-        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          allowsRecordingIOS: false,
+          staysActiveInBackground: false,
+        });
         const { sound, status } = await Audio.Sound.createAsync(
           { uri: message.content },
-          { shouldPlay: true }
+          { shouldPlay: true, progressUpdateIntervalMillis: 500 },
+          (s) => {
+            if (s.isLoaded) {
+              if (s.durationMillis) setDuration(Math.round(s.durationMillis / 1000));
+              if (s.didJustFinish) setPlaying(false);
+            }
+          }
         );
         soundRef.current = sound;
         if (status.isLoaded && status.durationMillis) {
           setDuration(Math.round(status.durationMillis / 1000));
         }
-        sound.setOnPlaybackStatusUpdate((s) => {
-          if (s.isLoaded) {
-            if (s.durationMillis) setDuration(Math.round(s.durationMillis / 1000));
-            if (s.didJustFinish) setPlaying(false);
-          }
-        });
         setPlaying(true);
       } else if (playing) {
         await soundRef.current.pauseAsync();
         setPlaying(false);
       } else {
+        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
         await soundRef.current.playAsync();
         setPlaying(true);
       }
@@ -890,12 +899,14 @@ function CCBubble({ message }: { message: CCMessage }) {
     content = imgError ? (
       <Text style={adminChat.imgError}>Image non disponible</Text>
     ) : (
-      <Image
-        source={{ uri: message.content }}
-        style={adminChat.msgImage}
-        resizeMode="cover"
-        onError={() => setImgError(true)}
-      />
+      <TouchableOpacity onPress={() => message.content && Linking.openURL(message.content)} activeOpacity={0.85}>
+        <Image
+          source={{ uri: message.content }}
+          style={adminChat.msgImage}
+          resizeMode="cover"
+          onError={() => setImgError(true)}
+        />
+      </TouchableOpacity>
     );
   } else if (message.type === 'audio') {
     content = (
@@ -1968,6 +1979,52 @@ const docStyles = StyleSheet.create({
   uploadBtnText: { fontSize: 13, fontWeight: '600', color: TEXT2 },
 });
 
+// ─── Course Progress Bar ─────────────────────────────────────────────────────
+
+const COURSE_STEPS = ['Acceptée', 'En livraison', 'Terminée'] as const;
+
+function CourseProgressBar({ status }: { status?: string }) {
+  const doneIdx = status === 'in_progress' ? 1 : status === 'done' ? 2 : 0;
+
+  return (
+    <View style={cpbStyles.row}>
+      {COURSE_STEPS.map((label, i) => (
+        <View key={i} style={cpbStyles.stepWrap}>
+          {i > 0 && (
+            <View style={[cpbStyles.line, i <= doneIdx && cpbStyles.lineFilled]} />
+          )}
+          <View style={cpbStyles.stepItem}>
+            <View style={[
+              cpbStyles.dot,
+              i < doneIdx ? cpbStyles.dotDone
+                : i === doneIdx ? cpbStyles.dotCurrent
+                : cpbStyles.dotPending,
+            ]} />
+            <Text style={[cpbStyles.label, i <= doneIdx ? cpbStyles.labelDone : cpbStyles.labelPending]}>
+              {label}
+            </Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const cpbStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  stepWrap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  line: { flex: 1, height: 2, backgroundColor: '#2a2a2a' },
+  lineFilled: { backgroundColor: '#4caf50' },
+  stepItem: { alignItems: 'center' },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  dotDone: { backgroundColor: '#4caf50' },
+  dotCurrent: { backgroundColor: PRIMARY, borderWidth: 2, borderColor: PRIMARY },
+  dotPending: { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#444' },
+  label: { fontSize: 8, marginTop: 3, textAlign: 'center', width: 48 },
+  labelDone: { color: '#4caf50', fontWeight: '600' },
+  labelPending: { color: '#444' },
+});
+
 // ─── Bottom Tab Bar ──────────────────────────────────────────────────────────
 
 function BottomTabBar({
@@ -2087,12 +2144,13 @@ const styles = StyleSheet.create({
     marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5,
   },
   activeCourseCard: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    flexDirection: 'column',
     backgroundColor: CARD, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
     marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#4caf50',
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
+  activeCourseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   activeCourseLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   activeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4caf50' },
   activeCourseAlias: { color: TEXT, fontWeight: '700', fontSize: 14 },
