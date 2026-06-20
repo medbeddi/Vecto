@@ -581,12 +581,12 @@ const styles = StyleSheet.create({
   stepItem: { alignItems: 'center' },
   stepDot: { width: 12, height: 12, borderRadius: 6 },
   stepDotDone: { backgroundColor: PRIMARY },
-  stepDotCurrent: { backgroundColor: '#fff', borderWidth: 2, borderColor: PRIMARY },
-  stepDotPending: { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#444' },
+  stepDotCurrent: { backgroundColor: PRIMARY, borderWidth: 2, borderColor: PRIMARY },
+  stepDotPending: { backgroundColor: '#ccc', borderWidth: 1, borderColor: '#bbb' },
   stepLabel: { fontSize: 9, marginTop: 4, textAlign: 'center', width: 52 },
   stepLabelDone: { color: PRIMARY, fontWeight: '600' },
-  stepLabelCurrent: { color: '#fff', fontWeight: '700' },
-  stepLabelPending: { color: '#444' },
+  stepLabelCurrent: { color: PRIMARY, fontWeight: '700' },
+  stepLabelPending: { color: '#aaa' },
 
   // Closed
   closedBadge: {

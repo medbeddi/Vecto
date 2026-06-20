@@ -420,11 +420,11 @@ const s = StyleSheet.create({
   stepDot: { width: 12, height: 12, borderRadius: 6 },
   stepDotDone: { backgroundColor: BRAND },
   stepDotCurrent: { backgroundColor: '#fff', borderWidth: 2, borderColor: BRAND },
-  stepDotPending: { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#444' },
+  stepDotPending: { backgroundColor: '#555', borderWidth: 1, borderColor: '#777' },
   stepLabel: { fontSize: 9, marginTop: 4, textAlign: 'center', width: 52 },
   stepLabelDone: { color: BRAND, fontWeight: '600' },
   stepLabelCurrent: { color: '#fff', fontWeight: '700' },
-  stepLabelPending: { color: '#444' },
+  stepLabelPending: { color: '#888' },
   bottomBar: {
     position: 'absolute', bottom: 40, left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16,
