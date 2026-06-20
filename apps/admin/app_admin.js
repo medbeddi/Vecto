@@ -395,24 +395,31 @@ function showPage(pageId) {
 
 function showCCTab(tab) {
   _ccActiveTab = tab;
-  var clientsPanel = document.getElementById('cc-clients-panel');
-  var driversPanel = document.getElementById('cc-drivers-panel');
-  var tabClients   = document.getElementById('cc-tab-clients');
-  var tabDrivers   = document.getElementById('cc-tab-drivers');
+  var clientsPanel  = document.getElementById('cc-clients-panel');
+  var driversPanel  = document.getElementById('cc-drivers-panel');
+  var newcallPanel  = document.getElementById('cc-newcall-panel');
+  var tabClients    = document.getElementById('cc-tab-clients');
+  var tabDrivers    = document.getElementById('cc-tab-drivers');
+  var tabNewcall    = document.getElementById('cc-tab-newcall');
   if (!clientsPanel) return;
 
-  clientsPanel.style.display = tab === 'clients' ? '' : 'none';
-  driversPanel.style.display = tab === 'drivers' ? '' : 'none';
+  clientsPanel.style.display = tab === 'clients'  ? '' : 'none';
+  driversPanel.style.display = tab === 'drivers'  ? '' : 'none';
+  if (newcallPanel) newcallPanel.style.display = tab === 'newcall' ? '' : 'none';
   tabClients.classList.toggle('active', tab === 'clients');
   tabDrivers.classList.toggle('active', tab === 'drivers');
+  if (tabNewcall) tabNewcall.classList.toggle('active', tab === 'newcall');
 
   if (tab === 'clients') {
     loadInbox();
-  } else {
+  } else if (tab === 'drivers') {
     loadDriversChatList();
     _driverChatUnread = 0;
     var badge = document.getElementById('cc-driver-unread-badge');
     if (badge) badge.style.display = 'none';
+  } else if (tab === 'newcall') {
+    initNCMap();
+    if (_googlePlacesReady) initNCPlaces();
   }
 }
 
@@ -1308,6 +1315,213 @@ function searchClient() {
   document.getElementById('cc-client-name').textContent = 'Client · ' + phone;
 }
 
+/* ── Nouvel appel : état ────────────────────────────────────────── */
+var _ncPickupCoords  = null;   // [lat, lng]
+var _ncDropoffCoords = null;   // [lat, lng]
+var _ncFoundClient   = null;   // { id, alias, phone } ou null
+var _ncLeafletMap    = null;
+var _ncPickupMarker  = null;
+var _ncDropoffMarker = null;
+var _ncDebounce      = null;
+
+async function searchNCClient() {
+  var phone = (document.getElementById('nc-phone')?.value || '').trim();
+  if (!phone) return;
+  var banner = document.getElementById('nc-client-banner');
+  var aliasEl = document.getElementById('nc-client-alias');
+  var subEl   = document.getElementById('nc-client-sub');
+  var dotEl   = document.getElementById('nc-client-dot');
+  if (banner) banner.style.display = 'none';
+  try {
+    var res = await fetch(API + '/api/admin/clients/search?phone=' + encodeURIComponent(phone), { headers: authHeaders() });
+    var data = await res.json();
+    if (data.found) {
+      _ncFoundClient = data.client;
+      if (aliasEl) aliasEl.textContent = data.client.alias;
+      if (subEl)   subEl.textContent   = 'Client existant · ' + (data.client.phone || phone);
+      if (dotEl)   dotEl.style.background = '#34C759';
+    } else {
+      _ncFoundClient = null;
+      if (aliasEl) aliasEl.textContent = 'Nouveau client';
+      if (subEl)   subEl.textContent   = 'Sera créé avec ce numéro : ' + phone;
+      if (dotEl)   dotEl.style.background = '#FF9500';
+    }
+    if (banner) banner.style.display = 'flex';
+  } catch {
+    if (aliasEl) aliasEl.textContent = 'Erreur réseau';
+    if (subEl)   subEl.textContent   = '';
+    if (banner)  banner.style.display = 'flex';
+  }
+}
+
+function clearNCClient() {
+  _ncFoundClient = null;
+  var phoneEl = document.getElementById('nc-phone');
+  if (phoneEl) phoneEl.value = '';
+  var banner = document.getElementById('nc-client-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+function debounceNCMap() {
+  if (_googlePlacesReady) return;  // Google Places gère les coords
+  clearTimeout(_ncDebounce);
+  _ncDebounce = setTimeout(updateNCMap, 700);
+}
+
+async function updateNCMap() {
+  var pickup  = (document.getElementById('nc-pickup')?.value  || '').trim();
+  var dropoff = (document.getElementById('nc-dropoff')?.value || '').trim();
+  async function geocode(addr) {
+    try {
+      var r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=mr&q=' + encodeURIComponent(addr));
+      var d = await r.json();
+      return d[0] ? [parseFloat(d[0].lat), parseFloat(d[0].lon)] : null;
+    } catch { return null; }
+  }
+  if (pickup)  { var c = await geocode(pickup);  if (c) { _ncPickupCoords  = c; _autoFillNCPrice(); refreshNCMapMarkers(); } }
+  if (dropoff) { var c2 = await geocode(dropoff); if (c2) { _ncDropoffCoords = c2; _autoFillNCPrice(); refreshNCMapMarkers(); } }
+}
+
+function _autoFillNCPrice() {
+  if (!_ncPickupCoords || !_ncDropoffCoords) return;
+  _routeDistKm(_ncPickupCoords, _ncDropoffCoords, function(distKm) {
+    var priceEl = document.getElementById('nc-price');
+    if (priceEl && !priceEl.value) priceEl.value = _prixPourDist(distKm);
+  });
+}
+
+var _ncGoogleMap     = null;
+var _ncGoogleMarkP   = null;
+var _ncGoogleMarkD   = null;
+
+function initNCMap() {
+  var mapEl = document.getElementById('nc-mini-map');
+  if (!mapEl) return;
+  if (_useGoogleMaps && window.google) {
+    if (_ncGoogleMap) return;
+    var nouakchott = { lat: 18.0735, lng: -15.9582 };
+    _ncGoogleMap = new google.maps.Map(mapEl, { zoom: 12, center: nouakchott, disableDefaultUI: true });
+    return;
+  }
+  if (_ncLeafletMap) return;
+  var nouakchott = [18.0735, -15.9582];
+  _ncLeafletMap = L.map(mapEl, { zoomControl: false, dragging: false, scrollWheelZoom: false, tap: false })
+    .setView(nouakchott, 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '' }).addTo(_ncLeafletMap);
+}
+
+function refreshNCMapMarkers() {
+  if (_useGoogleMaps && _ncGoogleMap && window.google) {
+    var iconG = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#34C759', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 };
+    var iconR = { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#FF3B30', fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 };
+    if (_ncPickupCoords) {
+      var pos = { lat: _ncPickupCoords[0], lng: _ncPickupCoords[1] };
+      if (_ncGoogleMarkP) _ncGoogleMarkP.setPosition(pos);
+      else _ncGoogleMarkP = new google.maps.Marker({ position: pos, map: _ncGoogleMap, icon: iconG });
+    }
+    if (_ncDropoffCoords) {
+      var pos2 = { lat: _ncDropoffCoords[0], lng: _ncDropoffCoords[1] };
+      if (_ncGoogleMarkD) _ncGoogleMarkD.setPosition(pos2);
+      else _ncGoogleMarkD = new google.maps.Marker({ position: pos2, map: _ncGoogleMap, icon: iconR });
+    }
+    if (_ncPickupCoords && _ncDropoffCoords) {
+      var bounds = new google.maps.LatLngBounds();
+      bounds.extend({ lat: _ncPickupCoords[0],  lng: _ncPickupCoords[1] });
+      bounds.extend({ lat: _ncDropoffCoords[0], lng: _ncDropoffCoords[1] });
+      _ncGoogleMap.fitBounds(bounds, 24);
+    } else if (_ncPickupCoords)  { _ncGoogleMap.setCenter({ lat: _ncPickupCoords[0],  lng: _ncPickupCoords[1]  }); _ncGoogleMap.setZoom(14); }
+    else if (_ncDropoffCoords)   { _ncGoogleMap.setCenter({ lat: _ncDropoffCoords[0], lng: _ncDropoffCoords[1] }); _ncGoogleMap.setZoom(14); }
+    return;
+  }
+  if (!_ncLeafletMap) return;
+  var iconG = L.divIcon({ className: '', html: '<div style="width:12px;height:12px;border-radius:50%;background:#34C759;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>', iconSize: [12,12], iconAnchor: [6,6] });
+  var iconR = L.divIcon({ className: '', html: '<div style="width:12px;height:12px;border-radius:50%;background:#FF3B30;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>', iconSize: [12,12], iconAnchor: [6,6] });
+  if (_ncPickupCoords) {
+    if (_ncPickupMarker) _ncLeafletMap.removeLayer(_ncPickupMarker);
+    _ncPickupMarker = L.marker(_ncPickupCoords, { icon: iconG }).addTo(_ncLeafletMap);
+  }
+  if (_ncDropoffCoords) {
+    if (_ncDropoffMarker) _ncLeafletMap.removeLayer(_ncDropoffMarker);
+    _ncDropoffMarker = L.marker(_ncDropoffCoords, { icon: iconR }).addTo(_ncLeafletMap);
+  }
+  if (_ncPickupCoords && _ncDropoffCoords) {
+    _ncLeafletMap.fitBounds([_ncPickupCoords, _ncDropoffCoords], { padding: [24, 24] });
+  } else if (_ncPickupCoords)  { _ncLeafletMap.setView(_ncPickupCoords,  14); }
+  else if (_ncDropoffCoords)   { _ncLeafletMap.setView(_ncDropoffCoords, 14); }
+}
+
+function initNCPlaces() {
+  _attachPlaces(document.getElementById('nc-pickup'), function(coords, addr) {
+    _ncPickupCoords = coords;
+    refreshNCMapMarkers();
+    _autoFillNCPrice();
+  });
+  _attachPlaces(document.getElementById('nc-dropoff'), function(coords, addr) {
+    _ncDropoffCoords = coords;
+    refreshNCMapMarkers();
+    _autoFillNCPrice();
+  });
+}
+
+async function createCallCourse() {
+  var phone    = (document.getElementById('nc-phone')?.value     || '').trim();
+  var pickup   = (document.getElementById('nc-pickup')?.value    || '').trim();
+  var dropoff  = (document.getElementById('nc-dropoff')?.value   || '').trim();
+  var priceRaw = (document.getElementById('nc-price')?.value     || '').trim();
+  var desc     = (document.getElementById('nc-description')?.value || '').trim();
+  var statusEl = document.getElementById('nc-status');
+
+  if (!pickup || !dropoff) {
+    if (statusEl) { statusEl.textContent = 'Veuillez renseigner les adresses de départ et d\'arrivée.'; statusEl.style.color = '#FF3B30'; }
+    return;
+  }
+  var price = priceRaw ? parseFloat(priceRaw) : null;
+  if (price !== null && (isNaN(price) || price < 0)) {
+    if (statusEl) { statusEl.textContent = 'Tarif invalide.'; statusEl.style.color = '#FF3B30'; }
+    return;
+  }
+
+  if (statusEl) { statusEl.textContent = 'Création en cours…'; statusEl.style.color = 'var(--text-3)'; }
+
+  try {
+    var res = await fetch(API + '/api/admin/call-course', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        phone:          phone || undefined,
+        pickupAddress:  pickup,
+        dropoffAddress: dropoff,
+        price:          price,
+        description:    desc || undefined,
+        pickupLat:      _ncPickupCoords  ? _ncPickupCoords[0]  : undefined,
+        pickupLng:      _ncPickupCoords  ? _ncPickupCoords[1]  : undefined,
+        dropoffLat:     _ncDropoffCoords ? _ncDropoffCoords[0] : undefined,
+        dropoffLng:     _ncDropoffCoords ? _ncDropoffCoords[1] : undefined,
+      }),
+    });
+    if (!res.ok) {
+      var err = {}; try { err = await res.json(); } catch {}
+      if (statusEl) { statusEl.textContent = 'Erreur : ' + (err.error || res.status); statusEl.style.color = '#FF3B30'; }
+      return;
+    }
+    var data = await res.json();
+    if (statusEl) {
+      statusEl.innerHTML = '<span style="color:#34C759;font-weight:600">Course créée —</span> '
+        + escHtml(data.delivery.clientAlias) + ' · envoyée aux livreurs disponibles.';
+    }
+    // Réinitialiser le formulaire
+    ['nc-phone','nc-pickup','nc-dropoff','nc-price','nc-description'].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.value = '';
+    });
+    _ncPickupCoords = null; _ncDropoffCoords = null; _ncFoundClient = null;
+    if (_ncPickupMarker  && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncPickupMarker);  _ncPickupMarker  = null; }
+    if (_ncDropoffMarker && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncDropoffMarker); _ncDropoffMarker = null; }
+    var banner = document.getElementById('nc-client-banner'); if (banner) banner.style.display = 'none';
+  } catch {
+    if (statusEl) { statusEl.textContent = 'Erreur réseau.'; statusEl.style.color = '#FF3B30'; }
+  }
+}
+
 function _haversineKm(ptA, ptB) {
   var R = 6371, dLat = (ptB[0]-ptA[0])*Math.PI/180, dLng = (ptB[1]-ptA[1])*Math.PI/180;
   var a = Math.sin(dLat/2)*Math.sin(dLat/2) + Math.cos(ptA[0]*Math.PI/180)*Math.cos(ptB[0]*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
@@ -1991,6 +2205,8 @@ function initGooglePlaces() {
     var mdi = document.getElementById('modal-dropoff-input'); if (mdi) mdi.value = addr || document.getElementById('cc-dropoff').value;
     refreshMapMarkers();
   });
+  // Champs du panel "Nouvel appel"
+  initNCPlaces();
 }
 
 function _initModalPlaces() {

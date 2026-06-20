@@ -415,6 +415,106 @@ router.get('/admin/transactions', requireAdmin, async (req, res) => {
   }
 });
 
+// ── Call Center : recherche client par numéro de téléphone ───────────────────
+router.get('/admin/clients/search', requireCallCenter, async (req, res) => {
+  try {
+    const { phone } = req.query;
+    if (!phone?.trim()) return res.status(400).json({ error: 'PHONE_REQUIRED' });
+    const hash = hashWaId(phone.trim());
+    const client = await db('clients').where({ wa_id_hash: hash }).first('id', 'alias', 'wa_id_enc');
+    if (!client) return res.json({ found: false });
+    let decryptedPhone = null;
+    try {
+      const raw = decryptWaId(client.wa_id_enc);
+      decryptedPhone = raw.startsWith('admin_call_') ? null : raw;
+    } catch {}
+    res.json({ found: true, client: { id: client.id, alias: client.alias, phone: decryptedPhone } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : créer une course depuis un appel téléphonique ───────────────
+router.post('/admin/call-course', requireCallCenter, async (req, res) => {
+  try {
+    const { phone, pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description } = req.body;
+    if (!pickupAddress?.trim() || !dropoffAddress?.trim()) {
+      return res.status(400).json({ error: 'ADDRESSES_REQUIRED' });
+    }
+
+    let clientId, clientAlias;
+
+    if (phone?.trim()) {
+      const hash = hashWaId(phone.trim());
+      const existing = await db('clients').where({ wa_id_hash: hash }).first('id', 'alias');
+      if (existing) {
+        clientId    = existing.id;
+        clientAlias = existing.alias;
+      } else {
+        // Nouveau client lié au numéro → WhatsApp relay + connexion app future possible
+        clientAlias = `Client #${Math.random().toString(36).toUpperCase().slice(-5)}`;
+        const [newClient] = await db('clients')
+          .insert({ wa_id_hash: hash, wa_id_enc: encryptWaId(phone.trim()), alias: clientAlias })
+          .returning('*');
+        clientId = newClient.id;
+      }
+    } else {
+      clientAlias = `Appel #${Date.now().toString(36).toUpperCase().slice(-5)}`;
+      const ts = `admin_call_${Date.now()}_${Math.random()}`;
+      const [newClient] = await db('clients')
+        .insert({ wa_id_hash: hashWaId(ts), wa_id_enc: encryptWaId(ts), alias: clientAlias })
+        .returning('*');
+      clientId = newClient.id;
+    }
+
+    const deliveryData = {
+      client_id:       clientId,
+      status:          'pending',
+      pickup_address:  pickupAddress.trim(),
+      dropoff_address: dropoffAddress.trim(),
+      pickup_lat:      pickupLat  ?? null,
+      pickup_lng:      pickupLng  ?? null,
+      dropoff_lat:     dropoffLat ?? null,
+      dropoff_lng:     dropoffLng ?? null,
+      price:           price      ?? null,
+      description:     description?.trim() || `${pickupAddress.trim()} → ${dropoffAddress.trim()}`,
+      last_broadcast_at: db.fn.now(),
+    };
+
+    // Livreur le plus proche du point de départ
+    if (pickupLat != null && pickupLng != null) {
+      const nearest = await db('drivers')
+        .where({ is_available: true, suspended: false })
+        .whereNotNull('last_lat').whereNotNull('last_lng')
+        .select('id', db.raw(`
+          (6371 * acos(
+            cos(radians(?)) * cos(radians(last_lat)) *
+            cos(radians(last_lng) - radians(?)) +
+            sin(radians(?)) * sin(radians(last_lat))
+          )) AS distance_km
+        `, [pickupLat, pickupLng, pickupLat]))
+        .orderBy('distance_km', 'asc')
+        .first();
+      if (nearest) {
+        deliveryData.nearest_driver_id  = nearest.id;
+        deliveryData.priority_expires_at = db.raw("NOW() + INTERVAL '1 minute'");
+      }
+    }
+
+    const [delivery] = await db('deliveries').insert(deliveryData).returning('*');
+
+    emitNewOrder({ ...delivery, alias: clientAlias }, {
+      type: 'text',
+      content: deliveryData.description,
+      meta: null,
+    }).catch(() => {});
+
+    res.json({ delivery: { id: delivery.id, clientAlias } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 // ── Call Center : liste des conversations en attente (admin_queue) ────────────
 router.get('/admin/inbox', requireCallCenter, async (req, res) => {
   try {
