@@ -516,8 +516,9 @@ function _driverMsgBubble(m) {
   } else {
     inner = '<div class="cc-msg-text">' + escHtml(m.content) + '</div>';
   }
+  var tmpAttr = (m.id && m.id.startsWith('tmp_')) ? ' data-tmpid="' + m.id + '"' : '';
   var avatar = isOut ? '' : '<img src="moto.svg" style="width:22px;height:22px;object-fit:contain;flex-shrink:0;margin-right:6px;margin-top:4px;opacity:.85" />';
-  return '<div class="cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in') + '" style="' + (isOut ? '' : 'align-items:flex-start') + '">'
+  return '<div class="cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in') + '"' + tmpAttr + ' style="' + (isOut ? '' : 'align-items:flex-start') + '">'
     + (isOut ? '' : avatar)
     + '<div class="cc-msg-bubble ' + (isOut ? 'cc-msg-bubble-out' : 'cc-msg-bubble-in') + '">'
     + inner
@@ -564,7 +565,7 @@ function appendDriverChatMessage(msg) {
   if (!container) return;
   container.insertAdjacentHTML('beforeend', _driverMsgBubble(msg));
   _driverMsgIds.add(msg.id);
-  container.scrollTop = container.scrollHeight;
+  requestAnimationFrame(function() { container.scrollTop = container.scrollHeight; });
 }
 
 function startDriverChatPolling() {
@@ -588,6 +589,12 @@ async function sendDriverChatMsg(content, type) {
   if (!type) type = 'text';
   if (!content || !_selectedDriverId) return;
   if (input) input.value = '';
+
+  // Affichage optimiste : montrer la bulle immédiatement sans attendre l'API
+  var tempId = 'tmp_' + Date.now();
+  var tempMsg = { id: tempId, senderRole: 'admin', type: type, content: content, createdAt: new Date().toISOString() };
+  appendDriverChatMessage(tempMsg);
+
   try {
     var res = await fetch(API + '/api/admin/driver-chat/' + _selectedDriverId, {
       method: 'POST',
@@ -596,8 +603,16 @@ async function sendDriverChatMsg(content, type) {
     });
     if (!res.ok) return;
     var data = await res.json();
+    // Remplacer la bulle temporaire par le vrai message (avec l'ID réel)
+    _driverMsgIds.delete(tempId);
+    var tmpEl = document.querySelector('[data-tmpid="' + tempId + '"]');
+    if (tmpEl) tmpEl.remove();
     appendDriverChatMessage(data.message);
-  } catch {}
+  } catch {
+    // En cas d'erreur, marquer la bulle temporaire
+    var tmpEl2 = document.querySelector('[data-tmpid="' + tempId + '"]');
+    if (tmpEl2) tmpEl2.style.opacity = '0.4';
+  }
 }
 
 async function toggleDriverMic() {
@@ -635,8 +650,6 @@ async function toggleDriverMic() {
    PAGE CONFIGURER
 ================================================================ */
 async function loadConfigPage() {
-  _updateTarifPreview();
-
   try {
     var r = await fetch(API + '/api/admin/settings/creneau', { headers: authHeaders() });
     if (r.ok) {

@@ -643,7 +643,7 @@ function AdminChatTab() {
       api<{ messages: CCMessage[] }>('/api/drivers/cc-chat')
         .then((d) => merge(d.messages ?? []))
         .catch(() => {});
-    }, 5000);
+    }, 2000);
 
     const onMsg = (msg: CCMessage) => {
       setMessages((prev) => {
@@ -942,7 +942,7 @@ const adminChat = StyleSheet.create({
   avatarText: { color: '#fff', fontSize: 10, fontWeight: '700' },
   bubble: { maxWidth: '75%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, gap: 4 },
   bubbleIn: { backgroundColor: CARD, borderBottomLeftRadius: 4 },
-  bubbleOut: { backgroundColor: PRIMARY, borderBottomRightRadius: 4 },
+  bubbleOut: { backgroundColor: BRAND, borderBottomRightRadius: 4 },
   textIn:  { color: TEXT, fontSize: 15, lineHeight: 20 },
   textOut: { color: '#fff', fontSize: 15, lineHeight: 20 },
   time: { fontSize: 11, color: 'rgba(128,128,128,0.7)', alignSelf: 'flex-end' },
