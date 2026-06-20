@@ -801,9 +801,16 @@ function renderCommandes() {
   var tbody = document.getElementById('commandes-tbody');
   if (!tbody) return;
 
+  var q = ((document.getElementById('commande-search') || {}).value || '').toLowerCase();
   var orders = Object.values(_activeOrders);
   if (_currentFilter !== 'all') {
     orders = orders.filter(function (o) { return o._status === _currentFilter; });
+  }
+  if (q) {
+    orders = orders.filter(function (o) {
+      return (o.clientAlias || '').toLowerCase().includes(q)
+          || (o.deliveryId || '').toLowerCase().includes(q);
+    });
   }
 
   if (!orders.length) {
@@ -906,6 +913,41 @@ function renderLivreurs() {
         + (l.status !== 'suspended'
           ? '<button class="btn-table red" onclick="suspendLivreur(\'' + l.id + '\',' + i + ')">Suspendre</button>'
           : '<button class="btn-table" onclick="reactivateLivreur(\'' + l.id + '\',' + i + ')">Réactiver</button>')
+      + '</td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function filterLivreurs() {
+  var q = (document.getElementById('livreur-search').value || '').toLowerCase();
+  var tbody = document.getElementById('livreurs-tbody');
+  if (!tbody) return;
+  var list = q
+    ? _livreurs.filter(function (l) {
+        return l.name.toLowerCase().includes(q) || (l.phone && l.phone.includes(q));
+      })
+    : _livreurs;
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-3);padding:24px">Aucun livreur trouvé</td></tr>';
+    return;
+  }
+  var html = '';
+  list.forEach(function (l, i) {
+    html += '<tr>'
+      + '<td style="font-weight:700;color:var(--text-2)">#' + (i + 1) + '</td>'
+      + '<td style="font-weight:600">' + l.name + '</td>'
+      + '<td style="color:var(--text-2);font-size:13px">' + (l.phone || '—') + '</td>'
+      + '<td>' + (STATUT_LIVREUR[l.status] || '') + '</td>'
+      + '<td>' + l.courses + '</td>'
+      + '<td style="font-weight:600">' + fmtMoney(l.balance) + '</td>'
+      + '<td>' + fmtDate(l.createdAt) + '</td>'
+      + '<td style="display:flex;gap:4px;flex-wrap:wrap">'
+        + '<button class="btn-table" onclick="openDriverProfile(\'' + l.id + '\')">Profil</button>'
+        + '<button class="btn-table" onclick="openEditDriver(\'' + l.id + '\',' + _livreurs.indexOf(l) + ')">Modifier</button>'
+        + (l.status !== 'suspended'
+          ? '<button class="btn-table red" onclick="suspendLivreur(\'' + l.id + '\',' + _livreurs.indexOf(l) + ')">Suspendre</button>'
+          : '<button class="btn-table" onclick="reactivateLivreur(\'' + l.id + '\',' + _livreurs.indexOf(l) + ')">Réactiver</button>')
       + '</td>'
       + '</tr>';
   });
