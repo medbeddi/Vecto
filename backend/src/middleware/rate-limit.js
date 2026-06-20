@@ -2,7 +2,7 @@ import rateLimit from 'express-rate-limit';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
-const json = (res, _req, _next) =>
+const json = (_req, res) =>
   res.status(429).json({ error: 'RATE_LIMIT_EXCEEDED' });
 
 // Tentatives de login (par IP) — plus souple en dev pour éviter les blocages pendant les tests

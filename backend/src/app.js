@@ -64,14 +64,15 @@ startRebroadcastJob();
 app.use('/webhook/whatsapp', webhookLimiter, whatsappWebhook);
 
 // ─── API REST Flutter ─────────────────────────────────────────────────────────
-// Désactive le cache navigateur sur toutes les routes API (évite les 304 stale)
+// Désactive le cache navigateur + rate limit une seule fois pour toutes les routes API
 app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-app.use('/api', apiLimiter, otpRouter);
-app.use('/api', apiLimiter, driverRouter);
-app.use('/api', apiLimiter, walletRouter);
-app.use('/api', apiLimiter, uploadRouter);
-app.use('/api', apiLimiter, adminRouter);
-app.use('/api', apiLimiter, clientRouter);
+app.use('/api', apiLimiter);
+app.use('/api', otpRouter);
+app.use('/api', driverRouter);
+app.use('/api', walletRouter);
+app.use('/api', uploadRouter);
+app.use('/api', adminRouter);
+app.use('/api', clientRouter);
 
 // ─── Fichiers uploadés (dev) ──────────────────────────────────────────────────
 import { fileURLToPath } from 'url';
