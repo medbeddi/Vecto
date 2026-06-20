@@ -843,6 +843,7 @@ function CCBubble({ message }: { message: CCMessage }) {
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState<number | null>(null);
   const [imgError, setImgError] = useState(false);
+  const [imgFullscreen, setImgFullscreen] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
@@ -899,14 +900,24 @@ function CCBubble({ message }: { message: CCMessage }) {
     content = imgError ? (
       <Text style={adminChat.imgError}>Image non disponible</Text>
     ) : (
-      <TouchableOpacity onPress={() => message.content && Linking.openURL(message.content)} activeOpacity={0.85}>
-        <Image
-          source={{ uri: message.content }}
-          style={adminChat.msgImage}
-          resizeMode="cover"
-          onError={() => setImgError(true)}
-        />
-      </TouchableOpacity>
+      <>
+        <TouchableOpacity onPress={() => setImgFullscreen(true)} activeOpacity={0.88}>
+          <Image
+            source={{ uri: message.content }}
+            style={adminChat.msgImage}
+            resizeMode="cover"
+            onError={() => setImgError(true)}
+          />
+        </TouchableOpacity>
+        <Modal visible={imgFullscreen} transparent={false} animationType="fade" onRequestClose={() => setImgFullscreen(false)} statusBarTranslucent>
+          <View style={adminChat.imgViewer}>
+            <TouchableOpacity style={adminChat.imgViewerClose} onPress={() => setImgFullscreen(false)} activeOpacity={0.75}>
+              <Icon name="x" size={22} color="#fff" strokeWidth={2.5} />
+            </TouchableOpacity>
+            <Image source={{ uri: message.content }} style={adminChat.imgViewerImg} resizeMode="contain" />
+          </View>
+        </Modal>
+      </>
     );
   } else if (message.type === 'audio') {
     content = (
@@ -974,6 +985,13 @@ const adminChat = StyleSheet.create({
   time: { fontSize: 11, color: 'rgba(128,128,128,0.7)', alignSelf: 'flex-end' },
   msgImage: { width: 200, height: 150, borderRadius: 10 },
   imgError: { color: TEXT2, fontSize: 13, opacity: 0.6, fontStyle: 'italic' },
+  imgViewer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+  imgViewerImg: { width: '100%', height: '100%' },
+  imgViewerClose: {
+    position: 'absolute', top: 52, right: 18, zIndex: 10,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 22,
+    padding: 10,
+  },
   systemRow: { alignItems: 'center', marginVertical: 4 },
   systemText: { color: TEXT2, fontSize: 12, backgroundColor: SURFACE, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 3 },
   audioRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2, minWidth: 160 },
