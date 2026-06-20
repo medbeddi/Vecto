@@ -64,6 +64,8 @@ startRebroadcastJob();
 app.use('/webhook/whatsapp', webhookLimiter, whatsappWebhook);
 
 // ─── API REST Flutter ─────────────────────────────────────────────────────────
+// Désactive le cache navigateur sur toutes les routes API (évite les 304 stale)
+app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use('/api', apiLimiter, otpRouter);
 app.use('/api', apiLimiter, driverRouter);
 app.use('/api', apiLimiter, walletRouter);
