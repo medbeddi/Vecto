@@ -260,12 +260,30 @@ export default function ChatScreen({ route, navigation }: Props) {
         </View>
       </Modal>
 
-      {/* Statut */}
-      <View style={[styles.statusBar, { borderBottomColor: STATUS_COLORS[status] ?? '#333' }]}>
-        <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[status] ?? '#333' }]} />
-        <Text style={[styles.statusText, { color: STATUS_COLORS[status] ?? '#aaa' }]}>
-          {STATUS_LABELS[status] ?? status}
-        </Text>
+      {/* Barre de progression commande */}
+      <View style={styles.progressWrap}>
+        {status === 'cancelled' ? (
+          <Text style={styles.cancelledBanner}>❌ Course annulée</Text>
+        ) : (
+          <View style={styles.stepsRow}>
+            {(['Envoyée', 'Assignée', 'En route', 'Livrée'] as const).map((label, i) => {
+              const stepIdx = ({ pending: 0, assigned: 1, in_progress: 2, done: 3 } as Record<string, number>)[status] ?? 0;
+              const filled = i < stepIdx;
+              const current = i === stepIdx;
+              return (
+                <View key={i} style={styles.stepWrap}>
+                  {i > 0 && <View style={[styles.stepLine, (filled || current) && styles.stepLineDone]} />}
+                  <View style={styles.stepItem}>
+                    <View style={[styles.stepDot, filled ? styles.stepDotDone : current ? styles.stepDotCurrent : styles.stepDotPending]} />
+                    <Text style={[styles.stepLabel, filled ? styles.stepLabelDone : current ? styles.stepLabelCurrent : styles.stepLabelPending]}>
+                      {label}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
       </View>
 
       {/* Messages */}
@@ -345,9 +363,21 @@ export default function ChatScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: BG },
-  statusBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#111', borderBottomWidth: 2 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  statusText: { fontSize: 13, fontWeight: '600' },
+  progressWrap: { backgroundColor: '#111', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1e1e1e' },
+  cancelledBanner: { color: '#ff6b6b', fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  stepsRow: { flexDirection: 'row', alignItems: 'center' },
+  stepWrap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  stepLine: { flex: 1, height: 2, backgroundColor: '#2a2a2a' },
+  stepLineDone: { backgroundColor: BRAND },
+  stepItem: { alignItems: 'center' },
+  stepDot: { width: 12, height: 12, borderRadius: 6 },
+  stepDotDone: { backgroundColor: BRAND },
+  stepDotCurrent: { backgroundColor: '#fff', borderWidth: 2, borderColor: BRAND },
+  stepDotPending: { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#444' },
+  stepLabel: { fontSize: 9, marginTop: 4, textAlign: 'center', width: 48 },
+  stepLabelDone: { color: BRAND, fontWeight: '600' },
+  stepLabelCurrent: { color: '#fff', fontWeight: '700' },
+  stepLabelPending: { color: '#444' },
   list: { padding: 12, gap: 4, flexGrow: 1 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10 },
   emptyIcon: { fontSize: 48 },

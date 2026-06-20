@@ -1413,6 +1413,37 @@ function closeModal(id) {
 /* ================================================================
    CALL CENTER — INBOX (conversations WhatsApp en attente + archivées)
 ================================================================ */
+/* ── Barre de progression livraison ──────────────────────────────── */
+function renderDeliveryProgress(status) {
+  var bar = document.getElementById('cc-delivery-progress');
+  if (!bar) return;
+
+  if (status === 'cancelled') {
+    bar.innerHTML = '<div class="cc-prog-cancelled">❌ Course annulée</div>';
+    return;
+  }
+
+  var steps = ['Reçue', 'Assignée', 'En livraison', 'Livrée'];
+  var stepIdx = { pending: 0, assigned: 1, in_progress: 2, done: 3 }[status] ?? 0;
+
+  bar.innerHTML = steps.map(function(label, i) {
+    var filled = i < stepIdx;
+    var current = i === stepIdx;
+    var dotClass = filled ? 'cc-prog-dot done' : current ? 'cc-prog-dot current' : 'cc-prog-dot';
+    var labelClass = filled ? 'cc-prog-label done' : current ? 'cc-prog-label current' : 'cc-prog-label';
+    var lineHtml = i > 0
+      ? '<div class="cc-prog-line' + (filled || current ? ' done' : '') + '"></div>'
+      : '';
+    return '<div class="cc-prog-wrap">'
+      + lineHtml
+      + '<div class="cc-prog-step">'
+      + '<div class="' + dotClass + '"></div>'
+      + '<span class="' + labelClass + '">' + label + '</span>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
 var _inboxSelectedId = null;
 var _inboxItems      = {};   // conversations en attente (admin_queue)
 var _archivedItems   = {};   // conversations archivées (done/cancelled)
@@ -1542,6 +1573,9 @@ async function openConversation(deliveryId) {
   var launchBtn = document.querySelector('.cc-chat-topbar .btn-danger');
   if (launchBtn) launchBtn.style.display = '';
 
+  // Barre de progression
+  renderDeliveryProgress(item ? (item.status || 'pending') : 'pending');
+
   // Charger les messages et démarrer le polling
   await loadMessages(deliveryId);
   startMsgPolling(deliveryId);
@@ -1563,6 +1597,9 @@ async function openArchivedConversation(deliveryId) {
   // Cacher le bouton "Lancer la course" pour les archives (read-only)
   var launchBtn = document.querySelector('.cc-chat-topbar .btn-danger');
   if (launchBtn) launchBtn.style.display = 'none';
+
+  // Barre de progression
+  renderDeliveryProgress(item ? (item.status || 'done') : 'done');
 
   await loadMessages(deliveryId);
 }

@@ -340,6 +340,30 @@ export default function ChatScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Barre de progression commande */}
+      {delivery.status !== 'cancelled' && (
+        <View style={styles.progressWrap}>
+          <View style={styles.stepsRow}>
+            {(['Acceptée', 'En route', 'Terminée'] as const).map((label, i) => {
+              const stepIdx = ({ assigned: 0, in_progress: 1, done: 2 } as Record<string, number>)[delivery.status ?? 'assigned'] ?? 0;
+              const filled = i < stepIdx;
+              const current = i === stepIdx;
+              return (
+                <View key={i} style={styles.stepWrap}>
+                  {i > 0 && <View style={[styles.stepLine, (filled || current) && styles.stepLineDone]} />}
+                  <View style={styles.stepItem}>
+                    <View style={[styles.stepDot, filled ? styles.stepDotDone : current ? styles.stepDotCurrent : styles.stepDotPending]} />
+                    <Text style={[styles.stepLabel, filled ? styles.stepLabelDone : current ? styles.stepLabelCurrent : styles.stepLabelPending]}>
+                      {label}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
       {/* Messages */}
       {loadingMessages ? (
         <ActivityIndicator color={PRIMARY} style={{ flex: 1 }} />
@@ -547,6 +571,22 @@ const styles = StyleSheet.create({
   },
   micBtnRec: { backgroundColor: '#f44336' },
   sendIcon: { color: '#fff', fontSize: 15, marginLeft: 1 },
+
+  // Progress bar
+  progressWrap: { backgroundColor: BG, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1e1e1e' },
+  stepsRow: { flexDirection: 'row', alignItems: 'center' },
+  stepWrap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  stepLine: { flex: 1, height: 2, backgroundColor: '#2a2a2a' },
+  stepLineDone: { backgroundColor: PRIMARY },
+  stepItem: { alignItems: 'center' },
+  stepDot: { width: 12, height: 12, borderRadius: 6 },
+  stepDotDone: { backgroundColor: PRIMARY },
+  stepDotCurrent: { backgroundColor: '#fff', borderWidth: 2, borderColor: PRIMARY },
+  stepDotPending: { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#444' },
+  stepLabel: { fontSize: 9, marginTop: 4, textAlign: 'center', width: 52 },
+  stepLabelDone: { color: PRIMARY, fontWeight: '600' },
+  stepLabelCurrent: { color: '#fff', fontWeight: '700' },
+  stepLabelPending: { color: '#444' },
 
   // Closed
   closedBadge: {

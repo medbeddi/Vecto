@@ -314,14 +314,28 @@
     <!-- ════════════════════════════════════════════════════════
          PAGE CALL CENTER
     ════════════════════════════════════════════════════════ -->
-    <div class="page" id="p-callcenter">
-      <div class="cc-inbox-layout">
+    <div class="page" id="p-callcenter" style="display:flex;flex-direction:column;height:calc(100vh - 72px);padding:0;overflow:hidden">
 
-        <!-- ── SIDEBAR conversations ──────────────────────────── -->
+      <!-- ── Onglets Clients / Livreurs ─────────────────────── -->
+      <div class="cc-tabs">
+        <button id="cc-tab-clients" class="cc-tab active" onclick="showCCTab('clients')">Clients</button>
+        <button id="cc-tab-drivers" class="cc-tab" onclick="showCCTab('drivers')">
+          Livreurs
+          <span id="cc-driver-unread-badge" style="display:none;background:#FF3B30;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;">0</span>
+        </button>
+      </div>
+
+      <!-- ── PANEL CLIENTS ───────────────────────────────────── -->
+      <div id="cc-clients-panel" class="cc-inbox-layout" style="flex:1">
+
+        <!-- Sidebar conversations -->
         <div class="cc-inbox-sidebar">
           <div class="cc-inbox-header">
-            <span style="font-weight:700;font-size:15px;color:var(--text-1)">Conversations en attente</span>
-            <button class="btn btn-ghost btn-sm" onclick="loadInbox()" title="Actualiser">
+            <div style="display:flex;gap:6px;flex:1">
+              <button id="cc-sub-tab-pending"  class="cc-sub-tab active" onclick="showInboxSubTab('pending')">En attente</button>
+              <button id="cc-sub-tab-archived" class="cc-sub-tab"        onclick="showInboxSubTab('archived')">Archivé</button>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="refreshCurrentInboxTab()" title="Actualiser">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
                 <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
@@ -333,7 +347,7 @@
           </div>
         </div>
 
-        <!-- ── PANEL chat ──────────────────────────────────────── -->
+        <!-- Chat panel client -->
         <div class="cc-chat-panel">
           <div class="cc-chat-empty" id="cc-chat-empty">
             <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
@@ -349,9 +363,11 @@
               </button>
             </div>
 
+            <!-- ── Barre de progression commande ──────────────── -->
+            <div id="cc-delivery-progress" class="cc-delivery-progress"></div>
+
             <div class="cc-messages" id="cc-messages"></div>
 
-            <!-- Barre de réponse -->
             <div class="cc-reply-bar">
               <button id="cc-mic-btn" class="cc-mic-btn" onclick="toggleRecording()" title="Enregistrer un vocal">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -371,7 +387,7 @@
           </div>
         </div>
 
-        <!-- ── PANEL lancement course ──────────────────────────── -->
+        <!-- Panel lancement course -->
         <div class="cc-launch-panel" id="cc-launch-panel" style="display:none">
           <div class="cc-launch-header">
             <span style="font-weight:700;font-size:15px;color:var(--text-1)">Lancer la course</span>
@@ -379,10 +395,8 @@
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
-
           <label class="field-label" style="margin-top:4px">PRIX DE LA LIVRAISON (MRU)</label>
           <div class="field-row"><input type="number" id="cc-price" placeholder="Ex: 150" min="0" /></div>
-
           <label class="field-label">POINT DE DÉPART</label>
           <div class="cc-addr-row">
             <div class="addr-dot green"></div>
@@ -390,7 +404,6 @@
               <input type="text" id="cc-pickup" placeholder="Adresse de départ" oninput="debounceMiniMap()" />
             </div>
           </div>
-
           <label class="field-label" style="margin-top:10px">POINT D'ARRIVÉE</label>
           <div class="cc-addr-row">
             <div class="addr-dot red"></div>
@@ -398,16 +411,68 @@
               <input type="text" id="cc-dropoff" placeholder="Adresse de destination" oninput="debounceMiniMap()" />
             </div>
           </div>
-
-          <!-- Mini-carte -->
           <div class="cc-mini-map" id="cc-mini-map"></div>
-
           <div class="cc-launch-status" id="cc-launch-status"></div>
-
           <button class="btn btn-dark" style="width:100%;justify-content:center;margin-top:4px" onclick="launchCourse()">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><polyline points="20 6 9 17 4 12"/></svg>
             Envoyer aux livreurs
           </button>
+        </div>
+
+      </div>
+
+      <!-- ── PANEL LIVREURS ──────────────────────────────────── -->
+      <div id="cc-drivers-panel" class="cc-inbox-layout" style="flex:1;display:none">
+
+        <!-- Sidebar livreurs -->
+        <div class="cc-inbox-sidebar">
+          <div class="cc-inbox-header">
+            <span style="font-weight:700;font-size:15px;color:var(--text-1)">Livreurs actifs</span>
+            <button class="btn btn-ghost btn-sm" onclick="loadDriversChatList()" title="Actualiser">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+              </svg>
+            </button>
+          </div>
+          <div class="cc-inbox-list" id="cc-drivers-list">
+            <div class="cc-inbox-empty">Aucun livreur enregistré</div>
+          </div>
+        </div>
+
+        <!-- Chat panel livreur -->
+        <div class="cc-chat-panel">
+          <div class="cc-chat-empty" id="cc-driver-chat-empty">
+            <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            <div>Sélectionnez un livreur</div>
+          </div>
+
+          <div class="cc-chat-view" id="cc-driver-chat-view" style="display:none">
+            <div class="cc-chat-topbar">
+              <span class="cc-chat-client-name" id="cc-driver-chat-name">—</span>
+              <button id="cc-driver-call-btn" class="btn btn-ghost btn-sm" onclick="callDriver()" style="display:none">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="margin-right:5px"><path d="M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                Appeler
+              </button>
+            </div>
+            <div class="cc-messages" id="cc-driver-messages"></div>
+            <div class="cc-reply-bar">
+              <button id="cc-driver-mic-btn" class="cc-mic-btn" onclick="toggleDriverMic()" title="Enregistrer un vocal">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+                  <path d="M19 10v2a7 7 0 01-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/>
+                  <line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+              </button>
+              <input type="text" class="cc-reply-input" id="cc-driver-reply-input"
+                     placeholder="Message au livreur…"
+                     onkeydown="if(event.key==='Enter')sendDriverChatMsg()" />
+              <button class="btn btn-dark btn-sm" onclick="sendDriverChatMsg()" title="Envoyer">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
 
       </div>

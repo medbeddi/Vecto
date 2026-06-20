@@ -588,6 +588,27 @@ input:focus, textarea:focus { outline: none; }
   margin-left: auto; line-height: 18px;
 }
 .nav-item { position: relative; }
+/* ── Barre de progression commande ─────────────────────────────── */
+.cc-delivery-progress {
+  display: flex; align-items: center; padding: 10px 18px;
+  border-bottom: 0.5px solid var(--border); flex-shrink: 0;
+  background: var(--bg);
+}
+.cc-prog-wrap { display: flex; align-items: center; flex: 1; }
+.cc-prog-line { flex: 1; height: 2px; background: var(--border); }
+.cc-prog-line.done { background: var(--text-1); }
+.cc-prog-step { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.cc-prog-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--border); border: 1.5px solid var(--border);
+}
+.cc-prog-dot.done    { background: var(--text-1); border-color: var(--text-1); }
+.cc-prog-dot.current { background: #fff; border: 2.5px solid var(--text-1); }
+.cc-prog-label { font-size: 9px; font-weight: 600; color: var(--text-3); white-space: nowrap; }
+.cc-prog-label.done    { color: var(--text-1); }
+.cc-prog-label.current { color: var(--text-1); font-weight: 700; }
+.cc-prog-cancelled { font-size: 12px; color: var(--red); font-weight: 600; }
+
 .cc-reply-bar {
   display: flex; gap: 8px; padding: 12px 18px;
   border-top: 0.5px solid var(--border); flex-shrink: 0;
