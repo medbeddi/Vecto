@@ -229,8 +229,11 @@ function CoursesTab() {
     });
 
     // Rechargement périodique — toujours actif (filet de sécurité si socket rate un événement)
+    let _pollTick = 0;
     const pollInterval = setInterval(() => {
       silentRefreshAvailable();
+      _pollTick++;
+      if (_pollTick % 3 === 0) loadActiveCourses(); // toutes les 15s
     }, 5000);
 
     const onNewOrder = (order: IncomingOrder) => {

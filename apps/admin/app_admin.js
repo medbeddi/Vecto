@@ -28,25 +28,14 @@ function _autoFillPrice(dist) {
   if (priceEl) priceEl.value = _prixPourDist(dist);
 }
 
-function openTarifModal() {
-  _updateTarifPreview();
-  document.getElementById('modal-tarif').style.display = 'flex';
-}
-
-function _updateTarifPreview() {
-  var el = document.getElementById('tarif-preview');
-  if (el) el.textContent = 'Ex : 4.5 km → ' + _prixPourDist(4.5) + ' MRU | 7 km → ' + _prixPourDist(7) + ' MRU | 10 km → ' + _prixPourDist(10) + ' MRU';
-}
-
-function saveTarifConfig() {
-  closeModal('modal-tarif');
-}
 
 /* ── Compteurs de notifications ─────────────────────────────────── */
 var _navBadgeCC     = 0;   // nouveaux messages Call Center (hors page active)
 var _navBadgeOrders = 0;   // nouvelles commandes (hors page active)
 var _currentPage    = '';  // page actuellement visible
 var _inboxPollTimer = null;
+var _msgPollTimer   = null;
+var _renderedMsgIds = new Set();
 
 function _updateNavBadge(id, count) {
   var el = document.getElementById(id);
@@ -265,14 +254,12 @@ function initSocket() {
     if (_inboxSelectedId === data.deliveryId && data.message) {
       var container = document.getElementById('cc-messages');
       if (container) {
-        var div = document.createElement('div');
-        div.className = 'cc-msg client';
-        var body = data.message.type === 'text'
-          ? escHtml(data.message.content || '')
-          : '[' + data.message.type + ']';
-        div.innerHTML = body + '<div class="cc-msg-time">' + fmtTime(data.message.createdAt) + '</div>';
-        container.appendChild(div);
-        container.scrollTop = container.scrollHeight;
+        var msgId = data.message.id;
+        if (!msgId || !_renderedMsgIds.has(msgId)) {
+          if (msgId) _renderedMsgIds.add(msgId);
+          container.insertAdjacentHTML('beforeend', _buildMsgBody(data.message));
+          container.scrollTop = container.scrollHeight;
+        }
       }
     }
     // Badge nav + notification navigateur si on n'est pas sur le CC
@@ -378,14 +365,15 @@ function showPage(pageId) {
   if (pageId === 'p-callcenter') {
     _navBadgeCC = 0; _updateNavBadge('nav-badge-cc', 0);
     showCCTab(_ccActiveTab);
-    // Polling inbox toutes les 30s quand on est sur le CC
+    // Polling inbox toutes les 5s quand on est sur le CC
     if (_inboxPollTimer) clearInterval(_inboxPollTimer);
     _inboxPollTimer = setInterval(function () {
       if (_currentPage === 'p-callcenter' && _inboxSubTab === 'pending') loadInbox();
-    }, 30000);
+    }, 5000);
   } else {
     if (_inboxPollTimer) { clearInterval(_inboxPollTimer); _inboxPollTimer = null; }
     stopDriverChatPolling();
+    stopMsgPolling();
   }
   if (pageId === 'p-commandes') {
     _navBadgeOrders = 0; _updateNavBadge('nav-badge-orders', 0);
@@ -1541,13 +1529,15 @@ async function openConversation(deliveryId) {
   var launchBtn = document.querySelector('.cc-chat-topbar .btn-danger');
   if (launchBtn) launchBtn.style.display = '';
 
-  // Charger les messages
+  // Charger les messages et démarrer le polling
   await loadMessages(deliveryId);
+  startMsgPolling(deliveryId);
 }
 
 async function openArchivedConversation(deliveryId) {
   _inboxSelectedId = deliveryId;
   var item = _archivedItems[deliveryId];
+  stopMsgPolling(); // archives are read-only, no polling needed
 
   document.querySelectorAll('.cc-inbox-item').forEach(function (el) { el.classList.remove('active'); });
   var clicked = document.querySelector('.cc-inbox-item[onclick*="' + deliveryId + '"]');
@@ -1573,8 +1563,39 @@ async function loadMessages(deliveryId) {
   } catch {}
 }
 
+function _buildMsgBody(m) {
+  var side = (m.sender_role === 'admin') ? 'admin' : 'client';
+  var body = '';
+  if (m.type === 'text') {
+    body = escHtml(m.content || '');
+  } else if (m.type === 'audio') {
+    body = m.content
+      ? '<audio controls src="' + escHtml(m.content) + '" style="max-width:220px;display:block"></audio>'
+      : '[Message vocal]';
+    if (side === 'client' && m.content) {
+      body += '<button class="cc-forward-btn" onclick="forwardAudioToDrivers(\'' + escHtml(m.content) + '\')" title="Utiliser ce vocal comme message de course">'
+        + '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg>'
+        + 'Transférer aux livreurs</button>';
+    }
+  } else if (m.type === 'image') {
+    body = m.content
+      ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px" onerror="_imgErr(this)" />'
+      : '[Image]';
+  } else if (m.type === 'location') {
+    var meta = m.meta || {};
+    body = 'Localisation : ' + (meta.label || (meta.lat + ', ' + meta.lng));
+  } else {
+    body = '[' + m.type + ']';
+  }
+  return '<div class="cc-msg ' + side + '">'
+    + body
+    + '<div class="cc-msg-time">' + fmtTime(m.createdAt) + '</div>'
+    + '</div>';
+}
+
 function renderMessages(messages) {
   _currentMessages = messages;
+  _renderedMsgIds.clear();
   var container = document.getElementById('cc-messages');
   if (!container) return;
 
@@ -1584,37 +1605,40 @@ function renderMessages(messages) {
   }
 
   container.innerHTML = messages.map(function (m) {
-    var side = (m.sender_role === 'admin') ? 'admin' : 'client';
-    var body = '';
-    if (m.type === 'text') {
-      body = escHtml(m.content || '');
-    } else if (m.type === 'audio') {
-      body = m.content
-        ? '<audio controls src="' + escHtml(m.content) + '" style="max-width:220px;display:block"></audio>'
-        : '[Message vocal]';
-      // Bouton "Transférer aux livreurs" sur les vocaux du client
-      if (side === 'client' && m.content) {
-        body += '<button class="cc-forward-btn" onclick="forwardAudioToDrivers(\'' + escHtml(m.content) + '\')" title="Utiliser ce vocal comme message de course">'
-          + '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg>'
-          + 'Transférer aux livreurs</button>';
-      }
-    } else if (m.type === 'image') {
-      body = m.content
-        ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px" onerror="_imgErr(this)" />'
-        : '[Image]';
-    } else if (m.type === 'location') {
-      var meta = m.meta || {};
-      body = 'Localisation : ' + (meta.label || (meta.lat + ', ' + meta.lng));
-    } else {
-      body = '[' + m.type + ']';
-    }
-    return '<div class="cc-msg ' + side + '">'
-      + body
-      + '<div class="cc-msg-time">' + fmtTime(m.createdAt) + '</div>'
-      + '</div>';
+    if (m.id) _renderedMsgIds.add(m.id);
+    return _buildMsgBody(m);
   }).join('');
 
   container.scrollTop = container.scrollHeight;
+}
+
+function startMsgPolling(deliveryId) {
+  stopMsgPolling();
+  _msgPollTimer = setInterval(async function () {
+    if (!_inboxSelectedId) return;
+    try {
+      var res = await fetch(API + '/api/admin/inbox/' + _inboxSelectedId + '/messages', { headers: authHeaders() });
+      if (!res.ok) return;
+      var data = await res.json();
+      var msgs = data.messages || [];
+      var container = document.getElementById('cc-messages');
+      if (!container) return;
+      var hasNew = false;
+      msgs.forEach(function (m) {
+        if (m.id && !_renderedMsgIds.has(m.id)) {
+          _renderedMsgIds.add(m.id);
+          container.insertAdjacentHTML('beforeend', _buildMsgBody(m));
+          hasNew = true;
+        }
+      });
+      if (hasNew) container.scrollTop = container.scrollHeight;
+    } catch {}
+  }, 5000);
+}
+
+function stopMsgPolling() {
+  if (_msgPollTimer) { clearInterval(_msgPollTimer); _msgPollTimer = null; }
+  _renderedMsgIds.clear();
 }
 
 async function sendReply() {
