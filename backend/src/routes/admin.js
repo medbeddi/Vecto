@@ -415,12 +415,17 @@ router.get('/admin/transactions', requireAdmin, async (req, res) => {
   }
 });
 
+// Normalise un numéro de téléphone au format WhatsApp (chiffres uniquement, sans +)
+function normalizePhone(raw) {
+  return (raw || '').replace(/[\s\-().+]/g, '');
+}
+
 // ── Call Center : recherche client par numéro de téléphone ───────────────────
 router.get('/admin/clients/search', requireCallCenter, async (req, res) => {
   try {
     const { phone } = req.query;
     if (!phone?.trim()) return res.status(400).json({ error: 'PHONE_REQUIRED' });
-    const hash = hashWaId(phone.trim());
+    const hash = hashWaId(normalizePhone(phone));
     const client = await db('clients').where({ wa_id_hash: hash }).first('id', 'alias', 'wa_id_enc');
     if (!client) return res.json({ found: false });
     let decryptedPhone = null;
@@ -445,7 +450,8 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
     let clientId, clientAlias;
 
     if (phone?.trim()) {
-      const hash = hashWaId(phone.trim());
+      const normalized = normalizePhone(phone);
+      const hash = hashWaId(normalized);
       const existing = await db('clients').where({ wa_id_hash: hash }).first('id', 'alias');
       if (existing) {
         clientId    = existing.id;
@@ -454,7 +460,7 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
         // Nouveau client lié au numéro → WhatsApp relay + connexion app future possible
         clientAlias = `Client #${Math.random().toString(36).toUpperCase().slice(-5)}`;
         const [newClient] = await db('clients')
-          .insert({ wa_id_hash: hash, wa_id_enc: encryptWaId(phone.trim()), alias: clientAlias })
+          .insert({ wa_id_hash: hash, wa_id_enc: encryptWaId(normalized), alias: clientAlias })
           .returning('*');
         clientId = newClient.id;
       }
