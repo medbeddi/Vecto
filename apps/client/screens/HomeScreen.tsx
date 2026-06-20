@@ -310,8 +310,27 @@ export default function HomeScreen({ navigation }: Props) {
       {/* En attente de livreur */}
       {waiting && (
         <View style={s.waitingCard}>
-          <ActivityIndicator color={BRAND} size="large" />
           <Text style={s.waitingTitle}>Recherche d'un livreur...</Text>
+
+          {/* Barre de progression commande */}
+          <View style={s.stepsRow}>
+            {(['Envoyée', 'Recherche', 'Assignée', 'En route'] as const).map((label, i) => {
+              const done = i === 0;
+              const current = i === 1;
+              return (
+                <View key={i} style={s.stepWrap}>
+                  {i > 0 && <View style={[s.stepLine, done && s.stepLineDone]} />}
+                  <View style={s.stepItem}>
+                    <View style={[s.stepDot, done ? s.stepDotDone : current ? s.stepDotCurrent : s.stepDotPending]} />
+                    <Text style={[s.stepLabel, done ? s.stepLabelDone : current ? s.stepLabelCurrent : s.stepLabelPending]}>
+                      {label}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
           <Text style={s.waitingHint}>Un livreur va accepter votre course dans quelques instants.</Text>
           <TouchableOpacity style={s.cancelBtn} onPress={cancelWaiting}>
             <Text style={s.cancelText}>Annuler</Text>
@@ -393,6 +412,19 @@ const s = StyleSheet.create({
   waitingHint: { color: '#666', fontSize: 13, textAlign: 'center', lineHeight: 20 },
   cancelBtn: { marginTop: 4, paddingVertical: 8, paddingHorizontal: 20 },
   cancelText: { color: '#f44336', fontSize: 14 },
+  stepsRow: { flexDirection: 'row', alignItems: 'center', width: '100%', marginVertical: 4 },
+  stepWrap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  stepLine: { flex: 1, height: 2, backgroundColor: '#2a2a2a' },
+  stepLineDone: { backgroundColor: BRAND },
+  stepItem: { alignItems: 'center' },
+  stepDot: { width: 12, height: 12, borderRadius: 6 },
+  stepDotDone: { backgroundColor: BRAND },
+  stepDotCurrent: { backgroundColor: '#fff', borderWidth: 2, borderColor: BRAND },
+  stepDotPending: { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#444' },
+  stepLabel: { fontSize: 9, marginTop: 4, textAlign: 'center', width: 52 },
+  stepLabelDone: { color: BRAND, fontWeight: '600' },
+  stepLabelCurrent: { color: '#fff', fontWeight: '700' },
+  stepLabelPending: { color: '#444' },
   bottomBar: {
     position: 'absolute', bottom: 40, left: 0, right: 0,
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 16,
