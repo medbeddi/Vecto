@@ -2410,6 +2410,7 @@ function forwardAudioToDrivers(audioUrl) {
 function fmtTime(iso) {
   if (!iso) return '';
   var d = new Date(iso);
+  if (isNaN(d.getTime())) return '--:--';
   var now = new Date();
   if (d.toDateString() === now.toDateString()) {
     return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });

@@ -797,7 +797,7 @@ router.post('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) 
     const msgType = ['text', 'audio', 'image', 'call'].includes(type) ? type : 'text';
     const [msg] = await db('cc_driver_messages')
       .insert({ driver_id: req.params.driverId, sender_role: 'admin', type: msgType, content: content.trim() })
-      .returning('id', 'sender_role', 'type', 'content', 'created_at');
+      .returning(['id', 'sender_role', 'type', 'content', 'created_at']);
     const out = { id: msg.id, senderRole: msg.sender_role, type: msg.type, content: msg.content, createdAt: msg.created_at };
     emitCCMessageToDriver(req.params.driverId, out);
     res.json({ message: out });

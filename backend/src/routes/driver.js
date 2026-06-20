@@ -466,7 +466,7 @@ router.post('/drivers/cc-chat', requireAuth, async (req, res) => {
     const msgType = validTypes.includes(type) ? type : 'text';
     const [msg] = await db('cc_driver_messages')
       .insert({ driver_id: req.driver.id, sender_role: 'driver', type: msgType, content: content.trim() })
-      .returning('id', 'sender_role', 'type', 'content', 'created_at');
+      .returning(['id', 'sender_role', 'type', 'content', 'created_at']);
     const out = { id: msg.id, senderRole: msg.sender_role, type: msg.type, content: msg.content, createdAt: msg.created_at };
     emitDriverReplyToCC(req.driver.id, req.driver.name, out);
     res.json({ message: out });

@@ -631,11 +631,19 @@ function AdminChatTab() {
 
     const merge = (fetched: CCMessage[]) => {
       setMessages((prev) => {
-        const ids = new Set(prev.map((m) => m.id));
-        const added = fetched.filter((m) => !ids.has(m.id));
-        if (!added.length) return prev;
+        const prevById = new Map(prev.map((m) => [m.id, m]));
+        let changed = false;
+        for (const m of fetched) {
+          const ex = prevById.get(m.id);
+          // Ajouter les nouveaux messages, ou remplacer les messages cassés (content/date manquants)
+          if (!ex || !ex.content || !ex.createdAt) {
+            prevById.set(m.id, m);
+            changed = true;
+          }
+        }
+        if (!changed) return prev;
         setTimeout(() => flatRef.current?.scrollToEnd({ animated: true }), 80);
-        return [...prev, ...added];
+        return Array.from(prevById.values());
       });
     };
 
@@ -665,13 +673,19 @@ function AdminChatTab() {
   const sendMsg = async (content: string, type = 'text') => {
     if (!content.trim()) return;
     setSending(true);
+    const tempId = `tmp_${Date.now()}`;
+    const tempMsg: CCMessage = { id: tempId, senderRole: 'driver', type, content: content.trim(), createdAt: new Date().toISOString() };
+    setMessages((prev) => [...prev, tempMsg]);
+    scrollBottom();
     try {
       const { message } = await api<{ message: CCMessage }>('/api/drivers/cc-chat', {
         method: 'POST', body: { content: content.trim(), type },
       });
-      setMessages((prev) => [...prev, message]);
+      setMessages((prev) => prev.map((m) => m.id === tempId ? message : m));
       scrollBottom();
-    } catch {} finally { setSending(false); }
+    } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+    } finally { setSending(false); }
   };
 
   const sendText = () => {
@@ -820,7 +834,8 @@ const WAVE_HEIGHTS = [6, 10, 15, 20, 12, 18, 8, 14, 20, 10, 15, 6];
 
 function CCBubble({ message }: { message: CCMessage }) {
   const isAdmin = message.senderRole === 'admin';
-  const time = new Date(message.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const _d = new Date(message.createdAt);
+  const time = isNaN(_d.getTime()) ? '--:--' : _d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState<number | null>(null);
   const [imgError, setImgError] = useState(false);
