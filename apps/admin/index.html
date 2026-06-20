@@ -207,6 +207,8 @@
           <div class="filter-pill" onclick="filterCommandes('done', this)">Livrées</div>
           <div class="filter-pill" onclick="filterCommandes('cancelled', this)">Annulées</div>
         </div>
+        <input class="search-input" id="commande-search"
+               placeholder="Rechercher un client…" oninput="renderCommandes()" />
       </div>
       <div class="section-card">
         <table class="table">
@@ -226,7 +228,8 @@
     ════════════════════════════════════════════════════════ -->
     <div class="page" id="p-livreurs">
       <div class="page-actions">
-        <div></div>
+        <input class="search-input" id="livreur-search"
+               placeholder="Rechercher un livreur…" oninput="filterLivreurs()" />
         <button class="btn btn-dark" onclick="showModal('modal-add-livreur')">
           <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
           Ajouter un livreur
