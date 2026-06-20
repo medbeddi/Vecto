@@ -1323,6 +1323,10 @@ var _ncLeafletMap    = null;
 var _ncPickupMarker  = null;
 var _ncDropoffMarker = null;
 var _ncDebounce      = null;
+var _ncAudioUrl      = null;
+var _ncRecorder      = null;
+var _ncAudioChunks   = [];
+var _ncIsRecording   = false;
 
 async function searchNCClient() {
   var phone = (document.getElementById('nc-phone')?.value || '').trim();
@@ -1388,6 +1392,68 @@ function _autoFillNCPrice() {
     var priceEl = document.getElementById('nc-price');
     if (priceEl && !priceEl.value) priceEl.value = _prixPourDist(distKm);
   });
+}
+
+/* ── Vocal Nouvel appel ─────────────────────────────────────────── */
+function selectNCAudio(url) {
+  _ncAudioUrl = url;
+  var preview = document.getElementById('nc-audio-preview');
+  var player  = document.getElementById('nc-audio-player');
+  if (preview) preview.style.display = 'block';
+  if (player)  player.src = url;
+}
+
+function clearNCAudio() {
+  _ncAudioUrl = null;
+  var preview = document.getElementById('nc-audio-preview');
+  var player  = document.getElementById('nc-audio-player');
+  if (preview) preview.style.display = 'none';
+  if (player)  player.src = '';
+}
+
+async function toggleNCRecording() {
+  if (_ncIsRecording) { stopNCRecording(); } else { await startNCRecording(); }
+}
+
+async function startNCRecording() {
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _ncAudioChunks = [];
+    var mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    _ncRecorder = new MediaRecorder(stream, { mimeType });
+    _ncRecorder.ondataavailable = function (e) { if (e.data.size > 0) _ncAudioChunks.push(e.data); };
+    _ncRecorder.onstop = async function () {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      await uploadNCAudio(new Blob(_ncAudioChunks, { type: mimeType }));
+    };
+    _ncRecorder.start();
+    _ncIsRecording = true;
+    var btn = document.getElementById('nc-rec-btn');
+    if (btn) { btn.classList.add('recording'); btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#FF3B30"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0012 6.32V20h-3v2h8v-2h-3v-2.68A7 7 0 0019 11h-2z"/></svg> 🔴 Arrêter l\'enregistrement'; }
+  } catch { alert('Microphone non accessible.'); }
+}
+
+function stopNCRecording() {
+  if (_ncRecorder && _ncIsRecording) {
+    _ncRecorder.stop();
+    _ncIsRecording = false;
+    var btn = document.getElementById('nc-rec-btn');
+    if (btn) { btn.classList.remove('recording'); btn.innerHTML = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0012 6.32V20h-3v2h8v-2h-3v-2.68A7 7 0 0019 11h-2z"/></svg> Enregistrer un vocal'; }
+  }
+}
+
+async function uploadNCAudio(blob) {
+  var btn = document.getElementById('nc-rec-btn');
+  if (btn) btn.disabled = true;
+  try {
+    var form = new FormData();
+    form.append('file', blob, 'vocal_nc_' + Date.now() + '.webm');
+    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', body: form });
+    if (!upRes.ok) { alert('Erreur upload audio'); return; }
+    var upData = await upRes.json();
+    selectNCAudio(upData.url);
+  } catch { alert('Erreur réseau.'); }
+  finally { if (btn) btn.disabled = false; }
 }
 
 var _ncGoogleMap     = null;
@@ -1464,11 +1530,10 @@ function initNCPlaces() {
 }
 
 async function createCallCourse() {
-  var phone    = (document.getElementById('nc-phone')?.value     || '').trim();
-  var pickup   = (document.getElementById('nc-pickup')?.value    || '').trim();
-  var dropoff  = (document.getElementById('nc-dropoff')?.value   || '').trim();
-  var priceRaw = (document.getElementById('nc-price')?.value     || '').trim();
-  var desc     = (document.getElementById('nc-description')?.value || '').trim();
+  var phone    = (document.getElementById('nc-phone')?.value  || '').trim();
+  var pickup   = (document.getElementById('nc-pickup')?.value  || '').trim();
+  var dropoff  = (document.getElementById('nc-dropoff')?.value || '').trim();
+  var priceRaw = (document.getElementById('nc-price')?.value   || '').trim();
   var statusEl = document.getElementById('nc-status');
 
   if (!pickup || !dropoff) {
@@ -1488,15 +1553,15 @@ async function createCallCourse() {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({
-        phone:          phone || undefined,
-        pickupAddress:  pickup,
-        dropoffAddress: dropoff,
-        price:          price,
-        description:    desc || undefined,
-        pickupLat:      _ncPickupCoords  ? _ncPickupCoords[0]  : undefined,
-        pickupLng:      _ncPickupCoords  ? _ncPickupCoords[1]  : undefined,
-        dropoffLat:     _ncDropoffCoords ? _ncDropoffCoords[0] : undefined,
-        dropoffLng:     _ncDropoffCoords ? _ncDropoffCoords[1] : undefined,
+        phone:            phone || undefined,
+        pickupAddress:    pickup,
+        dropoffAddress:   dropoff,
+        price:            price,
+        audioUrl:         _ncAudioUrl || undefined,
+        pickupLat:        _ncPickupCoords  ? _ncPickupCoords[0]  : undefined,
+        pickupLng:        _ncPickupCoords  ? _ncPickupCoords[1]  : undefined,
+        dropoffLat:       _ncDropoffCoords ? _ncDropoffCoords[0] : undefined,
+        dropoffLng:       _ncDropoffCoords ? _ncDropoffCoords[1] : undefined,
       }),
     });
     if (!res.ok) {
@@ -1510,10 +1575,12 @@ async function createCallCourse() {
         + escHtml(data.delivery.clientAlias) + ' · envoyée aux livreurs disponibles.';
     }
     // Réinitialiser le formulaire
-    ['nc-phone','nc-pickup','nc-dropoff','nc-price','nc-description'].forEach(function(id) {
+    ['nc-phone','nc-pickup','nc-dropoff','nc-price'].forEach(function(id) {
       var el = document.getElementById(id); if (el) el.value = '';
     });
     _ncPickupCoords = null; _ncDropoffCoords = null; _ncFoundClient = null;
+    clearNCAudio();
+    if (_ncIsRecording) stopNCRecording();
     if (_ncPickupMarker  && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncPickupMarker);  _ncPickupMarker  = null; }
     if (_ncDropoffMarker && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncDropoffMarker); _ncDropoffMarker = null; }
     var banner = document.getElementById('nc-client-banner'); if (banner) banner.style.display = 'none';

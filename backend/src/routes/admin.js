@@ -437,7 +437,7 @@ router.get('/admin/clients/search', requireCallCenter, async (req, res) => {
 // ── Call Center : créer une course depuis un appel téléphonique ───────────────
 router.post('/admin/call-course', requireCallCenter, async (req, res) => {
   try {
-    const { phone, pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description } = req.body;
+    const { phone, pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description, audioUrl } = req.body;
     if (!pickupAddress?.trim() || !dropoffAddress?.trim()) {
       return res.status(400).json({ error: 'ADDRESSES_REQUIRED' });
     }
@@ -468,16 +468,18 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
     }
 
     const deliveryData = {
-      client_id:       clientId,
-      status:          'pending',
-      pickup_address:  pickupAddress.trim(),
-      dropoff_address: dropoffAddress.trim(),
-      pickup_lat:      pickupLat  ?? null,
-      pickup_lng:      pickupLng  ?? null,
-      dropoff_lat:     dropoffLat ?? null,
-      dropoff_lng:     dropoffLng ?? null,
-      price:           price      ?? null,
-      description:     description?.trim() || `${pickupAddress.trim()} → ${dropoffAddress.trim()}`,
+      client_id:         clientId,
+      status:            'pending',
+      pickup_address:    pickupAddress.trim(),
+      dropoff_address:   dropoffAddress.trim(),
+      pickup_lat:        pickupLat  ?? null,
+      pickup_lng:        pickupLng  ?? null,
+      dropoff_lat:       dropoffLat ?? null,
+      dropoff_lng:       dropoffLng ?? null,
+      price:             price      ?? null,
+      description:       description?.trim() || `${pickupAddress.trim()} → ${dropoffAddress.trim()}`,
+      initial_media_url:  audioUrl ?? null,
+      initial_media_type: audioUrl ? 'audio' : null,
       last_broadcast_at: db.fn.now(),
     };
 
@@ -503,11 +505,10 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
 
     const [delivery] = await db('deliveries').insert(deliveryData).returning('*');
 
-    emitNewOrder({ ...delivery, alias: clientAlias }, {
-      type: 'text',
-      content: deliveryData.description,
-      meta: null,
-    }).catch(() => {});
+    emitNewOrder({ ...delivery, alias: clientAlias }, audioUrl
+      ? { type: 'audio', content: audioUrl, meta: null }
+      : { type: 'text', content: deliveryData.description, meta: null }
+    ).catch(() => {});
 
     res.json({ delivery: { id: delivery.id, clientAlias } });
   } catch {
