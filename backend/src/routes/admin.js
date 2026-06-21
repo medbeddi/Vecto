@@ -525,15 +525,10 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
 // ── Call Center : liste des conversations en attente (admin_queue) ────────────
 router.get('/admin/inbox', requireCallCenter, async (req, res) => {
   try {
-    const adminId = req.admin.id;
     const rows = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'admin_queue')
       .whereNull('deliveries.archived_at')
-      // Seulement les non-claimées OU claimées par cet agent
-      .where(function () {
-        this.whereNull('deliveries.claimed_by').orWhere('deliveries.claimed_by', adminId);
-      })
       .orderBy('deliveries.created_at', 'desc')
       .select(
         'deliveries.id',
