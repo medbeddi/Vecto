@@ -67,6 +67,22 @@ export default function MainScreen() {
   const { pendingCancellation, setPendingCancellation } = useDeliveriesStore();
 
   useEffect(() => {
+    // Handle notification tap when app was killed (opened from dead state)
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (!response) return;
+      const data = response.notification.request.content.data as any;
+      if (data?.type === 'client_message') {
+        const { activeCourses } = useDeliveriesStore.getState();
+        const delivery = activeCourses.find((d) => d.id === data.deliveryId) ?? activeCourses[0];
+        if (delivery) { setChatUnread(0); navigation.navigate('Chat', { delivery }); }
+      } else if (data?.type === 'cc_message') {
+        setActiveTab('admin');
+        setAdminUnread(0);
+      } else if (data?.deliveryId || data?.type === 'new_order' || data?.type === 'new_delivery') {
+        setActiveTab('courses');
+      }
+    }).catch(() => {});
+
     // Notification message call center
     const onCCMsg = (msg: CCMessage) => {
       setActiveTab((t) => {
@@ -207,6 +223,22 @@ function CoursesTab() {
     const joinActiveRooms = () =>
       useDeliveriesStore.getState().activeCourses.forEach((d) => socketService.joinRoom(d.id));
 
+    // Canal Android haute priorité — sonnerie + écran de verrouillage
+    if (Platform.OS === 'android') {
+      Notifications.setNotificationChannelAsync('new-order', {
+        name: 'Nouvelles courses',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'ringtone.wav',
+        vibrationPattern: [0, 400, 200, 400, 200, 400],
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: true,
+        enableVibrate: true,
+        enableLights: true,
+        lightColor: '#E85D04',
+        showBadge: true,
+      }).catch(() => {});
+    }
+
     loadAvailable();
     loadActiveCourses().then(joinActiveRooms);
     registerFCMToken();
@@ -272,9 +304,12 @@ function CoursesTab() {
             body: order.message.type === 'audio'
               ? `Message vocal de ${order.clientAlias}`
               : (order.message.content ?? `Course de ${order.clientAlias}`),
-            data: { deliveryId: order.deliveryId },
+            data: { deliveryId: order.deliveryId, type: 'new_order' },
+            sound: Platform.OS === 'ios' ? 'ringtone.wav' : undefined,
           },
-          trigger: null,
+          trigger: Platform.OS === 'android'
+            ? ({ seconds: 1, channelId: 'new-order' } as any)
+            : null,
         });
       }
 
