@@ -24,29 +24,42 @@ export async function initFCM() {
 }
 
 // Notifie tous les livreurs disponibles qu'une nouvelle course est dispo
-export async function notifyAvailableDrivers(delivery) {
+// excludeDriverIds : IDs à exclure (refusés ou déjà notifiés séparément)
+// excludeDriverId  : ID unique à exclure (livreur prioritaire)
+export async function notifyAvailableDrivers(delivery, excludeDriverIds = [], excludeDriverId = null) {
   if (!messaging) return;
 
-  const tokens = await db('drivers')
-    .where({ status: 'available' })
-    .whereNotNull('fcm_token')
-    .pluck('fcm_token');
+  let query = db('drivers')
+    .where({ is_available: true, suspended: false })
+    .whereNotNull('fcm_token');
+
+  if (excludeDriverIds.length > 0) {
+    query = query.whereNotIn('id', excludeDriverIds);
+  }
+  if (excludeDriverId) {
+    query = query.where('id', '!=', excludeDriverId);
+  }
+
+  const tokens = await query.pluck('fcm_token');
 
   if (tokens.length === 0) return;
 
   const result = await messaging.sendEachForMulticast({
     tokens,
     notification: {
-      title: 'Nouvelle course disponible',
-      body: delivery.description || 'Une livraison attend un livreur',
+      title: '🛵 Nouvelle course disponible',
+      body: delivery.description || `Course de ${delivery.alias || 'un client'}`,
     },
     data: {
-      type: 'new_delivery',
-      deliveryId: delivery.id,
-      clientAlias: delivery.alias ?? '',
+      type: 'new_order',
+      deliveryId: String(delivery.id),
+      clientAlias: String(delivery.alias ?? ''),
     },
-    android: { priority: 'high' },
-    apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+    android: {
+      priority: 'high',
+      notification: { channelId: 'new-order' },
+    },
+    apns: { payload: { aps: { sound: 'ringtone.wav', badge: 1 } } },
   });
 
   // Purger les tokens invalides
@@ -68,12 +81,20 @@ export async function notifyAssignedDriver(driverId, { title, body, data = {} })
   const driver = await db('drivers').where({ id: driverId }).first('fcm_token');
   if (!driver?.fcm_token) return;
 
+  // FCM data values must be strings
+  const stringData = Object.fromEntries(
+    Object.entries(data).map(([k, v]) => [k, String(v ?? '')])
+  );
+
   await messaging.send({
     token: driver.fcm_token,
     notification: { title, body },
-    data: { ...data },
-    android: { priority: 'high' },
-    apns: { payload: { aps: { sound: 'default' } } },
+    data: stringData,
+    android: {
+      priority: 'high',
+      notification: { channelId: 'new-order' },
+    },
+    apns: { payload: { aps: { sound: 'ringtone.wav' } } },
   }).catch((err) => {
     if (err.code === 'messaging/registration-token-not-registered') {
       db('drivers').where({ id: driverId }).update({ fcm_token: null }).catch(() => {});

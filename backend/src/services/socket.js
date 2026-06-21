@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { relayDriverMessage } from './relay.js';
 import db from '../config/db.js';
+import { notifyAvailableDrivers, notifyAssignedDriver } from './fcm.js';
 
 let io = null;
 const DRIVERS_ROOM = 'room:drivers';
@@ -131,6 +132,13 @@ export async function emitNewOrder(delivery, initialMessage) {
     io.to(`driver:${delivery.nearest_driver_id}`).emit('new_order', payload);
     io.to(ADMINS_ROOM).emit('new_order', payload);
 
+    // FCM push si le livreur prioritaire a l'app fermée
+    notifyAssignedDriver(delivery.nearest_driver_id, {
+      title: '🛵 Course prioritaire',
+      body: initialMessage.content || `Course de ${delivery.alias}`,
+      data: { type: 'new_order', deliveryId: String(delivery.id), clientAlias: delivery.alias ?? '' },
+    }).catch(() => {});
+
     // Après 30s, si la course est toujours pending → re-broadcast à tous les autres
     setTimeout(async () => {
       try {
@@ -150,6 +158,9 @@ export async function emitNewOrder(delivery, initialMessage) {
         for (const { id } of remainingDrivers) {
           io.to(`driver:${id}`).emit('new_order', payload);
         }
+
+        // FCM push pour les livreurs restants si app fermée
+        notifyAvailableDrivers(delivery, refusedDriverIds, delivery.nearest_driver_id).catch(() => {});
       } catch {}
     }, 30_000);
 
@@ -169,6 +180,9 @@ export async function emitNewOrder(delivery, initialMessage) {
     io.to(`driver:${id}`).emit('new_order', payload);
   }
   io.to(ADMINS_ROOM).emit('new_order', payload);
+
+  // FCM push pour les livreurs disponibles si app fermée
+  notifyAvailableDrivers(delivery, refusedDriverIds).catch(() => {});
 }
 
 // ── Ordre pris → retirer de la file + notifier client ────────────────────────
