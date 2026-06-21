@@ -420,6 +420,8 @@ function showCCTab(tab) {
   } else if (tab === 'newcall') {
     initNCMap();
     if (_googlePlacesReady) initNCPlaces();
+    var phoneEl = document.getElementById('nc-phone');
+    if (phoneEl && !phoneEl.value) phoneEl.value = '+222';
   }
 }
 
@@ -1361,7 +1363,7 @@ async function searchNCClient() {
 function clearNCClient() {
   _ncFoundClient = null;
   var phoneEl = document.getElementById('nc-phone');
-  if (phoneEl) phoneEl.value = '';
+  if (phoneEl) phoneEl.value = '+222';
   var banner = document.getElementById('nc-client-banner');
   if (banner) banner.style.display = 'none';
 }
@@ -1456,9 +1458,11 @@ async function uploadNCAudio(blob) {
   finally { if (btn) btn.disabled = false; }
 }
 
-var _ncGoogleMap     = null;
-var _ncGoogleMarkP   = null;
-var _ncGoogleMarkD   = null;
+var _ncGoogleMap          = null;
+var _ncGoogleMarkP        = null;
+var _ncGoogleMarkD        = null;
+var _ncDirectionsRenderer = null;
+var _ncOsrmPolyline       = null;
 
 function initNCMap() {
   var mapEl = document.getElementById('nc-mini-map');
@@ -1467,6 +1471,9 @@ function initNCMap() {
     if (_ncGoogleMap) return;
     var nouakchott = { lat: 18.0735, lng: -15.9582 };
     _ncGoogleMap = new google.maps.Map(mapEl, { zoom: 12, center: nouakchott, disableDefaultUI: true });
+    google.maps.event.addListenerOnce(_ncGoogleMap, 'tilesloaded', function() {
+      if (_useGoogleMaps && !_googlePlacesReady) initGooglePlaces();
+    });
     return;
   }
   if (_ncLeafletMap) return;
@@ -1491,6 +1498,20 @@ function refreshNCMapMarkers() {
       else _ncGoogleMarkD = new google.maps.Marker({ position: pos2, map: _ncGoogleMap, icon: iconR });
     }
     if (_ncPickupCoords && _ncDropoffCoords) {
+      if (!_ncDirectionsRenderer) {
+        _ncDirectionsRenderer = new google.maps.DirectionsRenderer({
+          suppressMarkers: true,
+          polylineOptions: { strokeColor: '#1976D2', strokeOpacity: 0.85, strokeWeight: 4 },
+        });
+        _ncDirectionsRenderer.setMap(_ncGoogleMap);
+      }
+      new google.maps.DirectionsService().route({
+        origin: { lat: _ncPickupCoords[0], lng: _ncPickupCoords[1] },
+        destination: { lat: _ncDropoffCoords[0], lng: _ncDropoffCoords[1] },
+        travelMode: google.maps.TravelMode.DRIVING,
+      }, function(result, status) {
+        if (status === 'OK') _ncDirectionsRenderer.setDirections(result);
+      });
       var bounds = new google.maps.LatLngBounds();
       bounds.extend({ lat: _ncPickupCoords[0],  lng: _ncPickupCoords[1] });
       bounds.extend({ lat: _ncDropoffCoords[0], lng: _ncDropoffCoords[1] });
@@ -1512,6 +1533,18 @@ function refreshNCMapMarkers() {
   }
   if (_ncPickupCoords && _ncDropoffCoords) {
     _ncLeafletMap.fitBounds([_ncPickupCoords, _ncDropoffCoords], { padding: [24, 24] });
+    var url = 'https://router.project-osrm.org/route/v1/driving/'
+      + _ncPickupCoords[1] + ',' + _ncPickupCoords[0] + ';'
+      + _ncDropoffCoords[1] + ',' + _ncDropoffCoords[0]
+      + '?overview=full&geometries=geojson';
+    fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+      if (_ncOsrmPolyline) _ncLeafletMap.removeLayer(_ncOsrmPolyline);
+      if (data.routes && data.routes[0]) {
+        _ncOsrmPolyline = L.geoJSON(data.routes[0].geometry, {
+          style: { color: '#1976D2', weight: 4, opacity: 0.85 }
+        }).addTo(_ncLeafletMap);
+      }
+    }).catch(function() {});
   } else if (_ncPickupCoords)  { _ncLeafletMap.setView(_ncPickupCoords,  14); }
   else if (_ncDropoffCoords)   { _ncLeafletMap.setView(_ncDropoffCoords, 14); }
 }
@@ -1575,14 +1608,17 @@ async function createCallCourse() {
         + escHtml(data.delivery.clientAlias) + ' · envoyée aux livreurs disponibles.';
     }
     // Réinitialiser le formulaire
-    ['nc-phone','nc-pickup','nc-dropoff','nc-price'].forEach(function(id) {
+    ['nc-pickup','nc-dropoff','nc-price'].forEach(function(id) {
       var el = document.getElementById(id); if (el) el.value = '';
     });
+    var phoneEl = document.getElementById('nc-phone'); if (phoneEl) phoneEl.value = '+222';
     _ncPickupCoords = null; _ncDropoffCoords = null; _ncFoundClient = null;
     clearNCAudio();
     if (_ncIsRecording) stopNCRecording();
     if (_ncPickupMarker  && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncPickupMarker);  _ncPickupMarker  = null; }
     if (_ncDropoffMarker && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncDropoffMarker); _ncDropoffMarker = null; }
+    if (_ncOsrmPolyline  && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncOsrmPolyline);  _ncOsrmPolyline  = null; }
+    if (_ncDirectionsRenderer) { _ncDirectionsRenderer.setMap(null); _ncDirectionsRenderer = null; }
     var banner = document.getElementById('nc-client-banner'); if (banner) banner.style.display = 'none';
   } catch {
     if (statusEl) { statusEl.textContent = 'Erreur réseau.'; statusEl.style.color = '#FF3B30'; }
