@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync, readFileSync, unlinkSync } from 'fs';
 import { spawn } from 'child_process';
+import ffmpegPath from 'ffmpeg-static';
 import { requireAuth } from '../middleware/auth.js';
 import { uploadToR2, extFromMime } from '../services/media.js';
 import { env } from '../config/env.js';
@@ -32,7 +33,7 @@ const upload = multer({
 function convertWebmToOgg(inputPath) {
   const outputPath = inputPath.replace(/\.[^.]+$/, '.ogg');
   return new Promise((resolve, reject) => {
-    const proc = spawn('ffmpeg', [
+    const proc = spawn(ffmpegPath, [
       '-y', '-i', inputPath,
       '-c:a', 'libopus', '-b:a', '64k',
       outputPath,
