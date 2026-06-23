@@ -30,8 +30,8 @@ async function uploadAudioToWhatsApp(url) {
 
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
-  form.append('type', 'audio/ogg');
-  form.append('file', buffer, { filename: 'voice.ogg', contentType: 'audio/ogg' });
+  form.append('type', 'audio/ogg; codecs=opus');
+  form.append('file', buffer, { filename: 'voice.ogg', contentType: 'audio/ogg; codecs=opus' });
 
   const { data } = await axios.post(WA_MEDIA_API, form, {
     headers: { Authorization: `Bearer ${env.WA_TOKEN}`, ...form.getHeaders() },
@@ -61,7 +61,7 @@ export async function sendAudio(waId, urlOrKey) {
       messaging_product: 'whatsapp',
       to: waId,
       type: 'audio',
-      audio: { id: mediaId },
+      audio: { id: mediaId, voice: true },
     });
   } catch (uploadErr) {
     console.error('[messaging] media upload failed, fallback to link:', uploadErr.response?.data ?? uploadErr.message);
