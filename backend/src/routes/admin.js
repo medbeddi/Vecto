@@ -721,7 +721,7 @@ router.post('/admin/inbox/:id/reply-audio', requireCallCenter, async (req, res) 
 // ── Call Center : lancer une course (admin_queue → pending → livreurs) ─────────
 router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
   try {
-    const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description, audiosForDrivers, forwardedAudioUrl } = req.body;
+    const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description, forwardedAudioUrl } = req.body;
 
     const client = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
@@ -730,23 +730,10 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
       .first();
     if (!client) return res.status(404).json({ error: 'NOT_FOUND' });
 
-    // audiosForDrivers = tableau ordonné (admin vocal en premier, puis vocaux client)
-    // forwardedAudioUrl = legacy champ unique (compat)
-    const audioList = Array.isArray(audiosForDrivers) && audiosForDrivers.length
-      ? audiosForDrivers
-      : forwardedAudioUrl ? [forwardedAudioUrl] : [];
-
     const updated = await launchDelivery(req.params.id, {
       pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description,
-      forwardedAudioUrl: audioList[0] || null,
+      forwardedAudioUrl,
     });
-
-    // Sauvegarder tous les audios comme messages admin dans la conversation
-    if (audioList.length > 0) {
-      await db('messages').insert(
-        audioList.map((url) => ({ delivery_id: req.params.id, sender_role: 'admin', type: 'audio', content: url, meta: null }))
-      );
-    }
 
     // Dernier message pour l'affichage côté livreur
     const lastMsg = await db('messages')
@@ -754,9 +741,9 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
       .orderBy('created_at', 'desc')
       .first();
 
-    // Premier vocal prioritaire, sinon dernier message, sinon texte par défaut
-    const initialMessage = audioList.length > 0
-      ? { type: 'audio', content: audioList[0], meta: null }
+    // Vocal transféré prioritaire, sinon dernier message, sinon texte par défaut
+    const initialMessage = forwardedAudioUrl
+      ? { type: 'audio', content: forwardedAudioUrl, meta: null }
       : lastMsg
         ? { type: lastMsg.type, content: lastMsg.content, meta: lastMsg.meta }
         : { type: 'text', content: pickupAddress ? `${pickupAddress} → ${dropoffAddress}` : 'Commande appel', meta: null };

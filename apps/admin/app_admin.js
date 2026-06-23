@@ -2085,9 +2085,11 @@ async function sendReply() {
 function openLaunchPanel() {
   if (!_inboxSelectedId) return;
   // Reset état audio
-  _adminVocalUrl   = null;
-  _clientAudioUrls = [];
-  updateLaunchAudioPreview();
+  _forwardedAudioUrl = null;
+  var preview = document.getElementById('cc-launch-audio-preview');
+  var player  = document.getElementById('cc-launch-audio-player');
+  if (preview) preview.style.display = 'none';
+  if (player)  player.src = '';
   document.getElementById('cc-launch-status').textContent = '';
   document.getElementById('cc-launch-status').className = 'cc-launch-status';
   // Réinitialiser le champ description
@@ -2106,7 +2108,6 @@ function openLaunchPanel() {
   if (_mmOsrmPolyline && _leafletMiniMap) { _leafletMiniMap.removeLayer(_mmOsrmPolyline); _mmOsrmPolyline = null; }
   document.getElementById('cc-launch-panel').style.display = 'flex';
   document.querySelector('.cc-inbox-layout').classList.add('launch-open');
-  populateLaunchAudios();
   // Initialiser/rafraîchir la mini-carte après la fin de la transition CSS (250ms)
   setTimeout(initMiniMap, 300);
 }
@@ -2678,7 +2679,7 @@ async function launchCourse() {
         dropoffAddress: dropoff,
         price: price,
         description: description,
-        audiosForDrivers: _getAllLaunchAudios().length ? _getAllLaunchAudios() : undefined,
+        forwardedAudioUrl: _forwardedAudioUrl || undefined,
         pickupLat: _mmPickupCoords ? _mmPickupCoords[0] : undefined,
         pickupLng: _mmPickupCoords ? _mmPickupCoords[1] : undefined,
         dropoffLat: _mmDropoffCoords ? _mmDropoffCoords[0] : undefined,
@@ -2701,9 +2702,8 @@ async function launchCourse() {
     // Fermer le panneau + la conversation après lancement
     setTimeout(function () {
       closeLaunchPanel();
-      _adminVocalUrl   = null;
-      _clientAudioUrls = [];
-      _inboxSelectedId = null;
+      _forwardedAudioUrl = null;
+      _inboxSelectedId   = null;
       document.getElementById('cc-chat-empty').style.display = '';
       document.getElementById('cc-chat-view').style.display = 'none';
       loadInbox();
@@ -2715,80 +2715,17 @@ async function launchCourse() {
 }
 
 /* ── Sélection / enregistrement vocal pour le lancement ──────────────── */
-var _adminVocalUrl     = null;   // vocal enregistré par l'admin
-var _clientAudioUrls   = [];     // vocaux client cochés (multi-sélection)
+var _forwardedAudioUrl = null;
 var _launchRecorder    = null;
 var _launchAudioChunks = [];
 var _launchIsRecording = false;
 
-function _getAllLaunchAudios() {
-  var all = [];
-  if (_adminVocalUrl) all.push(_adminVocalUrl);
-  _clientAudioUrls.forEach(function (u) { all.push(u); });
-  return all;
-}
-
-function updateLaunchAudioPreview() {
-  var previewEl    = document.getElementById('cc-launch-audio-preview');
-  var adminRow     = document.getElementById('cc-admin-vocal-row');
-  var countEl      = document.getElementById('cc-client-audio-count');
-  var playerEl     = document.getElementById('cc-launch-audio-player');
-  if (!previewEl) return;
-
-  var hasAdmin  = !!_adminVocalUrl;
-  var clientCnt = _clientAudioUrls.length;
-  var total     = (hasAdmin ? 1 : 0) + clientCnt;
-
-  previewEl.style.display = total > 0 ? 'block' : 'none';
-
-  if (adminRow) adminRow.style.display = hasAdmin ? 'block' : 'none';
-  if (playerEl && hasAdmin) playerEl.src = _adminVocalUrl;
-  if (playerEl && !hasAdmin) playerEl.src = '';
-
-  if (countEl) {
-    countEl.style.display = clientCnt > 0 ? 'block' : 'none';
-    countEl.textContent   = clientCnt + ' vocal' + (clientCnt > 1 ? 'x' : '') + ' client coché' + (clientCnt > 1 ? 's' : '');
-  }
-}
-
-function populateLaunchAudios() {
-  var listEl = document.getElementById('cc-launch-audio-list');
-  if (!listEl) return;
-  var clientAudios = _currentMessages.filter(function (m) {
-    return m.sender_role !== 'admin' && m.type === 'audio' && m.content;
-  });
-  if (!clientAudios.length) { listEl.innerHTML = ''; return; }
-
-  listEl.innerHTML = '<div style="font-size:12px;color:var(--text-3);margin-bottom:5px">Vocaux du client :</div>'
-    + clientAudios.map(function (m) {
-      var checked = _clientAudioUrls.indexOf(m.content) !== -1 ? ' checked' : '';
-      return '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:var(--bg);border-radius:8px;padding:6px 8px;border:1.5px solid var(--border)">'
-        + '<input type="checkbox" name="launch-audio" value="' + escHtml(m.content) + '"' + checked + ' onchange="toggleClientAudio(this.value,this.checked)" />'
-        + '<audio src="' + escHtml(m.content) + '" controls style="flex:1;height:28px"></audio>'
-        + '<span style="font-size:11px;color:var(--text-3);flex-shrink:0">' + fmtTime(m.createdAt) + '</span>'
-        + '</label>';
-    }).join('');
-}
-
-function toggleClientAudio(url, checked) {
-  if (checked) {
-    if (_clientAudioUrls.indexOf(url) === -1) _clientAudioUrls.push(url);
-  } else {
-    _clientAudioUrls = _clientAudioUrls.filter(function (u) { return u !== url; });
-  }
-  updateLaunchAudioPreview();
-}
-
-function clearAdminVocal() {
-  _adminVocalUrl = null;
-  updateLaunchAudioPreview();
-}
-
-function clearAllLaunchAudio() {
-  _adminVocalUrl   = null;
-  _clientAudioUrls = [];
-  document.querySelectorAll('[name="launch-audio"]').forEach(function (r) { r.checked = false; });
-  updateLaunchAudioPreview();
+function clearLaunchAudio() {
+  _forwardedAudioUrl = null;
+  var preview = document.getElementById('cc-launch-audio-preview');
+  var player  = document.getElementById('cc-launch-audio-player');
+  if (preview) preview.style.display = 'none';
+  if (player)  player.src = '';
 }
 
 async function toggleLaunchRecording() {
@@ -2831,8 +2768,11 @@ async function uploadLaunchAudio(blob) {
     var upRes = await fetch(API + '/api/upload-public', { method: 'POST', body: form });
     if (!upRes.ok) { alert('Erreur upload audio'); return; }
     var upData = await upRes.json();
-    _adminVocalUrl = upData.url;
-    updateLaunchAudioPreview();
+    _forwardedAudioUrl = upData.url;
+    var preview = document.getElementById('cc-launch-audio-preview');
+    var player  = document.getElementById('cc-launch-audio-player');
+    if (preview) preview.style.display = 'block';
+    if (player)  player.src = upData.url;
   } catch { alert('Erreur réseau.'); }
   finally { if (btn) { btn.disabled = false; } }
 }
@@ -2840,10 +2780,11 @@ async function uploadLaunchAudio(blob) {
 function forwardAudioToDrivers(audioUrl) {
   openLaunchPanel();
   setTimeout(function () {
-    toggleClientAudio(audioUrl, true);
-    document.querySelectorAll('[name="launch-audio"]').forEach(function (r) {
-      if (r.value === audioUrl) r.checked = true;
-    });
+    _forwardedAudioUrl = audioUrl;
+    var preview = document.getElementById('cc-launch-audio-preview');
+    var player  = document.getElementById('cc-launch-audio-player');
+    if (preview) preview.style.display = 'block';
+    if (player)  player.src = audioUrl;
   }, 350);
 }
 
