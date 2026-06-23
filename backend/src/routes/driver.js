@@ -415,6 +415,13 @@ router.get('/deliveries/:id/messages', requireAuth, async (req, res) => {
 
     const messages = await db('messages')
       .where({ delivery_id: req.params.id })
+      .where(function () {
+        this.whereIn('sender_role', ['driver', 'client'])
+          .orWhere(function () {
+            this.where('sender_role', 'admin')
+              .whereRaw("meta->>'for_driver' = 'true'");
+          });
+      })
       .orderBy('created_at', 'asc')
       .select(
         'id', 'type', 'content', 'meta',

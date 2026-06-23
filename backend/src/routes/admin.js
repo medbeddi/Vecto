@@ -767,6 +767,15 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
         ? { type: lastMsg.type, content: lastMsg.content, meta: lastMsg.meta }
         : { type: 'text', content: pickupAddress ? `${pickupAddress} → ${dropoffAddress}` : 'Commande appel', meta: null };
 
+    // Stocker le message initial dans la DB avec for_driver=true pour que le livreur le voie dans le chat
+    await db('messages').insert({
+      delivery_id: req.params.id,
+      sender_role: 'admin',
+      type: initialMessage.type,
+      content: initialMessage.content ?? null,
+      meta: JSON.stringify({ ...(initialMessage.meta ?? {}), for_driver: true }),
+    });
+
     emitNewOrder({ ...updated, alias: client.clientAlias }, initialMessage).catch((e) => {
       console.error('[launch] emitNewOrder failed:', e.message);
     });
