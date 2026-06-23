@@ -96,10 +96,14 @@ export async function acceptDelivery(deliveryId, driverId) {
   return db.transaction(async (trx) => {
     // Vérifier le solde wallet du livreur avant d'accepter
     const wallet = await trx('wallets').where({ driver_id: driverId }).first('balance');
-    if (wallet && parseFloat(wallet.balance) < 0) {
-      const err = new Error('Solde wallet négatif — rechargez pour continuer');
-      err.code = 'WALLET_BLOCKED';
-      throw err;
+    if (wallet) {
+      const seuilRow = await trx('app_settings').where({ key: 'wallet_seuil_blocage' }).first('value');
+      const seuil = parseFloat(seuilRow?.value ?? '0');
+      if (parseFloat(wallet.balance) < -seuil) {
+        const err = new Error('Solde wallet insuffisant — rechargez pour continuer');
+        err.code = 'WALLET_BLOCKED';
+        throw err;
+      }
     }
 
     // Verrouillage pessimiste : empêche deux livreurs d'accepter simultanément

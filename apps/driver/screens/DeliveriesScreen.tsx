@@ -127,10 +127,14 @@ export default function DeliveriesScreen() {
         addActiveCourse(accepted);
         navigation.navigate('Chat', { delivery: accepted });
       } catch (err: any) {
-        const msg =
-          err.code === 'ALREADY_TAKEN'
-            ? 'Cette course vient d\'être prise par un autre livreur.'
-            : 'Impossible d\'accepter la course. Réessayez.';
+        let msg = 'Impossible d\'accepter la course. Réessayez.';
+        if (err.code === 'ALREADY_TAKEN') {
+          msg = 'Cette course vient d\'être prise par un autre livreur.';
+        } else if (err.code === 'WALLET_BLOCKED') {
+          msg = 'Votre solde wallet est insuffisant. Rechargez votre compte pour accepter des courses.';
+        } else if (err.code === 'DELIVERY_NOT_FOUND') {
+          msg = 'Cette course n\'est plus disponible.';
+        }
         Alert.alert('Course indisponible', msg);
       } finally {
         setAccepting(null);
