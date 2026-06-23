@@ -543,9 +543,12 @@ router.get('/admin/inbox', requireCallCenter, async (req, res) => {
         .where({ delivery_id: row.id })
         .orderBy('created_at', 'desc')
         .first();
+      let clientPhone = null;
+      try { clientPhone = decryptWaId(row.waIdEnc); } catch {}
       return {
         id:          row.id,
         clientAlias: row.clientAlias,
+        clientPhone,
         createdAt:   row.createdAt,
         claimedBy:   row.claimedBy,
         lastMessage: last ? { type: last.type, content: last.content, createdAt: last.created_at } : null,
