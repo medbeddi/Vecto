@@ -59,6 +59,9 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// deliveryId issu d'une notification qui a ouvert l'app (app était fermée)
+let _pendingNotifDeliveryId: string | null = null;
+
 export default function MainScreen() {
   const navigation = useNavigation<Nav>();
   const [activeTab, setActiveTab] = useState<Tab>('courses');
@@ -80,6 +83,7 @@ export default function MainScreen() {
         setAdminUnread(0);
       } else if (data?.deliveryId || data?.type === 'new_order' || data?.type === 'new_delivery') {
         setActiveTab('courses');
+        if (data?.deliveryId) _pendingNotifDeliveryId = String(data.deliveryId);
       }
     }).catch(() => {});
 
@@ -138,6 +142,7 @@ export default function MainScreen() {
         setAdminUnread(0);
       } else if (data?.deliveryId) {
         setActiveTab('courses');
+        _pendingNotifDeliveryId = String(data.deliveryId);
       }
     });
 
@@ -239,7 +244,43 @@ function CoursesTab() {
       }).catch(() => {});
     }
 
-    loadAvailable();
+    loadAvailable().then(() => {
+      // Si l'app a été ouverte depuis une notification FCM, afficher le modal de la commande
+      if (_pendingNotifDeliveryId) {
+        const deliveryId = _pendingNotifDeliveryId;
+        _pendingNotifDeliveryId = null;
+        const delivery = useDeliveriesStore.getState().available.find((d) => d.id === deliveryId);
+        if (delivery) {
+          setIncomingOrder({
+            deliveryId: delivery.id,
+            clientAlias: delivery.clientAlias,
+            createdAt: delivery.createdAt,
+            broadcastAt: delivery.broadcastAt ?? null,
+            pickupAddress: delivery.pickupAddress ?? null,
+            dropoffAddress: delivery.dropoffAddress ?? null,
+            price: delivery.price ?? null,
+            message: {
+              type: delivery.initialMediaType ?? 'text',
+              content: delivery.description ?? null,
+              meta: null,
+            },
+          });
+          setModalCountdown(60);
+          if (modalCountdownRef.current) clearInterval(modalCountdownRef.current);
+          modalCountdownRef.current = setInterval(() => {
+            setModalCountdown((prev) => {
+              if (prev <= 1) { clearInterval(modalCountdownRef.current!); return 0; }
+              return prev - 1;
+            });
+          }, 1000);
+          if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
+          modalTimerRef.current = setTimeout(() => {
+            setIncomingOrder((prev) => prev?.deliveryId === deliveryId ? null : prev);
+            modalTimerRef.current = null;
+          }, 60 * 1000);
+        }
+      }
+    });
     loadActiveCourses().then(joinActiveRooms);
     registerFCMToken();
     startLocationTracking();
