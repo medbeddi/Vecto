@@ -910,7 +910,7 @@ function renderLivreurs() {
   _livreurs.forEach(function (l, i) {
     html += '<tr>'
       + '<td style="font-weight:700;color:var(--text-2)">#' + (i + 1) + '</td>'
-      + '<td style="font-weight:600">' + l.name + '</td>'
+      + '<td style="font-weight:600">' + escHtml(l.name) + '</td>'
       + '<td style="color:var(--text-2);font-size:13px">' + (l.phone || '—') + '</td>'
       + '<td>' + (STATUT_LIVREUR[l.status] || '') + '</td>'
       + '<td>' + l.courses + '</td>'
@@ -945,7 +945,7 @@ function filterLivreurs() {
   list.forEach(function (l, i) {
     html += '<tr>'
       + '<td style="font-weight:700;color:var(--text-2)">#' + (i + 1) + '</td>'
-      + '<td style="font-weight:600">' + l.name + '</td>'
+      + '<td style="font-weight:600">' + escHtml(l.name) + '</td>'
       + '<td style="color:var(--text-2);font-size:13px">' + (l.phone || '—') + '</td>'
       + '<td>' + (STATUT_LIVREUR[l.status] || '') + '</td>'
       + '<td>' + l.courses + '</td>'
@@ -1198,7 +1198,7 @@ function renderClients(data) {
     var phone = c.phone ? fmtPhone(c.phone) : '<span style="color:var(--text-3)">—</span>';
     html += '<tr>'
       + '<td style="font-weight:700;color:var(--text-2)">#' + c.num + '</td>'
-      + '<td style="font-weight:600">' + c.alias + '</td>'
+      + '<td style="font-weight:600">' + escHtml(c.alias) + '</td>'
       + '<td>' + phone + '</td>'
       + '<td style="font-weight:600">' + c.commandes + '</td>'
       + '<td>' + fmtDate(c.derniere) + '</td>'
@@ -1215,15 +1215,52 @@ function filterClients() {
   }));
 }
 
+var _clientDetailIndex = -1;
+
 function voirClientDetail(index) {
+  _clientDetailIndex = index;
   var c = _clients[index];
-  document.getElementById('client-detail-num').textContent      = '#' + c.num;
-  document.getElementById('client-detail-nom').textContent      = c.alias;
-  document.getElementById('client-detail-tel').textContent      = c.phone ? fmtPhone(c.phone) : 'Non disponible';
+  document.getElementById('client-detail-num').textContent       = '#' + c.num;
+  document.getElementById('client-detail-nom').textContent       = c.alias;
+  document.getElementById('client-detail-tel').textContent       = c.phone ? fmtPhone(c.phone) : 'Non disponible';
   document.getElementById('client-detail-commandes').textContent = c.commandes + ' commandes';
   document.getElementById('client-detail-derniere').textContent  = fmtDate(c.derniere);
   document.getElementById('client-detail-statut').innerHTML      = '<span class="badge badge-green">Actif</span>';
+  cancelClientNameEdit();
   showModal('modal-client-detail');
+}
+
+function editClientName() {
+  var c = _clients[_clientDetailIndex];
+  if (!c) return;
+  document.getElementById('client-name-input').value = c.alias;
+  document.getElementById('client-name-edit').style.display = 'block';
+  document.getElementById('btn-edit-client-name').style.display = 'none';
+  document.getElementById('client-name-input').focus();
+}
+
+function cancelClientNameEdit() {
+  document.getElementById('client-name-edit').style.display = 'none';
+  document.getElementById('btn-edit-client-name').style.display = '';
+}
+
+async function saveClientAlias() {
+  var c = _clients[_clientDetailIndex];
+  if (!c) return;
+  var newAlias = (document.getElementById('client-name-input').value || '').trim();
+  if (!newAlias) return;
+  try {
+    var res = await fetch(API + '/api/admin/clients/' + c.id + '/alias', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alias: newAlias }),
+    });
+    if (!res.ok) { alert('Erreur lors de la sauvegarde.'); return; }
+    _clients[_clientDetailIndex].alias = newAlias;
+    document.getElementById('client-detail-nom').textContent = newAlias;
+    cancelClientNameEdit();
+    renderClients(_clients);
+  } catch { alert('Erreur réseau.'); }
 }
 
 /* ================================================================
@@ -1261,9 +1298,9 @@ function renderWallet(transactions) {
         : '<span class="badge badge-red">Échoué</span>';
     html += '<tr>'
       + '<td style="font-weight:700;color:var(--text-2)">#' + (i + 1) + '</td>'
-      + '<td style="font-weight:600">' + t.driverName + '</td>'
-      + '<td>' + t.type + '</td>'
-      + '<td>' + (t.description || '—') + '</td>'
+      + '<td style="font-weight:600">' + escHtml(t.driverName) + '</td>'
+      + '<td>' + escHtml(t.type) + '</td>'
+      + '<td>' + escHtml(t.description || '—') + '</td>'
       + '<td style="font-weight:700;color:' + color + '">' + sign + fmtMoney(t.amount) + '</td>'
       + '<td>' + fmtDate(t.createdAt) + '</td>'
       + '<td>' + badge + '</td>'

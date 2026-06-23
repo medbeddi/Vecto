@@ -723,7 +723,19 @@
 <div class="modal-overlay" id="modal-client-detail">
   <div class="modal">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-      <div class="modal-title" id="client-detail-nom" style="margin-bottom:0;flex:1">—</div>
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="modal-title" id="client-detail-nom" style="margin-bottom:0">—</div>
+          <button onclick="editClientName()" id="btn-edit-client-name" title="Modifier le nom" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:15px;padding:2px 4px;line-height:1;border-radius:4px">✏</button>
+        </div>
+        <div id="client-name-edit" style="display:none;margin-top:8px">
+          <input id="client-name-input" type="text" class="form-input" placeholder="Nom du client" style="width:100%;margin-bottom:8px" />
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-dark btn-sm" onclick="saveClientAlias()">Enregistrer</button>
+            <button class="btn btn-ghost btn-sm" onclick="cancelClientNameEdit()">Annuler</button>
+          </div>
+        </div>
+      </div>
       <span style="font-size:13px;font-weight:600;color:var(--text-3)" id="client-detail-num">#1</span>
     </div>
     <div class="client-detail-grid">

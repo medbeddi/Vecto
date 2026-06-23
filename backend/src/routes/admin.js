@@ -36,8 +36,8 @@ function requireCallCenter(req, res, next) {
   }
 }
 
-// ── Config publique (clés front-end) ─────────────────────────────────────────
-router.get('/admin/config', (_req, res) => {
+// ── Config (clés front-end) ───────────────────────────────────────────────────
+router.get('/admin/config', requireCallCenter, (_req, res) => {
   res.json({ googleMapsKey: env.GOOGLE_MAPS_KEY });
 });
 
@@ -136,7 +136,7 @@ router.get('/admin/archives', requireAdmin, async (req, res) => {
 // ── Messages d'une archive ────────────────────────────────────────────────────
 router.get('/admin/archives/:id/messages', requireAdmin, async (req, res) => {
   try {
-    const delivery = await db('deliveries').where({ id: req.params.id }).first();
+    const delivery = await db('deliveries').where({ id: req.params.id }).whereNotNull('archived_at').first();
     if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
 
     const messages = await db('messages')
@@ -386,6 +386,22 @@ router.get('/admin/clients', requireCallCenter, async (req, res) => {
     });
 
     res.json({ clients: result });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Modifier le nom (alias) d'un client ──────────────────────────────────────
+router.patch('/admin/clients/:id/alias', requireAdmin, async (req, res) => {
+  try {
+    const { alias } = req.body;
+    if (!alias?.trim()) return res.status(400).json({ error: 'ALIAS_REQUIRED' });
+    const [client] = await db('clients')
+      .where({ id: req.params.id })
+      .update({ alias: alias.trim() })
+      .returning('id', 'alias');
+    if (!client) return res.status(404).json({ error: 'NOT_FOUND' });
+    res.json({ client });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
@@ -644,7 +660,10 @@ router.get('/admin/inbox/archived', requireCallCenter, async (req, res) => {
 // ── Call Center : messages d'une conversation admin_queue ─────────────────────
 router.get('/admin/inbox/:id/messages', requireCallCenter, async (req, res) => {
   try {
-    const delivery = await db('deliveries').where({ id: req.params.id }).first();
+    const delivery = await db('deliveries')
+      .where({ id: req.params.id })
+      .whereIn('status', ['admin_queue', 'done', 'cancelled'])
+      .first();
     if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
 
     const messages = await db('messages')
