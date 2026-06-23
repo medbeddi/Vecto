@@ -48,9 +48,12 @@ export async function uploadToR2(buffer, key, contentType) {
   return key;
 }
 
-// Génère une URL signée valable `expiresIn` secondes (défaut 1h)
+// Génère une URL publique (si R2_PUBLIC_URL configuré) ou signée (expire dans `expiresIn` secondes)
 export async function getSignedMediaUrl(key, expiresIn = 3600) {
   if (!r2) throw Object.assign(new Error('R2 non configuré'), { code: 'R2_NOT_CONFIGURED' });
+  if (env.R2_PUBLIC_URL) {
+    return `${env.R2_PUBLIC_URL}/${key}`;
+  }
   return getSignedUrl(
     r2,
     new GetObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: key }),
