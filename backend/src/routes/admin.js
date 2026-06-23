@@ -392,7 +392,7 @@ router.get('/admin/clients', requireCallCenter, async (req, res) => {
 });
 
 // ── Modifier le nom (alias) d'un client ──────────────────────────────────────
-router.patch('/admin/clients/:id/alias', requireAdmin, async (req, res) => {
+router.patch('/admin/clients/:id/alias', requireCallCenter, async (req, res) => {
   try {
     const { alias } = req.body;
     if (!alias?.trim()) return res.status(400).json({ error: 'ALIAS_REQUIRED' });
