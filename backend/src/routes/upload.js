@@ -66,16 +66,18 @@ async function handleUpload(req, res) {
   let filePath = req.file.path;
   let mimetype = req.file.mimetype;
 
-  // WhatsApp does not support audio/webm — convert to ogg/opus
+  // WhatsApp does not support audio/webm — convert to ogg/opus (required for PTT voice notes)
   if (mimetype.startsWith('audio/webm')) {
     try {
       const oggPath = await convertWebmToOgg(filePath);
       try { unlinkSync(filePath); } catch {}
       filePath = oggPath;
       mimetype = 'audio/ogg';
+      console.info('[upload] webm→ogg conversion OK');
     } catch (err) {
       console.error('[upload] webm→ogg conversion failed:', err.message);
-      // continue with webm as fallback (will likely fail on WhatsApp side)
+      try { unlinkSync(filePath); } catch {}
+      return res.status(422).json({ error: 'AUDIO_CONVERSION_FAILED', message: err.message });
     }
   }
 

@@ -25,8 +25,19 @@ async function post(payload) {
 // Upload audio to WhatsApp media endpoint and return media_id.
 // Using media_id (instead of link) makes the audio display as a PTT voice note.
 async function uploadAudioToWhatsApp(url) {
-  const { data: fileData } = await axios.get(url, { responseType: 'arraybuffer' });
-  const buffer = Buffer.from(fileData);
+  console.info('[messaging] téléchargement audio depuis:', url.slice(0, 120));
+  const dlRes = await axios.get(url, { responseType: 'arraybuffer' });
+  const contentType = dlRes.headers['content-type'] || '';
+  console.info('[messaging] audio téléchargé: Content-Type=%s taille=%d octets', contentType, dlRes.data.byteLength);
+
+  if (!contentType.includes('ogg') && !contentType.includes('opus')) {
+    throw Object.assign(
+      new Error(`Format non supporté par WhatsApp PTT: ${contentType}`),
+      { code: 'UNSUPPORTED_FORMAT' }
+    );
+  }
+
+  const buffer = Buffer.from(dlRes.data);
 
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
@@ -36,7 +47,7 @@ async function uploadAudioToWhatsApp(url) {
   const { data } = await axios.post(WA_MEDIA_API, form, {
     headers: { Authorization: `Bearer ${env.WA_TOKEN}`, ...form.getHeaders() },
   });
-  console.info('[messaging] WhatsApp media upload OK, id=', data.id);
+  console.info('[messaging] WhatsApp media upload OK, id=%s', data.id);
   return data.id;
 }
 
@@ -64,7 +75,9 @@ export async function sendAudio(waId, urlOrKey) {
       audio: { id: mediaId, voice: true },
     });
   } catch (uploadErr) {
-    console.error('[messaging] media upload failed, fallback to link:', uploadErr.response?.data ?? uploadErr.message);
+    const detail = uploadErr.response?.data ?? uploadErr.message;
+    console.error('[messaging] media upload failed → fallback link. raison:', JSON.stringify(detail));
+    console.info('[messaging] fallback link URL:', url.slice(0, 120));
     return post({
       messaging_product: 'whatsapp',
       to: waId,
