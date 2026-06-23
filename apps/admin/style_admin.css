@@ -658,6 +658,19 @@ input:focus, textarea:focus { outline: none; }
 .cc-audio-bar.h3 { height: 15px; }
 .cc-audio-bar.h4 { height: 20px; }
 .cc-audio-dur { font-size: 11px; opacity: .65; font-weight: 500; }
+/* Audio boutons dans cc-msg (inbox WA) */
+.cc-msg.admin .cc-audio-btn  { background: rgba(255,255,255,0.22); color: #fff; }
+.cc-msg.client .cc-audio-btn { background: var(--text-1); color: #fff; }
+.cc-msg.admin  .cc-audio-bar { background: rgba(255,255,255,0.8); opacity: 1; }
+.cc-msg.client .cc-audio-bar { background: rgba(0,0,0,0.45); opacity: 1; }
+.cc-msg.admin  .cc-audio-dur { color: rgba(255,255,255,0.75); opacity: 1; }
+.cc-msg.client .cc-audio-dur { color: var(--text-2); opacity: 1; }
+/* Animation waveform pendant lecture */
+.cc-audio-wrap.playing .cc-audio-bar { animation: cc-wave 0.7s ease-in-out infinite alternate; }
+.cc-audio-wrap.playing .cc-audio-bar:nth-child(2n)   { animation-delay: 0.1s; }
+.cc-audio-wrap.playing .cc-audio-bar:nth-child(3n)   { animation-delay: 0.2s; }
+.cc-audio-wrap.playing .cc-audio-bar:nth-child(4n)   { animation-delay: 0.05s; }
+@keyframes cc-wave { from { opacity: 0.25; transform: scaleY(0.5); } to { opacity: 1; transform: scaleY(1); } }
 /* Image dans la bulle */
 .cc-msg-img { max-width: 200px; border-radius: 8px; display: block; cursor: pointer; }
 /* Message système (appel, événement) */

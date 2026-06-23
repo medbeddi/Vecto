@@ -548,19 +548,21 @@ function toggleAudioMsg(uid) {
         a.pause();
         var ic = document.getElementById('ico_' + a.id);
         if (ic) ic.textContent = '▶';
+        var w = document.getElementById('wrp_' + a.id);
+        if (w) w.classList.remove('playing');
       }
     });
     audio.play().catch(function() {});
     var icon = document.getElementById('ico_' + uid);
     if (icon) icon.textContent = '⏸';
-    audio.onended = function() {
-      var ic2 = document.getElementById('ico_' + uid);
-      if (ic2) ic2.textContent = '▶';
-    };
+    var wrap = document.getElementById('wrp_' + uid);
+    if (wrap) wrap.classList.add('playing');
   } else {
     audio.pause();
     var icon2 = document.getElementById('ico_' + uid);
     if (icon2) icon2.textContent = '▶';
+    var wrap2 = document.getElementById('wrp_' + uid);
+    if (wrap2) wrap2.classList.remove('playing');
   }
 }
 
@@ -2070,13 +2072,28 @@ function _buildMsgBody(m) {
   if (m.type === 'text') {
     body = escHtml(m.content || '');
   } else if (m.type === 'audio') {
-    body = m.content
-      ? '<audio controls src="' + escHtml(m.content) + '" style="max-width:220px;display:block"></audio>'
-      : '[Message vocal]';
-    if (side === 'client' && m.content) {
-      body += '<button class="cc-forward-btn" onclick="forwardAudioToDrivers(\'' + escHtml(m.content) + '\')" title="Utiliser ce vocal comme message de course">'
-        + '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg>'
-        + 'Transférer aux livreurs</button>';
+    if (m.content) {
+      var uid = 'aud_' + (m.id || Date.now()).toString().replace(/-/g, '');
+      body = '<div class="cc-audio-wrap" id="wrp_' + uid + '">'
+           + '<button class="cc-audio-btn" onclick="toggleAudioMsg(\'' + uid + '\')" title="Lire / Pause">'
+           + '<span class="cc-audio-icon" id="ico_' + uid + '">▶</span>'
+           + '</button>'
+           + '<div class="cc-audio-body">'
+           + '<div class="cc-audio-wave">'
+           + [2,3,4,2,4,1,3,2,4,3,1,4,2,3,1,4,3,2,4,1,3,2,4,3].map(function(h){ return '<span class="cc-audio-bar h' + h + '"></span>'; }).join('')
+           + '</div>'
+           + '<span class="cc-audio-dur" id="dur_' + uid + '">0:00</span>'
+           + '</div></div>'
+           + '<audio id="' + uid + '" src="' + escHtml(m.content) + '" preload="metadata" style="display:none"'
+           + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0;var el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"'
+           + ' onended="(function(){var ic=document.getElementById(\'ico_' + uid + '\');if(ic)ic.textContent=\'▶\';var w=document.getElementById(\'wrp_' + uid + '\');if(w)w.classList.remove(\'playing\')}).call(this)"></audio>';
+      if (side === 'client') {
+        body += '<button class="cc-forward-btn" onclick="forwardAudioToDrivers(\'' + escHtml(m.content) + '\')" title="Utiliser ce vocal comme message de course">'
+          + '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg>'
+          + 'Transférer aux livreurs</button>';
+      }
+    } else {
+      body = '[Message vocal]';
     }
   } else if (m.type === 'image') {
     body = m.content
