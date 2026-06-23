@@ -5,13 +5,19 @@ import { getSignedMediaUrl } from './media.js';
 const WA_API = `https://graph.facebook.com/v19.0/${env.WA_PHONE_ID}/messages`;
 
 async function post(payload) {
-  const { data } = await axios.post(WA_API, payload, {
-    headers: {
-      Authorization: `Bearer ${env.WA_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  return data;
+  try {
+    const { data } = await axios.post(WA_API, payload, {
+      headers: {
+        Authorization: `Bearer ${env.WA_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    return data;
+  } catch (err) {
+    const detail = err.response?.data;
+    console.error('[messaging] WhatsApp API erreur:', JSON.stringify(detail));
+    throw err;
+  }
 }
 
 // waId = numéro décrypté (jamais loggé, jamais exposé à l'extérieur de ce service)
