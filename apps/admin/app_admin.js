@@ -1205,7 +1205,7 @@ function renderClients(data) {
       +     '<button onclick="saveClientAliasInline(' + i + ')" style="margin-left:4px;padding:4px 8px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">✓</button>'
       +     '<button onclick="cancelClientAliasEdit(' + i + ')" style="margin-left:2px;padding:4px 6px;background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-2)">✕</button>'
       +   '</span>'
-      +   '<button onclick="startClientAliasEdit(' + i + ')" id="client-alias-btn-' + i + '" title="Modifier le nom" style="margin-left:6px;background:none;border:none;cursor:pointer;color:var(--text-3);font-size:13px;opacity:.6;vertical-align:middle">✏</button>'
+      +   '<button onclick="startClientAliasEdit(' + i + ')" id="client-alias-btn-' + i + '" class="btn-table" style="margin-left:8px">Modifier</button>'
       + '</td>'
       + '<td>' + phone + '</td>'
       + '<td style="font-weight:600">' + c.commandes + '</td>'
