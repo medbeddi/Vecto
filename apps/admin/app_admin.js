@@ -1530,7 +1530,7 @@ async function uploadNCAudio(blob) {
   try {
     var form = new FormData();
     form.append('file', blob, 'vocal_nc_' + Date.now() + '.webm');
-    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', body: form });
+    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', headers: { 'Authorization': 'Bearer ' + _token }, body: form });
     if (!upRes.ok) { alert('Erreur upload audio'); return; }
     var upData = await upRes.json();
     selectNCAudio(upData.url);
@@ -2704,7 +2704,7 @@ async function uploadAndSendAudio(blob) {
   try {
     var form = new FormData();
     form.append('file', blob, 'vocal_admin_' + Date.now() + '.webm');
-    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', body: form });
+    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', headers: { 'Authorization': 'Bearer ' + _token }, body: form });
     if (!upRes.ok) { alert('Erreur upload audio'); return; }
     var upData = await upRes.json();
 
@@ -2845,7 +2845,7 @@ async function uploadLaunchAudio(blob) {
   try {
     var form = new FormData();
     form.append('file', blob, 'vocal_launch_' + Date.now() + '.webm');
-    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', body: form });
+    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', headers: { 'Authorization': 'Bearer ' + _token }, body: form });
     if (!upRes.ok) { alert('Erreur upload audio'); return; }
     var upData = await upRes.json();
     _forwardedAudioUrl = upData.url;
