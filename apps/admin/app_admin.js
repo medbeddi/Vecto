@@ -1930,6 +1930,14 @@ async function loadArchivedInbox() {
   } catch {}
 }
 
+function clientDisplayName(item) {
+  // Si l'alias a été personnalisé (pas le format auto "Client #XXXXX"), on l'affiche
+  var isDefault = /^Client #[A-Z0-9]+$/i.test(item.clientAlias);
+  if (!isDefault && item.clientAlias) return item.clientAlias;
+  // Sinon afficher le numéro de téléphone
+  return item.clientPhone ? 'Client +' + item.clientPhone : (item.clientAlias || '—');
+}
+
 function renderInboxList(items) {
   var list = document.getElementById('cc-inbox-list');
   if (!list) return;
@@ -1952,7 +1960,7 @@ function renderInboxList(items) {
     var claimedBadge = item.claimedBy && item.claimedBy === _myAdminId
       ? ' <span style="font-size:10px;background:#007AFF;color:#fff;padding:1px 5px;border-radius:10px;font-weight:700">Moi</span>'
       : '';
-    var displayName = item.clientPhone ? 'Client +' + item.clientPhone : escHtml(item.clientAlias);
+    var displayName = escHtml(clientDisplayName(item));
     return '<div class="cc-inbox-item' + active + '" onclick="openConversation(\'' + item.id + '\')">'
       + '<div class="cc-inbox-alias">' + displayName + claimedBadge + '</div>'
       + '<div class="cc-inbox-preview">' + escHtml(preview.slice(0, 60)) + '</div>'
@@ -2009,9 +2017,7 @@ async function openConversation(deliveryId) {
   var chatView = document.getElementById('cc-chat-view');
   chatView.style.display = 'flex';
   var nameEl = document.getElementById('cc-chat-client-name');
-  if (nameEl) nameEl.textContent = item
-    ? (item.clientPhone ? 'Client +' + item.clientPhone : item.clientAlias)
-    : '—';
+  if (nameEl) nameEl.textContent = item ? clientDisplayName(item) : '—';
   // Réactiver le bouton Lancer (désactivé pour les archives)
   var launchBtn = document.querySelector('.cc-chat-topbar .btn-danger');
   if (launchBtn) launchBtn.style.display = '';
