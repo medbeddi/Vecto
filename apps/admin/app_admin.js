@@ -1872,9 +1872,9 @@ function renderInboxList(items) {
     var claimedBadge = item.claimedBy && item.claimedBy === _myAdminId
       ? ' <span style="font-size:10px;background:#007AFF;color:#fff;padding:1px 5px;border-radius:10px;font-weight:700">Moi</span>'
       : '';
+    var displayName = item.clientPhone ? 'Client +' + item.clientPhone : escHtml(item.clientAlias);
     return '<div class="cc-inbox-item' + active + '" onclick="openConversation(\'' + item.id + '\')">'
-      + '<div class="cc-inbox-alias">' + escHtml(item.clientAlias) + claimedBadge + '</div>'
-      + (item.clientPhone ? '<div style="font-size:11px;color:var(--text-3);margin:-2px 0 2px">+' + escHtml(item.clientPhone) + '</div>' : '')
+      + '<div class="cc-inbox-alias">' + displayName + claimedBadge + '</div>'
       + '<div class="cc-inbox-preview">' + escHtml(preview.slice(0, 60)) + '</div>'
       + '<div class="cc-inbox-time">' + time + '</div>'
       + '</div>';
@@ -1929,8 +1929,9 @@ async function openConversation(deliveryId) {
   var chatView = document.getElementById('cc-chat-view');
   chatView.style.display = 'flex';
   var nameEl = document.getElementById('cc-chat-client-name');
-  if (nameEl) nameEl.innerHTML = (item ? escHtml(item.clientAlias) : '—')
-    + (item && item.clientPhone ? ' <span style="font-size:12px;font-weight:400;color:var(--text-3)">+' + escHtml(item.clientPhone) + '</span>' : '');
+  if (nameEl) nameEl.textContent = item
+    ? (item.clientPhone ? 'Client +' + item.clientPhone : item.clientAlias)
+    : '—';
   // Réactiver le bouton Lancer (désactivé pour les archives)
   var launchBtn = document.querySelector('.cc-chat-topbar .btn-danger');
   if (launchBtn) launchBtn.style.display = '';
