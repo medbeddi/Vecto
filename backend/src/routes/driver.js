@@ -333,7 +333,7 @@ router.get('/deliveries/mine', requireAuth, async (req, res) => {
 router.post('/deliveries/:id/accept', requireAuth, async (req, res) => {
   try {
     const delivery = await acceptDelivery(req.params.id, req.driver.id);
-    sendStatusMessageToClient(req.params.id, `Votre commande a été acceptée par un livreur 🛵 Il arrive bientôt !`).catch(() => {});
+    sendStatusMessageToClient(req.params.id, 'Votre course a été acceptée').catch(() => {});
     res.json({ delivery });
   } catch (err) {
     if (err.code === 'WALLET_BLOCKED') return res.status(402).json({ error: 'WALLET_BLOCKED' });
