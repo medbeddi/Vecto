@@ -773,7 +773,7 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
       sender_role: 'admin',
       type: initialMessage.type,
       content: initialMessage.content ?? null,
-      meta: JSON.stringify({ ...(initialMessage.meta ?? {}), for_driver: true }),
+      meta: { ...(initialMessage.meta ?? {}), for_driver: true },
     });
 
     emitNewOrder({ ...updated, alias: client.clientAlias }, initialMessage).catch((e) => {

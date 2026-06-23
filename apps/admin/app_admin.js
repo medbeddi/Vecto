@@ -1248,6 +1248,7 @@ async function saveClientAliasInline(i) {
     _clients[i].alias = newAlias;
     document.getElementById('client-alias-text-' + i).textContent = newAlias;
     cancelClientAliasEdit(i);
+    loadInbox();
   } catch { alert('Erreur réseau.'); }
 }
 
@@ -1303,6 +1304,7 @@ async function saveClientAlias() {
     document.getElementById('client-detail-nom').textContent = newAlias;
     cancelClientNameEdit();
     renderClients(_clients);
+    loadInbox();
   } catch { alert('Erreur réseau.'); }
 }
 
