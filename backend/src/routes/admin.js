@@ -726,7 +726,7 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
     const client = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.id', req.params.id)
-      .select('clients.alias as clientAlias')
+      .select('clients.alias as clientAlias', 'clients.wa_id_enc as waIdEnc')
       .first();
     if (!client) return res.status(404).json({ error: 'NOT_FOUND' });
 
@@ -734,6 +734,21 @@ router.post('/admin/inbox/:id/launch', requireCallCenter, async (req, res) => {
       pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description,
       forwardedAudioUrl,
     });
+
+    // Envoyer le vocal admin au client WhatsApp si présent
+    if (forwardedAudioUrl) {
+      const rawWaId = decryptWaId(client.waIdEnc);
+      await db('messages').insert({
+        delivery_id: req.params.id,
+        sender_role: 'admin',
+        type: 'audio',
+        content: forwardedAudioUrl,
+        meta: null,
+      });
+      sendAudio(rawWaId, forwardedAudioUrl).catch((err) => {
+        console.error('[launch] sendAudio to client failed:', err.message);
+      });
+    }
 
     // Dernier message pour l'affichage côté livreur
     const lastMsg = await db('messages')
