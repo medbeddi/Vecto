@@ -47,8 +47,8 @@ export async function notifyAvailableDrivers(delivery, excludeDriverIds = [], ex
   const result = await messaging.sendEachForMulticast({
     tokens,
     notification: {
-      title: '🛵 Nouvelle course disponible',
-      body: delivery.description || `Course de ${delivery.alias || 'un client'}`,
+      title: '🛵 Nouvelle course',
+      body: 'Un client cherche un livreur',
     },
     data: {
       type: 'new_order',

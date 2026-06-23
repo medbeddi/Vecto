@@ -41,8 +41,8 @@ const upload = multer({
   },
 });
 
-// Convert webm audio to ogg/opus (required by WhatsApp Cloud API)
-function convertWebmToOgg(inputPath) {
+// Convert any audio format to ogg/opus (required by WhatsApp Cloud API for PTT voice notes)
+function convertToOgg(inputPath) {
   const outputPath = inputPath.replace(/\.[^.]+$/, '.ogg');
   return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegPath, [
@@ -66,18 +66,18 @@ async function handleUpload(req, res) {
   let filePath = req.file.path;
   let mimetype = req.file.mimetype;
 
-  // WhatsApp does not support audio/webm — convert to ogg/opus (required for PTT voice notes)
-  if (mimetype.startsWith('audio/webm')) {
+  // Convert all non-ogg audio to ogg/opus for WhatsApp PTT voice notes
+  // (covers webm from browser, m4a/mp4 from iOS/Android Expo recording)
+  if (mimetype.startsWith('audio/') && !mimetype.includes('ogg')) {
     try {
-      const oggPath = await convertWebmToOgg(filePath);
+      const oggPath = await convertToOgg(filePath);
       try { unlinkSync(filePath); } catch {}
       filePath = oggPath;
       mimetype = 'audio/ogg';
-      console.info('[upload] webm→ogg conversion OK');
+      console.info('[upload] audio→ogg conversion OK (input was %s)', req.file.mimetype);
     } catch (err) {
-      console.error('[upload] webm→ogg conversion failed:', err.message);
-      try { unlinkSync(filePath); } catch {}
-      return res.status(422).json({ error: 'AUDIO_CONVERSION_FAILED', message: err.message });
+      console.error('[upload] audio→ogg conversion failed:', err.message);
+      // Continue with original file — will not be PTT but still playable
     }
   }
 

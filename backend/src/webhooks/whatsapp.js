@@ -105,8 +105,8 @@ async function processMessage(msg) {
     emitClientMessage(existing.id, message);
     const preview = msgType === 'text' ? (content?.slice(0, 80) ?? '') : `[${msgType}]`;
     notifyAssignedDriver(existing.driver_id, {
-      title: `Message de ${client.alias}`,
-      body: preview,
+      title: '💬 Nouveau message',
+      body: msgType === 'audio' ? 'Message vocal du client' : preview,
       data: { type: 'client_message', deliveryId: existing.id },
     }).catch(() => {});
     return;

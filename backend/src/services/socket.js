@@ -134,8 +134,8 @@ export async function emitNewOrder(delivery, initialMessage) {
 
     // FCM push si le livreur prioritaire a l'app fermée
     notifyAssignedDriver(delivery.nearest_driver_id, {
-      title: '🛵 Course prioritaire',
-      body: initialMessage.content || `Course de ${delivery.alias}`,
+      title: '🛵 Nouvelle course',
+      body: 'Un client cherche un livreur',
       data: { type: 'new_order', deliveryId: String(delivery.id), clientAlias: delivery.alias ?? '' },
     }).catch(() => {});
 

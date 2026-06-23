@@ -18,7 +18,7 @@ import {
 } from '../validation/schemas.js';
 import { hashWaId } from '../services/pii-filter.js';
 import { acceptDelivery, updateDeliveryStatus } from '../services/delivery.js';
-import { relayDriverMessage } from '../services/relay.js';
+import { relayDriverMessage, sendStatusMessageToClient } from '../services/relay.js';
 import { getSignedUploadUrl } from '../services/media.js';
 import { emitDeliveryCancelled, emitDriverReplyToCC, emitDriverAvailability } from '../services/socket.js';
 
@@ -348,6 +348,13 @@ router.post('/deliveries/:id/status', requireAuth, validate(statusSchema), async
 
     if (req.body.status === 'cancelled') {
       emitDeliveryCancelled(req.params.id);
+    }
+
+    // Auto-message WhatsApp au client selon le statut
+    if (req.body.status === 'in_progress') {
+      sendStatusMessageToClient(req.params.id, 'Votre livreur est en route 🛵').catch(() => {});
+    } else if (req.body.status === 'done') {
+      sendStatusMessageToClient(req.params.id, 'Votre commande a été livrée ✅ Merci !').catch(() => {});
     }
 
     res.json({ delivery });
