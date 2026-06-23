@@ -2,7 +2,8 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { mkdirSync, readFileSync } from 'fs';
+import { mkdirSync, readFileSync, unlinkSync } from 'fs';
+import { spawn } from 'child_process';
 import { requireAuth } from '../middleware/auth.js';
 import { uploadToR2, extFromMime } from '../services/media.js';
 import { env } from '../config/env.js';
@@ -11,7 +12,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 mkdirSync(UPLOADS_DIR, { recursive: true });
 
-// Toujours sauvegarder sur disque (fallback garanti), puis essayer R2 si activé
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
@@ -28,24 +28,55 @@ const upload = multer({
   },
 });
 
+// Convert webm audio to ogg/opus (required by WhatsApp Cloud API)
+function convertWebmToOgg(inputPath) {
+  const outputPath = inputPath.replace(/\.[^.]+$/, '.ogg');
+  return new Promise((resolve, reject) => {
+    const proc = spawn('ffmpeg', [
+      '-y', '-i', inputPath,
+      '-c:a', 'libopus', '-b:a', '64k',
+      outputPath,
+    ]);
+    proc.on('close', (code) => code === 0 ? resolve(outputPath) : reject(new Error(`ffmpeg exit ${code}`)));
+    proc.on('error', reject);
+    proc.stderr.on('data', () => {});
+  });
+}
+
 async function handleUpload(req, res) {
   if (!req.file) return res.status(400).json({ error: 'Fichier manquant' });
 
+  let filePath = req.file.path;
+  let mimetype = req.file.mimetype;
+
+  // WhatsApp does not support audio/webm — convert to ogg/opus
+  if (mimetype.startsWith('audio/webm')) {
+    try {
+      const oggPath = await convertWebmToOgg(filePath);
+      try { unlinkSync(filePath); } catch {}
+      filePath = oggPath;
+      mimetype = 'audio/ogg';
+    } catch (err) {
+      console.error('[upload] webm→ogg conversion failed:', err.message);
+      // continue with webm as fallback (will likely fail on WhatsApp side)
+    }
+  }
+
   if (env.R2_ENABLED && env.R2_PUBLIC_URL) {
     try {
-      const ext = extFromMime(req.file.mimetype) || path.extname(req.file.originalname).slice(1) || 'bin';
+      const ext = extFromMime(mimetype) || path.extname(filePath).slice(1) || 'bin';
       const key = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const buffer = readFileSync(req.file.path);
-      await uploadToR2(buffer, key, req.file.mimetype);
+      const buffer = readFileSync(filePath);
+      await uploadToR2(buffer, key, mimetype);
+      try { unlinkSync(filePath); } catch {}
       return res.json({ url: `${env.R2_PUBLIC_URL}/${key}`, key });
     } catch (err) {
       console.error('[upload] R2 failed, falling back to disk:', err.message);
     }
   }
 
-  // Fallback : URL locale (PUBLIC_URL prioritaire pour Railway/proxy)
   const base = env.PUBLIC_URL || `${req.protocol}://${req.headers.host}`;
-  res.json({ url: `${base}/uploads/${req.file.filename}`, key: req.file.filename });
+  res.json({ url: `${base}/uploads/${path.basename(filePath)}`, key: path.basename(filePath) });
 }
 
 const router = Router();

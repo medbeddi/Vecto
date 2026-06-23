@@ -2042,7 +2042,7 @@ function startMsgPolling(deliveryId) {
       });
       if (hasNew) container.scrollTop = container.scrollHeight;
     } catch {}
-  }, 5000);
+  }, 2000);
 }
 
 function stopMsgPolling() {
@@ -2064,6 +2064,7 @@ async function sendReply() {
       body: JSON.stringify({ text: text }),
     });
     if (!res.ok) { alert('Erreur lors de l\'envoi.'); return; }
+    var data = await res.json();
     // Ajouter localement sans recharger
     var container = document.getElementById('cc-messages');
     var div = document.createElement('div');
@@ -2071,6 +2072,7 @@ async function sendReply() {
     div.innerHTML = escHtml(text) + '<div class="cc-msg-time">maintenant</div>';
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
+    if (data.message && data.message.id) _renderedMsgIds.add(data.message.id);
   } catch {
     alert('Erreur réseau.');
   }
@@ -2629,6 +2631,7 @@ async function uploadAndSendAudio(blob) {
       body: JSON.stringify({ audioUrl: upData.url }),
     });
     if (!res.ok) { alert('Erreur envoi vocal'); return; }
+    var replyData = await res.json();
 
     var container = document.getElementById('cc-messages');
     if (container) {
@@ -2638,6 +2641,7 @@ async function uploadAndSendAudio(blob) {
         + '<div class="cc-msg-time">maintenant</div>';
       container.appendChild(div);
       container.scrollTop = container.scrollHeight;
+      if (replyData.message && replyData.message.id) _renderedMsgIds.add(replyData.message.id);
     }
   } catch { alert('Erreur réseau lors de l\'envoi du vocal.'); }
 }
