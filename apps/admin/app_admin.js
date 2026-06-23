@@ -517,7 +517,7 @@ function _driverMsgBubble(m) {
           + '<audio id="' + uid + '" src="' + escHtml(m.content) + '" preload="metadata" style="display:none"'
           + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0,el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"></audio>';
   } else if (type === 'image') {
-    inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img" onerror="_imgErr(this)" onclick="window.open(this.src,\'_blank\')" style="cursor:pointer" />';
+    inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img" onerror="_imgErr(this)" onclick="openImgModal(this.src)" style="cursor:pointer" />';
   } else if (type === 'call') {
     return '<div class="cc-msg-wrap cc-msg-system-wrap">'
       + '<div class="cc-msg-system-bubble">📞 ' + escHtml(m.content || 'Appel') + ' · ' + fmtTime(m.createdAt) + '</div>'
@@ -1988,7 +1988,7 @@ function _buildMsgBody(m) {
     }
   } else if (m.type === 'image') {
     body = m.content
-      ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px;cursor:pointer" onerror="_imgErr(this)" onclick="window.open(this.src,\'_blank\')" />'
+      ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px;cursor:pointer" onerror="_imgErr(this)" onclick="openImgModal(this.src)" />'
       : '[Image]';
   } else if (m.type === 'location') {
     var meta = m.meta || {};
@@ -3049,3 +3049,26 @@ function deleteUser(id, name) {
   };
   showModal('modal-confirm');
 }
+
+
+function openImgModal(src) {
+  var modal = document.getElementById('img-modal');
+  var img   = document.getElementById('img-modal-src');
+  var dl    = document.getElementById('img-modal-dl');
+  if (!modal || !img) return;
+  img.src = src;
+  if (dl) dl.href = src;
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeImgModal() {
+  var modal = document.getElementById('img-modal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeImgModal();
+});
