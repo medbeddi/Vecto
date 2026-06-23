@@ -2139,7 +2139,6 @@ function startMsgPolling(deliveryId) {
 
 function stopMsgPolling() {
   if (_msgPollTimer) { clearInterval(_msgPollTimer); _msgPollTimer = null; }
-  _renderedMsgIds.clear();
 }
 
 async function sendReply() {
