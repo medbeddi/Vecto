@@ -931,6 +931,25 @@
   </div>
 </div>
 
+<!-- ================================================================
+     MODAL — Changer mot de passe utilisateur
+================================================================ -->
+<div class="modal-overlay" id="modal-change-password">
+  <div class="modal">
+    <div class="modal-title">Changer le mot de passe</div>
+    <div id="change-pwd-user-name" style="font-size:14px;color:var(--text-2);margin-bottom:16px">—</div>
+    <label class="field-label">Nouveau mot de passe</label>
+    <div class="field-row"><input type="password" id="change-pwd-new" placeholder="••••••••" /></div>
+    <label class="field-label">Confirmer le mot de passe</label>
+    <div class="field-row"><input type="password" id="change-pwd-confirm" placeholder="••••••••" /></div>
+    <div id="change-pwd-error" style="color:#FF3B30;font-size:13px;margin-top:8px;display:none"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('modal-change-password')">Annuler</button>
+      <button class="btn btn-dark" onclick="saveUserPassword()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL — Carte plein écran -->
 <div class="modal-overlay" id="modal-map-fullscreen" style="display:none">
   <div class="map-modal-card">

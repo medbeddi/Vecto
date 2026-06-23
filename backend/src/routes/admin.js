@@ -882,6 +882,19 @@ router.post('/admin/users', requireAdmin, async (req, res) => {
   }
 });
 
+router.patch('/admin/users/:id/password', requireAdmin, async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password || password.length < 6) return res.status(400).json({ error: 'PASSWORD_TOO_SHORT' });
+    const hash = await bcrypt.hash(password, 12);
+    const updated = await db('admins').where({ id: req.params.id }).update({ password_hash: hash });
+    if (!updated) return res.status(404).json({ error: 'NOT_FOUND' });
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 router.delete('/admin/users/:id', requireAdmin, async (req, res) => {
   try {
     if (req.params.id === req.admin.id) {

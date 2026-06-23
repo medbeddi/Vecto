@@ -3002,7 +3002,10 @@ function renderUsers() {
       + '<td>' + roleTag + '</td>'
       + '<td style="color:var(--text-3)">' + escHtml(u.createdByName || '—') + '</td>'
       + '<td style="color:var(--text-3)">' + fmtDate(u.createdAt) + '</td>'
-      + '<td><button class="btn btn-ghost btn-sm" style="color:#FF3B30" onclick="deleteUser(\'' + u.id + '\',\'' + escHtml(u.name) + '\')">Supprimer</button></td>'
+      + '<td style="display:flex;gap:6px">'
+      + '<button class="btn btn-ghost btn-sm" onclick="openChangePasswordModal(\'' + u.id + '\',\'' + escHtml(u.name) + '\')">MDP</button>'
+      + '<button class="btn btn-ghost btn-sm" style="color:#FF3B30" onclick="deleteUser(\'' + u.id + '\',\'' + escHtml(u.name) + '\')">Supprimer</button>'
+      + '</td>'
       + '</tr>';
   });
   tbody.innerHTML = html;
@@ -3046,6 +3049,50 @@ async function createUser() {
     document.getElementById('new-user-email').value = '';
     document.getElementById('new-user-password').value = '';
     document.getElementById('new-user-role').value = 'call_center';
+  } catch {
+    errEl.textContent = 'Erreur réseau.';
+    errEl.style.display = 'block';
+  }
+}
+
+var _changePwdUserId = null;
+
+function openChangePasswordModal(id, name) {
+  _changePwdUserId = id;
+  document.getElementById('change-pwd-user-name').textContent = name;
+  document.getElementById('change-pwd-new').value = '';
+  document.getElementById('change-pwd-confirm').value = '';
+  document.getElementById('change-pwd-error').style.display = 'none';
+  showModal('modal-change-password');
+}
+
+async function saveUserPassword() {
+  var newPwd     = document.getElementById('change-pwd-new').value;
+  var confirmPwd = document.getElementById('change-pwd-confirm').value;
+  var errEl      = document.getElementById('change-pwd-error');
+  errEl.style.display = 'none';
+  if (!newPwd || newPwd.length < 6) {
+    errEl.textContent = 'Le mot de passe doit contenir au moins 6 caractères.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    errEl.textContent = 'Les mots de passe ne correspondent pas.';
+    errEl.style.display = 'block';
+    return;
+  }
+  try {
+    var res = await fetch(API + '/api/admin/users/' + _changePwdUserId + '/password', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: newPwd }),
+    });
+    if (!res.ok) {
+      errEl.textContent = 'Erreur lors de la sauvegarde.';
+      errEl.style.display = 'block';
+      return;
+    }
+    closeModal('modal-change-password');
   } catch {
     errEl.textContent = 'Erreur réseau.';
     errEl.style.display = 'block';
