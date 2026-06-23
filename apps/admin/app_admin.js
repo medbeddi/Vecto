@@ -526,7 +526,7 @@ function _driverMsgBubble(m) {
     inner = '<div class="cc-msg-text">' + escHtml(m.content) + '</div>';
   }
   var tmpAttr = (m.id && m.id.startsWith('tmp_')) ? ' data-tmpid="' + m.id + '"' : '';
-  var avatar = isOut ? '' : '<img src="moto.svg" style="width:22px;height:22px;object-fit:contain;flex-shrink:0;margin-right:6px;margin-top:4px;opacity:.85" />';
+  var avatar = isOut ? '' : '<img src="client.svg" style="width:30px;height:30px;object-fit:contain;flex-shrink:0;margin-right:6px;margin-top:2px;border-radius:50%" />';
   return '<div class="cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in') + '"' + tmpAttr + ' style="' + (isOut ? '' : 'align-items:flex-start') + '">'
     + (isOut ? '' : avatar)
     + '<div class="cc-msg-bubble ' + (isOut ? 'cc-msg-bubble-out' : 'cc-msg-bubble-in') + '">'
