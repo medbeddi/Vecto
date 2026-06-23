@@ -1196,9 +1196,17 @@ function renderClients(data) {
   var html = '';
   data.forEach(function (c, i) {
     var phone = c.phone ? fmtPhone(c.phone) : '<span style="color:var(--text-3)">—</span>';
-    html += '<tr>'
+    html += '<tr id="client-row-' + i + '">'
       + '<td style="font-weight:700;color:var(--text-2)">#' + c.num + '</td>'
-      + '<td style="font-weight:600">' + escHtml(c.alias) + '</td>'
+      + '<td style="font-weight:600">'
+      +   '<span id="client-alias-text-' + i + '">' + escHtml(c.alias) + '</span>'
+      +   '<span id="client-alias-edit-' + i + '" style="display:none">'
+      +     '<input id="client-alias-input-' + i + '" type="text" value="' + escHtml(c.alias) + '" style="padding:4px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:13px;font-weight:600;width:140px" />'
+      +     '<button onclick="saveClientAliasInline(' + i + ')" style="margin-left:4px;padding:4px 8px;background:var(--primary);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px">✓</button>'
+      +     '<button onclick="cancelClientAliasEdit(' + i + ')" style="margin-left:2px;padding:4px 6px;background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;color:var(--text-2)">✕</button>'
+      +   '</span>'
+      +   '<button onclick="startClientAliasEdit(' + i + ')" id="client-alias-btn-' + i + '" title="Modifier le nom" style="margin-left:6px;background:none;border:none;cursor:pointer;color:var(--text-3);font-size:13px;opacity:.6;vertical-align:middle">✏</button>'
+      + '</td>'
       + '<td>' + phone + '</td>'
       + '<td style="font-weight:600">' + c.commandes + '</td>'
       + '<td>' + fmtDate(c.derniere) + '</td>'
@@ -1206,6 +1214,37 @@ function renderClients(data) {
       + '</tr>';
   });
   tbody.innerHTML = html;
+}
+
+function startClientAliasEdit(i) {
+  document.getElementById('client-alias-text-' + i).style.display = 'none';
+  document.getElementById('client-alias-btn-' + i).style.display  = 'none';
+  document.getElementById('client-alias-edit-' + i).style.display = 'inline';
+  document.getElementById('client-alias-input-' + i).focus();
+  document.getElementById('client-alias-input-' + i).select();
+}
+
+function cancelClientAliasEdit(i) {
+  document.getElementById('client-alias-edit-' + i).style.display = 'none';
+  document.getElementById('client-alias-text-' + i).style.display = '';
+  document.getElementById('client-alias-btn-' + i).style.display  = '';
+}
+
+async function saveClientAliasInline(i) {
+  var c        = _clients[i];
+  var newAlias = (document.getElementById('client-alias-input-' + i).value || '').trim();
+  if (!newAlias || newAlias === c.alias) { cancelClientAliasEdit(i); return; }
+  try {
+    var res = await fetch(API + '/api/admin/clients/' + c.id + '/alias', {
+      method: 'PATCH',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alias: newAlias }),
+    });
+    if (!res.ok) { alert('Erreur lors de la sauvegarde.'); return; }
+    _clients[i].alias = newAlias;
+    document.getElementById('client-alias-text-' + i).textContent = newAlias;
+    cancelClientAliasEdit(i);
+  } catch { alert('Erreur réseau.'); }
 }
 
 function filterClients() {
