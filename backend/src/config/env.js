@@ -35,6 +35,7 @@ export const env = {
   WA_VERIFY_TOKEN: process.env.WA_VERIFY_TOKEN,
   WA_SALT: process.env.WA_SALT,
   WA_ENCRYPTION_KEY: process.env.WA_ENCRYPTION_KEY,
+  WA_APP_SECRET: process.env.WA_APP_SECRET || null,
 
   // Base de données
   DATABASE_URL: process.env.DATABASE_URL,

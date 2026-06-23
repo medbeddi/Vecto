@@ -99,6 +99,27 @@ function logout() {
   document.getElementById('password-input').value = '';
 }
 
+var _googleMapsLoaded = false;
+function _loadGoogleMaps() {
+  if (_googleMapsLoaded) return;
+  fetch(API + '/api/admin/config', { headers: authHeaders() })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(async function (cfg) {
+      if (!cfg || !cfg.googleMapsKey) return;
+      try {
+        var test = await fetch('https://maps.googleapis.com/maps/api/geocode/json?address=Nouakchott&key=' + cfg.googleMapsKey);
+        var data = await test.json();
+        if (data.status === 'REQUEST_DENIED' || data.status === 'UNKNOWN_ERROR') return;
+      } catch (e) { return; }
+      _googleMapsLoaded = true;
+      var s = document.createElement('script');
+      s.src = 'https://maps.googleapis.com/maps/api/js?key=' + cfg.googleMapsKey + '&libraries=places&language=fr&callback=onGoogleMapsReady';
+      s.async = true; s.defer = true;
+      document.head.appendChild(s);
+    })
+    .catch(function () {});
+}
+
 function showApp() {
   _role = localStorage.getItem('vecto_admin_role') || 'admin';
 
@@ -112,6 +133,7 @@ function showApp() {
 
   initSocket();
   _requestNotifPermission();
+  _loadGoogleMaps();
 
   if (_role === 'call_center') {
     showPage('p-callcenter');
@@ -141,24 +163,6 @@ document.addEventListener('DOMContentLoaded', function () {
     if (e.key === 'Enter') login();
   });
 
-  // Charger Google Maps seulement si la clé est valide (test Geocoding avant)
-  fetch(API + '/api/admin/config')
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(async function (cfg) {
-      if (!cfg || !cfg.googleMapsKey) return;
-      try {
-        var test = await fetch('https://maps.googleapis.com/maps/api/geocode/json?address=Nouakchott&key=' + cfg.googleMapsKey);
-        var data = await test.json();
-        // REQUEST_DENIED = billing non activé ou clé invalide → ne pas charger
-        if (data.status === 'REQUEST_DENIED' || data.status === 'UNKNOWN_ERROR') return;
-      } catch (e) { return; }
-      // Clé vérifiée → charger Google Maps
-      var s = document.createElement('script');
-      s.src = 'https://maps.googleapis.com/maps/api/js?key=' + cfg.googleMapsKey + '&libraries=places&language=fr&callback=onGoogleMapsReady';
-      s.async = true; s.defer = true;
-      document.head.appendChild(s);
-    })
-    .catch(function () {});
 
   if (_token) {
     fetch(API + '/api/admin/me', { headers: { Authorization: 'Bearer ' + _token } })

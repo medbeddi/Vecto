@@ -80,13 +80,14 @@ async function handleUpload(req, res) {
     }
   }
 
-  const base = env.PUBLIC_URL || `${req.protocol}://${req.headers.host}`;
+  const base = env.PUBLIC_URL;
+  if (!base) return res.status(500).json({ error: 'PUBLIC_URL_NOT_CONFIGURED' });
   res.json({ url: `${base}/uploads/${path.basename(filePath)}`, key: path.basename(filePath) });
 }
 
 const router = Router();
 
 router.post('/upload', requireAuth, upload.single('file'), handleUpload);
-router.post('/upload-public', upload.single('file'), handleUpload);
+router.post('/upload-public', requireAuth, upload.single('file'), handleUpload);
 
 export default router;

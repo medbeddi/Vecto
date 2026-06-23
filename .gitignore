@@ -39,3 +39,7 @@ Thumbs.db
 *.key
 *.mobileprovision
 *.orig.*
+
+# Firebase config (contain API keys — ne jamais commiter)
+google-services.json
+GoogleService-Info.plist

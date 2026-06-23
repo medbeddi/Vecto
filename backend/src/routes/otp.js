@@ -44,7 +44,6 @@ async function sendOtpWhatsApp(phone, phoneHash, code) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     console.error('[OTP] échec envoi WhatsApp:', err?.error?.message ?? res.status);
-    console.info(`[OTP-DEBUG] code pour hash=${phoneHash.slice(0, 8)} : ${code}`);
   }
 }
 
@@ -68,7 +67,6 @@ router.post('/otp/send', otpLimiter, async (req, res) => {
     // WhatsApp non-bloquant : si l'envoi échoue, le code est quand même en DB
     sendOtpWhatsApp(phone.trim(), phoneHash, code).catch((err) => {
       console.error('[OTP] WhatsApp failed (non-blocking):', err.message);
-      console.info(`[OTP] code fallback hash=${phoneHash.slice(0, 8)}... : ${code}`);
     });
 
     // En dev : retourner le code directement
@@ -158,7 +156,7 @@ router.post('/otp/verify/driver', otpLimiter, async (req, res) => {
         .returning(['id', 'name', 'status']);
     }
 
-    const payload = { id: driver.id, name: driver.name };
+    const payload = { id: driver.id, name: driver.name, role: 'driver' };
     const accessToken = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_EXPIRES });
     const refreshToken = jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: env.JWT_REFRESH_EXPIRES });
 
@@ -169,7 +167,7 @@ router.post('/otp/verify/driver', otpLimiter, async (req, res) => {
 });
 
 // ── Réinitialiser le mot de passe via OTP ─────────────────────────────────────
-router.post('/auth/reset-password', async (req, res) => {
+router.post('/auth/reset-password', otpLimiter, async (req, res) => {
   try {
     const { phone, code, newPassword } = req.body;
     if (!phone || !code || !newPassword) {
@@ -181,10 +179,9 @@ router.post('/auth/reset-password', async (req, res) => {
 
     const phoneHash = hashWaId(phone.trim());
 
-    // Chercher l'OTP — on accepte aussi les codes récemment expirés (<2min) pour tolérer les décalages
     const otp = await db('otps')
       .where({ phone_hash: phoneHash, code, used: false })
-      .where('expires_at', '>', new Date(Date.now() - 2 * 60 * 1000))
+      .where('expires_at', '>', new Date())
       .orderBy('created_at', 'desc')
       .first();
 
@@ -204,7 +201,7 @@ router.post('/auth/reset-password', async (req, res) => {
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await db('drivers').where({ id: driver.id }).update({ password_hash: passwordHash });
 
-    const payload = { id: driver.id, name: driver.name };
+    const payload = { id: driver.id, name: driver.name, role: 'driver' };
     const accessToken = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_EXPIRES });
     const refreshToken = jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: env.JWT_REFRESH_EXPIRES });
 

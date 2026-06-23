@@ -1,22 +1,14 @@
-/**
- * Routes de simulation client — développement uniquement.
- * Permet de tester le scénario complet sans passer par Meta.
- */
 import { Router } from 'express';
 import db from '../config/db.js';
-import { hashWaId } from '../services/pii-filter.js';
+import { requireClientAuth } from '../middleware/client-auth.js';
 
 const router = Router();
 
-// GET /sim/conversation?phone=+22234478444
-// Retourne la livraison en cours + les messages pour un numéro client
-router.get('/conversation', async (req, res) => {
+// GET /sim/conversation
+// Retourne la livraison en cours + les messages du client authentifié
+router.get('/conversation', requireClientAuth, async (req, res) => {
   try {
-    const { phone } = req.query;
-    if (!phone) return res.status(400).json({ error: 'phone requis' });
-
-    const waHash = hashWaId(phone);
-    const client = await db('clients').where({ wa_id_hash: waHash }).first();
+    const client = await db('clients').where({ id: req.client.id }).first('id', 'alias');
     if (!client) return res.json({ client: null, delivery: null, messages: [] });
 
     const delivery = await db('deliveries')

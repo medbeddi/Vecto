@@ -2,11 +2,16 @@ import '../src/config/env.js';
 import bcrypt from 'bcrypt';
 import db from '../src/config/db.js';
 
-const EMAIL    = 'admin@vecto.app';
-const PASSWORD = 'Admin2026!';
+const EMAIL = 'admin@vecto.app';
+const password = process.env.ADMIN_PASSWORD || process.argv[2];
+
+if (!password) {
+  console.error('Erreur : mot de passe requis. Utiliser ADMIN_PASSWORD=xxx ou passer en argument.');
+  process.exit(1);
+}
 
 async function run() {
-  const hash = await bcrypt.hash(PASSWORD, 12);
+  const hash = await bcrypt.hash(password, 12);
 
   const existing = await db('admins').where({ email: EMAIL }).first();
   if (existing) {
@@ -17,7 +22,6 @@ async function run() {
     console.log(`✓ Admin créé : ${EMAIL}`);
   }
 
-  // Lister tous les comptes admin
   const all = await db('admins').select('id', 'name', 'email', 'created_at');
   console.log('\nComptes admin existants :');
   all.forEach(a => console.log(`  - ${a.email}  (nom: ${a.name})`));

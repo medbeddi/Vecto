@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { createHmac } from 'crypto';
+import { randomInt } from 'crypto';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { hashWaId, encryptWaId, sanitizeText } from '../services/pii-filter.js';
@@ -26,6 +28,18 @@ router.get('/', (req, res) => {
 
 // ─── POST : réception des messages WhatsApp ────────────────────────────────────
 router.post('/', (req, res) => {
+  if (env.WA_APP_SECRET) {
+    const sig = req.headers['x-hub-signature-256'];
+    const expected = 'sha256=' + createHmac('sha256', env.WA_APP_SECRET)
+      .update(req.rawBody ?? Buffer.from(JSON.stringify(req.body)))
+      .digest('hex');
+    if (!sig || sig !== expected) {
+      console.warn('[webhook] signature HMAC invalide — requête rejetée');
+      return res.sendStatus(403);
+    }
+  } else if (env.NODE_ENV === 'production') {
+    console.warn('[webhook] WA_APP_SECRET non configuré — validation HMAC désactivée');
+  }
   res.sendStatus(200);
   processPayload(req.body).catch((err) => {
     console.error('[webhook] erreur traitement', err.message);
@@ -237,7 +251,7 @@ const ALIAS_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 function generateAlias() {
   let code = '';
-  for (let i = 0; i < 5; i++) code += ALIAS_CHARS[Math.floor(Math.random() * ALIAS_CHARS.length)];
+  for (let i = 0; i < 5; i++) code += ALIAS_CHARS[randomInt(ALIAS_CHARS.length)];
   return `Client #${code}`;
 }
 

@@ -11,7 +11,7 @@ const ADMINS_ROOM  = 'room:admins';
 
 export function initSocket(httpServer) {
   io = new Server(httpServer, {
-    cors: { origin: '*', methods: ['GET', 'POST'] },
+    cors: { origin: env.ALLOWED_ORIGINS, methods: ['GET', 'POST'] },
     pingTimeout: 60000,
   });
 

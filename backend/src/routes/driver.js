@@ -52,7 +52,7 @@ router.post('/auth/register', loginLimiter, validate(registerSchema), async (req
       .insert({ name, phone, phone_hash: phoneHash, password_hash: passwordHash, status: 'offline' })
       .returning(['id', 'name']);
 
-    const payload = { id: driver.id, name: driver.name };
+    const payload = { id: driver.id, name: driver.name, role: 'driver' };
     const accessToken = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_EXPIRES });
     const refreshToken = jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: env.JWT_REFRESH_EXPIRES });
 
@@ -79,7 +79,7 @@ router.post('/auth/login', loginLimiter, validate(loginSchema), async (req, res)
 
     await db('drivers').where({ id: driver.id }).update({ status: 'available', is_available: true });
 
-    const payload = { id: driver.id, name: driver.name };
+    const payload = { id: driver.id, name: driver.name, role: 'driver' };
     const accessToken = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_EXPIRES });
     const refreshToken = jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: env.JWT_REFRESH_EXPIRES });
 
