@@ -5,9 +5,21 @@ import { fileURLToPath } from 'url';
 import { mkdirSync, readFileSync, unlinkSync } from 'fs';
 import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
+import jwt from 'jsonwebtoken';
 import { requireAuth } from '../middleware/auth.js';
 import { uploadToR2, extFromMime } from '../services/media.js';
 import { env } from '../config/env.js';
+
+function requireAnyAuth(req, res, next) {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!token) return res.status(401).json({ error: 'AUTH_REQUIRED' });
+  try {
+    jwt.verify(token, env.JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'AUTH_INVALID' });
+  }
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
@@ -88,6 +100,6 @@ async function handleUpload(req, res) {
 const router = Router();
 
 router.post('/upload', requireAuth, upload.single('file'), handleUpload);
-router.post('/upload-public', requireAuth, upload.single('file'), handleUpload);
+router.post('/upload-public', requireAnyAuth, upload.single('file'), handleUpload);
 
 export default router;
