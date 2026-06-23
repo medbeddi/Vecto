@@ -1,4 +1,5 @@
 import axios from 'axios';
+import FormData from 'form-data';
 import { env } from '../config/env.js';
 import { getSignedMediaUrl } from './media.js';
 
@@ -30,11 +31,12 @@ async function uploadAudioToWhatsApp(url) {
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
   form.append('type', 'audio/ogg');
-  form.append('file', new Blob([buffer], { type: 'audio/ogg' }), 'voice.ogg');
+  form.append('file', buffer, { filename: 'voice.ogg', contentType: 'audio/ogg' });
 
   const { data } = await axios.post(WA_MEDIA_API, form, {
-    headers: { Authorization: `Bearer ${env.WA_TOKEN}` },
+    headers: { Authorization: `Bearer ${env.WA_TOKEN}`, ...form.getHeaders() },
   });
+  console.info('[messaging] WhatsApp media upload OK, id=', data.id);
   return data.id;
 }
 
