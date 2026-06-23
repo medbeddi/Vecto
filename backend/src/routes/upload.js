@@ -35,7 +35,11 @@ function convertWebmToOgg(inputPath) {
   return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegPath, [
       '-y', '-i', inputPath,
-      '-c:a', 'libopus', '-b:a', '64k',
+      '-c:a', 'libopus',
+      '-b:a', '32k',
+      '-ac', '1',       // mono (required for WhatsApp PTT voice notes)
+      '-ar', '16000',   // 16kHz sample rate (WhatsApp voice note standard)
+      '-f', 'ogg',
       outputPath,
     ]);
     proc.on('close', (code) => code === 0 ? resolve(outputPath) : reject(new Error(`ffmpeg exit ${code}`)));
