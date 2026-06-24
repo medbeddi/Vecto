@@ -28,6 +28,7 @@ body {
   color: var(--text-1);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 svg { fill: currentColor; flex-shrink: 0; }
@@ -541,7 +542,7 @@ input:focus, textarea:focus { outline: none; }
 }
 .cc-chat-client-name { font-weight: 700; font-size: 16px; color: var(--text-1); }
 .cc-messages {
-  flex: 1; overflow-y: auto; padding: 16px 18px;
+  flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px 18px;
   display: flex; flex-direction: column; gap: 10px;
 }
 .cc-msg {
@@ -1029,7 +1030,12 @@ input:focus, textarea:focus { outline: none; }
 .cc-reaction-count { font-size: 11px; font-weight: 600; color: var(--text-2); }
 
 /* ── Wrapper interne bulle livreur (pour picker de réaction) ─────────────── */
-.cc-drvmsg { position: relative; }
+.cc-drvmsg {
+  position: relative;
+  max-width: 72%;
+  min-width: 0;
+}
+.cc-drvmsg .cc-msg-bubble { max-width: 100%; }
 .cc-drvmsg:hover .cc-react-picker {
   visibility: visible; opacity: 1; pointer-events: auto;
   transition-delay: 0s;
