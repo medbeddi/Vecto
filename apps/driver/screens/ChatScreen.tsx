@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   ActivityIndicator,
   Alert,
   FlatList,
@@ -48,6 +49,9 @@ export default function ChatScreen() {
   const [text, setText] = useState('');
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [sending, setSending] = useState(false);
+  const [recSeconds, setRecSeconds] = useState(0);
+  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recSecondsRef = useRef(0);
   const [ccPhone, setCcPhone] = useState<string | null>(null);
   const listRef = useRef<FlatList>(null);
 
@@ -121,14 +125,21 @@ export default function ChatScreen() {
   }, [text, sending, delivery.id]);
 
   // ─── Enregistrement audio ─────────────────────────────────────────────────
-  const toggleRecording = useCallback(async () => {
-    if (recording) {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
-      if (uri) await uploadAndSendMedia('audio', uri, 'audio/mp4', 'm4a');
-      return;
-    }
+  const _startRecordingTimer = () => {
+    recSecondsRef.current = 0;
+    setRecSeconds(0);
+    recTimerRef.current = setInterval(() => {
+      recSecondsRef.current += 1;
+      setRecSeconds(recSecondsRef.current);
+    }, 1000);
+  };
+
+  const _stopRecordingTimer = () => {
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
+    setRecSeconds(0);
+  };
+
+  const startRecording = useCallback(async () => {
     const { status } = await Audio.requestPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission refusée', 'Activez le microphone dans les paramètres.');
@@ -139,7 +150,24 @@ export default function ChatScreen() {
       Audio.RecordingOptionsPresets.HIGH_QUALITY
     );
     setRecording(rec);
-  }, [recording, delivery.id]);
+    _startRecordingTimer();
+  }, []);
+
+  const stopRecording = useCallback(async () => {
+    if (!recording) return;
+    _stopRecordingTimer();
+    await recording.stopAndUnloadAsync();
+    const uri = recording.getURI();
+    setRecording(null);
+    if (uri) await uploadAndSendMedia('audio', uri, 'audio/mp4', 'm4a');
+  }, [recording]);
+
+  const cancelRecording = useCallback(async () => {
+    if (!recording) return;
+    _stopRecordingTimer();
+    await recording.stopAndUnloadAsync();
+    setRecording(null);
+  }, [recording]);
 
   // ─── Image ────────────────────────────────────────────────────────────────
   const pickImage = useCallback(async () => {
@@ -413,7 +441,7 @@ export default function ChatScreen() {
       )}
 
       {/* Zone de saisie */}
-      {!isClosed && (
+      {!isClosed && !recording && (
         <View style={styles.inputBar}>
           <TouchableOpacity style={styles.iconBtn} onPress={pickImage} disabled={sending}>
             <Icon name="image" size={20} color={TEXT2} strokeWidth={1.75} />
@@ -424,39 +452,44 @@ export default function ChatScreen() {
 
           <TextInput
             style={styles.textInput}
-            placeholder={recording ? 'Enregistrement...' : 'Message...'}
+            placeholder="Message..."
             placeholderTextColor={TEXT2}
             value={text}
             onChangeText={setText}
             multiline
             maxLength={1000}
-            editable={!recording}
             onSubmitEditing={sendText}
           />
 
           {text.trim() ? (
-            <TouchableOpacity
-              style={styles.micBtn}
-              onPress={sendText}
-              disabled={sending}
-            >
+            <TouchableOpacity style={styles.micBtn} onPress={sendText} disabled={sending}>
               {sending
                 ? <ActivityIndicator size="small" color="#fff" />
                 : <Icon name="send" size={18} color="#fff" />
               }
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity
-              style={[styles.micBtn, recording && styles.micBtnRec]}
-              onPress={toggleRecording}
-              disabled={sending && !recording}
-            >
-              {recording
-                ? <Icon name="pause" size={18} color="#fff" strokeWidth={2} />
-                : <Icon name="mic" size={20} color="#fff" strokeWidth={1.75} />
-              }
+            <TouchableOpacity style={styles.micBtn} onPress={startRecording} disabled={sending}>
+              <Icon name="mic" size={20} color="#fff" strokeWidth={1.75} />
             </TouchableOpacity>
           )}
+        </View>
+      )}
+
+      {/* Barre enregistrement WhatsApp style */}
+      {!isClosed && !!recording && (
+        <View style={styles.recBar}>
+          <TouchableOpacity style={styles.recCancel} onPress={cancelRecording}>
+            <Icon name="trash" size={20} color={TEXT2} strokeWidth={1.75} />
+          </TouchableOpacity>
+          <View style={styles.recDot} />
+          <Text style={styles.recTimer}>
+            {Math.floor(recSeconds / 60)}:{String(recSeconds % 60).padStart(2, '0')}
+          </Text>
+          <RecordingWave />
+          <TouchableOpacity style={styles.micBtn} onPress={stopRecording}>
+            <Icon name="send" size={18} color="#fff" />
+          </TouchableOpacity>
         </View>
       )}
 
@@ -498,6 +531,53 @@ function NavBtn({ label, onPress }: { label: string; onPress: () => void }) {
     </TouchableOpacity>
   );
 }
+
+const BAR_CONFIGS = [
+  { init: 0.3, end: 0.9, dur: 250 },
+  { init: 0.7, end: 0.35, dur: 290 },
+  { init: 0.4, end: 1.0, dur: 220 },
+  { init: 0.8, end: 0.3, dur: 310 },
+  { init: 0.25, end: 0.85, dur: 260 },
+  { init: 0.6, end: 0.2, dur: 280 },
+  { init: 0.5, end: 0.95, dur: 240 },
+  { init: 0.75, end: 0.4, dur: 300 },
+  { init: 0.35, end: 0.8, dur: 270 },
+  { init: 0.65, end: 0.25, dur: 230 },
+];
+
+function RecordingWave() {
+  const anims = useRef(BAR_CONFIGS.map((c) => new Animated.Value(c.init))).current;
+
+  useEffect(() => {
+    const loops = anims.map((val, i) => {
+      const { init, end, dur } = BAR_CONFIGS[i];
+      return Animated.loop(
+        Animated.sequence([
+          Animated.timing(val, { toValue: end, duration: dur, useNativeDriver: true }),
+          Animated.timing(val, { toValue: init, duration: dur, useNativeDriver: true }),
+        ])
+      );
+    });
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, []);
+
+  return (
+    <View style={recWaveStyles.wrap}>
+      {anims.map((val, i) => (
+        <Animated.View
+          key={i}
+          style={[recWaveStyles.bar, { transform: [{ scaleY: val }] }]}
+        />
+      ))}
+    </View>
+  );
+}
+
+const recWaveStyles = StyleSheet.create({
+  wrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2.5, height: 30 },
+  bar: { flex: 1, height: 24, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.35)' },
+});
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F0F0F5' },
@@ -569,8 +649,29 @@ const styles = StyleSheet.create({
     backgroundColor: PRIMARY,
     justifyContent: 'center', alignItems: 'center',
   },
-  micBtnRec: { backgroundColor: '#f44336' },
   sendIcon: { color: '#fff', fontSize: 15, marginLeft: 1 },
+
+  // Recording bar
+  recBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    padding: 10, backgroundColor: CARD,
+    borderTopWidth: 0.5, borderTopColor: BORDER,
+  },
+  recCancel: {
+    width: 40, height: 40, borderRadius: 20,
+    justifyContent: 'center', alignItems: 'center',
+    backgroundColor: SURFACE,
+  },
+  recDot: {
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: '#FF3B30',
+    flexShrink: 0,
+  },
+  recTimer: {
+    fontSize: 14, fontWeight: '700',
+    color: TEXT, minWidth: 34,
+    fontVariant: ['tabular-nums'],
+  },
 
   // Progress bar
   progressWrap: { backgroundColor: BG, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1e1e1e' },
