@@ -988,22 +988,33 @@ input:focus, textarea:focus { outline: none; }
 /* ── Réaction emoji ──────────────────────────────────────────────────────── */
 .cc-msg { position: relative; }
 .cc-react-picker {
-  display: none; position: absolute;
-  top: -36px; right: 0;
+  position: absolute;
+  /* Chevauche légèrement la bulle pour combler tout gap */
+  bottom: calc(100% - 6px);
+  right: 0;
+  /* pseudo-zone invisible pour pont entre bulle et picker */
+  padding: 6px 6px 10px;
   background: var(--card); border: 1px solid var(--border);
-  border-radius: 24px; padding: 4px 6px;
-  gap: 2px; align-items: center;
+  border-radius: 24px;
+  display: flex; gap: 2px; align-items: center;
   box-shadow: 0 2px 12px rgba(0,0,0,0.12);
-  z-index: 10; white-space: nowrap;
+  z-index: 20; white-space: nowrap;
+  /* Caché par défaut avec opacity/visibility pour pouvoir utiliser transition */
+  visibility: hidden; opacity: 0; pointer-events: none;
+  /* Délai de 250ms sur la disparition → temps de déplacer la souris */
+  transition: opacity 0.1s 0.25s, visibility 0s 0.35s;
 }
 .cc-msg.admin .cc-react-picker { right: auto; left: 0; }
-.cc-msg:hover .cc-react-picker { display: flex; }
+.cc-msg:hover .cc-react-picker {
+  visibility: visible; opacity: 1; pointer-events: auto;
+  transition-delay: 0s;
+}
 .cc-react-emoji {
   border: none; background: none; cursor: pointer;
-  font-size: 18px; padding: 2px 3px; border-radius: 50%;
-  line-height: 1; transition: transform .1s;
+  font-size: 20px; padding: 2px 4px; border-radius: 50%;
+  line-height: 1; transition: transform .12s;
 }
-.cc-react-emoji:hover { transform: scale(1.3); }
+.cc-react-emoji:hover { transform: scale(1.35); }
 
 /* ── Chips de réactions sous le message ─────────────────────────────────── */
 .cc-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
