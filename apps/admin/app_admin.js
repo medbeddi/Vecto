@@ -767,7 +767,7 @@ async function sendDriverImageReply(input) {
 async function sendDriverLocationReply() {
   if (!_selectedDriverId) return;
   document.getElementById('cc-driver-attach-popup').style.display = 'none';
-  if (!navigator.geolocation) { alert('Géolocalisation non disponible.'); return; }
+  if (!navigator.geolocation) { alert('Géolocalisation non disponible dans ce navigateur.'); return; }
   navigator.geolocation.getCurrentPosition(
     async function(pos) {
       var lat = pos.coords.latitude;
@@ -776,14 +776,19 @@ async function sendDriverLocationReply() {
         var res = await fetch(API + '/api/admin/driver-chat/' + _selectedDriverId, {
           method: 'POST',
           headers: authHeaders(),
-          body: JSON.stringify({ content: null, type: 'location', meta: { lat: lat, lng: lng, label: 'Position admin' } }),
+          body: JSON.stringify({ content: '', type: 'location', meta: { lat: lat, lng: lng, label: 'Position admin' } }),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          var err = await res.json().catch(function() { return {}; });
+          alert('Erreur envoi localisation : ' + (err.error || res.status));
+          return;
+        }
         var data = await res.json();
         if (data.message) appendDriverChatMessage(data.message);
-      } catch {}
+      } catch (e) { alert('Erreur réseau : ' + e.message); }
     },
-    function() { alert('Impossible d\'obtenir la position.'); }
+    function(err) { alert('Impossible d\'obtenir la position GPS. (' + err.message + ')'); },
+    { timeout: 10000, maximumAge: 60000 }
   );
 }
 

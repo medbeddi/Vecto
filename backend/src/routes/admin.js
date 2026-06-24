@@ -1036,7 +1036,7 @@ router.post('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) 
       driver_id: req.params.driverId,
       sender_role: 'admin',
       type: msgType,
-      content: msgType === 'location' ? null : content.trim(),
+      content: msgType === 'location' ? '' : content.trim(),
     };
     if (meta) insertData.meta = JSON.stringify(meta);
     const [msg] = await db('cc_driver_messages')
