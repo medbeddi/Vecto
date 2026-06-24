@@ -744,9 +744,10 @@ function AdminChatTab() {
         return [...prev, msg];
       });
     };
-    socketService.on('cc_message', onMsg);
+    const onMsgWrap = (data: CCMessage) => onMsg(data);
+    socketService.on('cc_message', onMsgWrap as any);
     return () => {
-      socketService.off('cc_message', onMsg);
+      socketService.off('cc_message', onMsgWrap as any);
       clearInterval(pollId);
     };
   }, []);
@@ -984,7 +985,7 @@ function CCBubble({ message }: { message: CCMessage }) {
       <>
         <TouchableOpacity onPress={() => setImgFullscreen(true)} activeOpacity={0.88}>
           <Image
-            source={{ uri: message.content }}
+            source={{ uri: message.content ?? undefined }}
             style={adminChat.msgImage}
             resizeMode="cover"
             onError={() => setImgError(true)}
@@ -995,7 +996,7 @@ function CCBubble({ message }: { message: CCMessage }) {
             <TouchableOpacity style={adminChat.imgViewerClose} onPress={() => setImgFullscreen(false)} activeOpacity={0.75}>
               <Icon name="x" size={22} color="#fff" strokeWidth={2.5} />
             </TouchableOpacity>
-            <Image source={{ uri: message.content }} style={adminChat.imgViewerImg} resizeMode="contain" />
+            <Image source={{ uri: message.content ?? undefined }} style={adminChat.imgViewerImg} resizeMode="contain" />
           </View>
         </Modal>
       </>
@@ -1028,6 +1029,24 @@ function CCBubble({ message }: { message: CCMessage }) {
           {duration !== null ? durStr(duration) : '0:00'}
         </Text>
       </View>
+    );
+  } else if (message.type === 'location') {
+    const meta = message.meta;
+    content = (
+      <TouchableOpacity
+        activeOpacity={0.75}
+        onPress={() => {
+          if (meta?.lat && meta?.lng) {
+            Linking.openURL(`https://maps.google.com/?q=${meta.lat},${meta.lng}`);
+          }
+        }}
+        style={adminChat.locationRow}
+      >
+        <Text style={adminChat.locationIcon}>📍</Text>
+        <Text style={[isAdmin ? adminChat.textIn : adminChat.textOut, { fontSize: 14 }]}>
+          {meta?.label ?? 'Position partagée'}
+        </Text>
+      </TouchableOpacity>
     );
   } else {
     content = <Text style={isAdmin ? adminChat.textIn : adminChat.textOut}>{message.content}</Text>;
@@ -1066,6 +1085,8 @@ const adminChat = StyleSheet.create({
   time: { fontSize: 11, color: 'rgba(128,128,128,0.7)', alignSelf: 'flex-end' },
   msgImage: { width: 200, height: 150, borderRadius: 10 },
   imgError: { color: TEXT2, fontSize: 13, opacity: 0.6, fontStyle: 'italic' },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  locationIcon: { fontSize: 20 },
   imgViewer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
   imgViewerImg: { width: '100%', height: '100%' },
   imgViewerClose: {

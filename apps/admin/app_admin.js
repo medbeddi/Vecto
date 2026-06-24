@@ -344,6 +344,10 @@ var _driverMicRecorder = null;
 var _driverMicChunks = [];
 var _driverMsgIds = new Set();
 var _driverChatPollTimer = null;
+var _driverRecShouldSend    = false;
+var _driverRecTimerInterval = null;
+var _driverRecSeconds       = 0;
+var _driverIsRecording      = false;
 var _ccMapInitialized = false;
 
 function showPage(pageId) {
@@ -503,25 +507,25 @@ function _driverMsgBubble(m) {
   var type  = m.type || 'text';
   var inner = '';
   if (type === 'audio') {
-    var uid = 'aud_' + m.id.replace(/-/g,'');
-    inner = '<div class="cc-audio-wrap">'
+    var uid = 'aud_' + (m.id || Date.now()).toString().replace(/-/g,'');
+    inner = '<div class="cc-audio-wrap" id="wrp_' + uid + '">'
           + '<button class="cc-audio-btn" onclick="toggleAudioMsg(\'' + uid + '\')">'
           + '<span class="cc-audio-icon" id="ico_' + uid + '">▶</span>'
           + '</button>'
           + '<div class="cc-audio-body">'
           + '<div class="cc-audio-wave">'
-          + '<span class="cc-audio-bar h2"></span><span class="cc-audio-bar h3"></span><span class="cc-audio-bar h4"></span>'
-          + '<span class="cc-audio-bar h2"></span><span class="cc-audio-bar h3"></span><span class="cc-audio-bar h1"></span>'
-          + '<span class="cc-audio-bar h4"></span><span class="cc-audio-bar h3"></span><span class="cc-audio-bar h2"></span>'
-          + '<span class="cc-audio-bar h1"></span><span class="cc-audio-bar h3"></span><span class="cc-audio-bar h2"></span>'
+          + [2,3,4,2,4,1,3,2,4,3,1,4,2,3,1,4,3,2,4,1,3,2,4,3].map(function(h){ return '<span class="cc-audio-bar h' + h + '"></span>'; }).join('')
           + '</div>'
           + '<span class="cc-audio-dur" id="dur_' + uid + '">0:00</span>'
-          + '</div>'
-          + '</div>'
+          + '</div></div>'
           + '<audio id="' + uid + '" src="' + escHtml(m.content) + '" preload="metadata" style="display:none"'
-          + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0,el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"></audio>';
+          + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0,el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"'
+          + ' onended="(function(){var ic=document.getElementById(\'ico_' + uid + '\');if(ic)ic.textContent=\'▶\';var w=document.getElementById(\'wrp_' + uid + '\');if(w)w.classList.remove(\'playing\')}).call(this)"></audio>';
   } else if (type === 'image') {
-    inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img" onerror="_imgErr(this)" onclick="openImgModal(this.src)" style="cursor:pointer" />';
+    inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img" onerror="_imgErr(this)" onclick="openImgModal(this.src)" style="cursor:pointer;max-width:200px;border-radius:8px" />';
+  } else if (type === 'location') {
+    var meta = m.meta || {};
+    inner = '<div class="cc-msg-text">📍 ' + escHtml(meta.label || (meta.lat + ', ' + meta.lng)) + '</div>';
   } else if (type === 'call') {
     return '<div class="cc-msg-wrap cc-msg-system-wrap">'
       + '<div class="cc-msg-system-bubble">📞 ' + escHtml(m.content || 'Appel') + ' · ' + fmtTime(m.createdAt) + '</div>'
@@ -529,13 +533,41 @@ function _driverMsgBubble(m) {
   } else {
     inner = '<div class="cc-msg-text">' + escHtml(m.content) + '</div>';
   }
+
+  // Réactions
+  var reactions = (m.meta && m.meta.reactions) ? m.meta.reactions : {};
+  var reactionKeys = Object.keys(reactions);
+  var reactionHtml = reactionKeys.length
+    ? '<div class="cc-reactions">'
+        + reactionKeys.map(function(e) {
+            return '<span class="cc-reaction-chip" onclick="toggleDriverReaction(\'' + (m.id||'') + '\',\'' + e + '\')" title="Cliquer pour retirer">'
+              + e
+              + (reactions[e].length > 1 ? '<span class="cc-reaction-count">' + reactions[e].length + '</span>' : '')
+              + '</span>';
+          }).join('')
+        + '</div>'
+    : '';
+
+  var reactPicker = m.id && !m.id.startsWith('tmp_')
+    ? '<div class="cc-react-picker">'
+        + ['👍','❤️','😂','😮','😢','🙏'].map(function(e) {
+            return '<button class="cc-react-emoji" onclick="event.stopPropagation();toggleDriverReaction(\'' + m.id + '\',\'' + e + '\')">' + e + '</button>';
+          }).join('')
+        + '</div>'
+    : '';
+
   var tmpAttr = (m.id && m.id.startsWith('tmp_')) ? ' data-tmpid="' + m.id + '"' : '';
+  var msgIdAttr = (m.id && !m.id.startsWith('tmp_')) ? ' data-drv-msg-id="' + m.id + '"' : '';
   var avatar = isOut ? '' : '<img src="client.svg" style="width:30px;height:30px;object-fit:contain;flex-shrink:0;margin-right:6px;margin-top:2px;border-radius:50%" />';
   return '<div class="cc-msg-wrap ' + (isOut ? 'cc-msg-out' : 'cc-msg-in') + '"' + tmpAttr + ' style="' + (isOut ? '' : 'align-items:flex-start') + '">'
     + (isOut ? '' : avatar)
+    + '<div class="cc-drvmsg"' + msgIdAttr + '>'
+    + reactPicker
     + '<div class="cc-msg-bubble ' + (isOut ? 'cc-msg-bubble-out' : 'cc-msg-bubble-in') + '">'
     + inner
     + '<div class="cc-msg-time">' + fmtTime(m.createdAt) + '</div>'
+    + '</div>'
+    + reactionHtml
     + '</div></div>';
 }
 
@@ -630,35 +662,160 @@ async function sendDriverChatMsg(content, type) {
   }
 }
 
-async function toggleDriverMic() {
-  var btn = document.getElementById('cc-driver-mic-btn');
-  if (_driverMicRecorder && _driverMicRecorder.state === 'recording') {
-    _driverMicRecorder.stop();
-    return;
-  }
+async function startDriverRecording() {
+  if (_driverIsRecording) return;
   try {
     var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     _driverMicChunks = [];
-    _driverMicRecorder = new MediaRecorder(stream);
+    var mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    _driverMicRecorder = new MediaRecorder(stream, { mimeType: mimeType });
     _driverMicRecorder.ondataavailable = function(e) { if (e.data.size > 0) _driverMicChunks.push(e.data); };
     _driverMicRecorder.onstop = async function() {
-      btn.classList.remove('recording');
       stream.getTracks().forEach(function(t) { t.stop(); });
-      var blob = new Blob(_driverMicChunks, { type: 'audio/webm' });
-      var fd = new FormData();
-      fd.append('file', blob, 'voice.webm');
-      try {
-        var r = await fetch(API + '/api/admin/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + _token }, body: fd });
-        var d = await r.json();
-        if (d.url) await sendDriverChatMsg(d.url, 'audio');
-      } catch {}
-      _driverMicRecorder = null;
+      if (_driverRecShouldSend) {
+        var blob = new Blob(_driverMicChunks, { type: mimeType });
+        await _uploadAndSendDriverAudio(blob);
+      }
     };
     _driverMicRecorder.start();
-    btn.classList.add('recording');
+    _driverIsRecording = true;
+    _driverRecShouldSend = false;
+    document.getElementById('cc-driver-reply-bar').style.display = 'none';
+    document.getElementById('cc-driver-rec-bar').style.display = 'flex';
+    _driverRecSeconds = 0;
+    _driverRecTimerInterval = setInterval(function() {
+      _driverRecSeconds++;
+      var m = Math.floor(_driverRecSeconds / 60);
+      var s = _driverRecSeconds % 60;
+      var el = document.getElementById('cc-driver-rec-timer');
+      if (el) el.textContent = m + ':' + String(s).padStart(2, '0');
+    }, 1000);
   } catch {
     alert('Permission microphone refusée.');
   }
+}
+
+function _stopDriverRecordingUI() {
+  if (_driverRecTimerInterval) { clearInterval(_driverRecTimerInterval); _driverRecTimerInterval = null; }
+  var recBar = document.getElementById('cc-driver-rec-bar');
+  var replyBar = document.getElementById('cc-driver-reply-bar');
+  if (recBar) recBar.style.display = 'none';
+  if (replyBar) replyBar.style.display = 'flex';
+  _driverIsRecording = false;
+}
+
+function stopDriverRecording() {
+  if (_driverMicRecorder && _driverIsRecording) {
+    _driverRecShouldSend = true;
+    _driverMicRecorder.stop();
+    _stopDriverRecordingUI();
+  }
+}
+
+function cancelDriverRecording() {
+  if (_driverMicRecorder && _driverIsRecording) {
+    _driverRecShouldSend = false;
+    _driverMicRecorder.stop();
+    _stopDriverRecordingUI();
+  }
+}
+
+async function _uploadAndSendDriverAudio(blob) {
+  if (!_selectedDriverId) return;
+  try {
+    var fd = new FormData();
+    fd.append('file', blob, 'voice.webm');
+    var upRes = await fetch(API + '/api/admin/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + _token }, body: fd });
+    var upData = await upRes.json();
+    if (!upData.url) return;
+    await sendDriverChatMsg(upData.url, 'audio');
+  } catch {}
+}
+
+/* ── Pièces jointes driver chat (image / localisation) ──────────────────── */
+function toggleDriverAttachMenu() {
+  var popup = document.getElementById('cc-driver-attach-popup');
+  if (!popup) return;
+  if (popup.style.display === 'none' || !popup.style.display) {
+    popup.style.display = 'flex';
+    document.addEventListener('click', function _closeDriverAttach(e) {
+      var wrap = document.getElementById('cc-driver-attach-wrap');
+      if (wrap && !wrap.contains(e.target)) {
+        popup.style.display = 'none';
+        document.removeEventListener('click', _closeDriverAttach);
+      }
+    });
+  } else {
+    popup.style.display = 'none';
+  }
+}
+
+async function sendDriverImageReply(input) {
+  if (!_selectedDriverId || !input.files || !input.files[0]) return;
+  var file = input.files[0];
+  input.value = '';
+  try {
+    var fd = new FormData();
+    fd.append('file', file);
+    var upRes = await fetch(API + '/api/admin/upload', { method: 'POST', headers: { 'Authorization': 'Bearer ' + _token }, body: fd });
+    if (!upRes.ok) { alert('Erreur upload image.'); return; }
+    var upData = await upRes.json();
+    if (!upData.url) return;
+    await sendDriverChatMsg(upData.url, 'image');
+  } catch { alert('Erreur réseau lors de l\'envoi de l\'image.'); }
+}
+
+async function sendDriverLocationReply() {
+  if (!_selectedDriverId) return;
+  document.getElementById('cc-driver-attach-popup').style.display = 'none';
+  if (!navigator.geolocation) { alert('Géolocalisation non disponible.'); return; }
+  navigator.geolocation.getCurrentPosition(
+    async function(pos) {
+      var lat = pos.coords.latitude;
+      var lng = pos.coords.longitude;
+      try {
+        var res = await fetch(API + '/api/admin/driver-chat/' + _selectedDriverId, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ content: null, type: 'location', meta: { lat: lat, lng: lng, label: 'Position admin' } }),
+        });
+        if (!res.ok) return;
+        var data = await res.json();
+        if (data.message) appendDriverChatMessage(data.message);
+      } catch {}
+    },
+    function() { alert('Impossible d\'obtenir la position.'); }
+  );
+}
+
+/* ── Réactions emoji driver chat ─────────────────────────────────────────── */
+async function toggleDriverReaction(msgId, emoji) {
+  if (!msgId) return;
+  try {
+    var res = await fetch(API + '/api/admin/driver-chat-messages/' + msgId + '/react', {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ emoji: emoji }),
+    });
+    if (!res.ok) return;
+    var data = await res.json();
+    var msgEl = document.querySelector('.cc-drvmsg[data-drv-msg-id="' + msgId + '"]');
+    if (!msgEl) return;
+    var existing = msgEl.querySelector('.cc-reactions');
+    var reactionKeys = Object.keys(data.reactions || {});
+    var newHtml = reactionKeys.length
+      ? '<div class="cc-reactions">'
+          + reactionKeys.map(function(e) {
+              return '<span class="cc-reaction-chip" onclick="toggleDriverReaction(\'' + msgId + '\',\'' + e + '\')" title="Cliquer pour retirer">'
+                + e
+                + (data.reactions[e].length > 1 ? '<span class="cc-reaction-count">' + data.reactions[e].length + '</span>' : '')
+                + '</span>';
+            }).join('')
+          + '</div>'
+      : '';
+    if (existing) { existing.outerHTML = newHtml; }
+    else if (newHtml) { msgEl.insertAdjacentHTML('beforeend', newHtml); }
+  } catch {}
 }
 
 /* ================================================================

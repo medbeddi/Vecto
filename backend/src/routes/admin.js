@@ -1011,7 +1011,7 @@ router.get('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) =
     const messages = await db('cc_driver_messages')
       .where({ driver_id: req.params.driverId })
       .orderBy('created_at', 'asc')
-      .select('id', 'sender_role as senderRole', 'type', 'content', 'created_at as createdAt');
+      .select('id', 'sender_role as senderRole', 'type', 'content', 'meta', 'created_at as createdAt');
     await db('cc_driver_messages')
       .where({ driver_id: req.params.driverId, read_by_admin: false })
       .update({ read_by_admin: true });
@@ -1023,17 +1023,54 @@ router.get('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) =
 
 router.post('/admin/driver-chat/:driverId', requireCallCenter, async (req, res) => {
   try {
-    const { content, type = 'text' } = req.body;
-    if (!content?.trim()) return res.status(400).json({ error: 'EMPTY_MESSAGE' });
+    const { content, type = 'text', meta } = req.body;
+    const msgType = ['text', 'audio', 'image', 'location', 'call'].includes(type) ? type : 'text';
+    if (msgType === 'location') {
+      if (!meta?.lat || !meta?.lng) return res.status(400).json({ error: 'LOCATION_REQUIRED' });
+    } else {
+      if (!content?.trim()) return res.status(400).json({ error: 'EMPTY_MESSAGE' });
+    }
     const driver = await db('drivers').where({ id: req.params.driverId }).first('id', 'name');
     if (!driver) return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
-    const msgType = ['text', 'audio', 'image', 'call'].includes(type) ? type : 'text';
+    const insertData = {
+      driver_id: req.params.driverId,
+      sender_role: 'admin',
+      type: msgType,
+      content: msgType === 'location' ? null : content.trim(),
+    };
+    if (meta) insertData.meta = JSON.stringify(meta);
     const [msg] = await db('cc_driver_messages')
-      .insert({ driver_id: req.params.driverId, sender_role: 'admin', type: msgType, content: content.trim() })
-      .returning(['id', 'sender_role', 'type', 'content', 'created_at']);
-    const out = { id: msg.id, senderRole: msg.sender_role, type: msg.type, content: msg.content, createdAt: msg.created_at };
+      .insert(insertData)
+      .returning(['id', 'sender_role', 'type', 'content', 'meta', 'created_at']);
+    const out = { id: msg.id, senderRole: msg.sender_role, type: msg.type, content: msg.content, meta: msg.meta, createdAt: msg.created_at };
     emitCCMessageToDriver(req.params.driverId, out);
     res.json({ message: out });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Réaction emoji sur un message driver chat ─────────────────────────────
+router.patch('/admin/driver-chat-messages/:id/react', requireCallCenter, async (req, res) => {
+  try {
+    const { emoji } = req.body;
+    if (!emoji) return res.status(400).json({ error: 'EMOJI_REQUIRED' });
+
+    const msg = await db('cc_driver_messages').where({ id: req.params.id }).first('id', 'meta');
+    if (!msg) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const reactions = { ...(msg.meta?.reactions || {}) };
+    const users = reactions[emoji] || [];
+    if (users.includes('admin')) {
+      const next = users.filter((u) => u !== 'admin');
+      if (next.length === 0) delete reactions[emoji]; else reactions[emoji] = next;
+    } else {
+      reactions[emoji] = [...users, 'admin'];
+    }
+
+    const newMeta = { ...(msg.meta || {}), reactions };
+    await db('cc_driver_messages').where({ id: req.params.id }).update({ meta: JSON.stringify(newMeta) });
+    res.json({ reactions });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }

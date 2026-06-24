@@ -1027,3 +1027,11 @@ input:focus, textarea:focus { outline: none; }
 }
 .cc-reaction-chip:hover { background: var(--border); }
 .cc-reaction-count { font-size: 11px; font-weight: 600; color: var(--text-2); }
+
+/* ── Wrapper interne bulle livreur (pour picker de réaction) ─────────────── */
+.cc-drvmsg { position: relative; }
+.cc-drvmsg:hover .cc-react-picker {
+  visibility: visible; opacity: 1; pointer-events: auto;
+  transition-delay: 0s;
+}
+.cc-msg-out .cc-drvmsg .cc-react-picker { right: auto; left: 0; }

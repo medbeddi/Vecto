@@ -1,7 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { API_BASE } from './config';
 import { storage } from './storage';
-import type { Delivery, Message } from '../types';
+import type { Delivery, Message, MessageMeta } from '../types';
 
 async function getFreshToken(): Promise<string | null> {
   try {
@@ -46,7 +46,7 @@ type EventMap = {
   client_message: (data: Message) => void;
   delivery_cancelled: (data: { deliveryId: string }) => void;
   relay_error: (data: { deliveryId: string; code: string }) => void;
-  cc_message: (data: { id: string; senderRole: string; type?: string; content: string; createdAt: string }) => void;
+  cc_message: (data: { id: string; senderRole: string; type?: string; content: string | null; meta?: MessageMeta | null; createdAt: string }) => void;
 };
 
 class SocketService {

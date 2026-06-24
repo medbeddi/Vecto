@@ -44,7 +44,8 @@ export type CCMessage = {
   id: string;
   senderRole: 'admin' | 'driver';
   type: string;
-  content: string;
+  content: string | null;
+  meta?: MessageMeta | null;
   createdAt: string;
 };
 

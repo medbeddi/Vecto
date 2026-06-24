@@ -489,7 +489,7 @@ router.get('/drivers/cc-chat', requireAuth, async (req, res) => {
     const messages = await db('cc_driver_messages')
       .where({ driver_id: req.driver.id })
       .orderBy('created_at', 'asc')
-      .select('id', 'sender_role as senderRole', 'type', 'content', 'created_at as createdAt');
+      .select('id', 'sender_role as senderRole', 'type', 'content', 'meta', 'created_at as createdAt');
     await db('cc_driver_messages')
       .where({ driver_id: req.driver.id, read_by_driver: false })
       .update({ read_by_driver: true });
