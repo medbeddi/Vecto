@@ -2105,9 +2105,33 @@ function _buildMsgBody(m) {
   } else {
     body = '[' + m.type + ']';
   }
-  return '<div class="cc-msg ' + side + '">'
+  // Réactions
+  var reactions = (m.meta && m.meta.reactions) ? m.meta.reactions : {};
+  var reactionKeys = Object.keys(reactions);
+  var reactionHtml = reactionKeys.length
+    ? '<div class="cc-reactions">'
+        + reactionKeys.map(function(e) {
+            return '<span class="cc-reaction-chip" onclick="toggleReaction(\'' + (m.id||'') + '\',\'' + e + '\')" title="Cliquer pour retirer">'
+              + e
+              + (reactions[e].length > 1 ? '<span class="cc-reaction-count">' + reactions[e].length + '</span>' : '')
+              + '</span>';
+          }).join('')
+        + '</div>'
+    : '';
+
+  var reactPicker = m.id
+    ? '<div class="cc-react-picker">'
+        + ['👍','❤️','😂','😮','😢','🙏'].map(function(e) {
+            return '<button class="cc-react-emoji" onclick="event.stopPropagation();toggleReaction(\'' + m.id + '\',\'' + e + '\')">' + e + '</button>';
+          }).join('')
+        + '</div>'
+    : '';
+
+  return '<div class="cc-msg ' + side + '" data-msg-id="' + (m.id||'') + '">'
+    + reactPicker
     + body
     + '<div class="cc-msg-time">' + fmtTime(m.createdAt) + '</div>'
+    + reactionHtml
     + '</div>';
 }
 
@@ -2189,6 +2213,113 @@ async function sendReply() {
   } catch {
     alert('Erreur réseau.');
   }
+}
+
+/* ── Pièces jointes (image / localisation) ────────────────────────────────── */
+function toggleAttachMenu() {
+  var popup = document.getElementById('cc-attach-popup');
+  if (!popup) return;
+  popup.style.display = popup.style.display === 'none' ? 'flex' : 'none';
+  if (popup.style.display === 'flex') {
+    // Fermer en cliquant ailleurs
+    setTimeout(function() {
+      document.addEventListener('click', function _close(e) {
+        if (!document.getElementById('cc-attach-wrap').contains(e.target)) {
+          popup.style.display = 'none';
+          document.removeEventListener('click', _close);
+        }
+      });
+    }, 0);
+  }
+}
+
+async function sendImageReply(input) {
+  if (!_inboxSelectedId || !input.files || !input.files[0]) return;
+  var file = input.files[0];
+  input.value = '';
+  document.getElementById('cc-attach-popup').style.display = 'none';
+  try {
+    var form = new FormData();
+    form.append('file', file);
+    var upRes = await fetch(API + '/api/upload-public', { method: 'POST', headers: { 'Authorization': 'Bearer ' + _token }, body: form });
+    if (!upRes.ok) { alert('Erreur upload image'); return; }
+    var upData = await upRes.json();
+
+    var res = await fetch(API + '/api/admin/inbox/' + _inboxSelectedId + '/reply-image', {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ imageUrl: upData.url }),
+    });
+    if (!res.ok) { alert('Erreur envoi image'); return; }
+    var data = await res.json();
+    if (data.message && data.message.id && !_renderedMsgIds.has(data.message.id)) {
+      _renderedMsgIds.add(data.message.id);
+      var container = document.getElementById('cc-messages');
+      container.insertAdjacentHTML('beforeend', _buildMsgBody({
+        id: data.message.id, sender_role: 'admin', type: 'image',
+        content: upData.url, createdAt: data.message.createdAt || new Date().toISOString(), meta: null,
+      }));
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch { alert('Erreur réseau.'); }
+}
+
+async function sendLocationReply() {
+  if (!_inboxSelectedId) return;
+  document.getElementById('cc-attach-popup').style.display = 'none';
+  if (!navigator.geolocation) { alert('Géolocalisation non supportée par ce navigateur.'); return; }
+  navigator.geolocation.getCurrentPosition(async function(pos) {
+    var lat = pos.coords.latitude;
+    var lng = pos.coords.longitude;
+    try {
+      var res = await fetch(API + '/api/admin/inbox/' + _inboxSelectedId + '/reply-location', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ lat: lat, lng: lng, label: 'Position partagée' }),
+      });
+      if (!res.ok) { alert('Erreur envoi localisation'); return; }
+      var data = await res.json();
+      if (data.message && data.message.id && !_renderedMsgIds.has(data.message.id)) {
+        _renderedMsgIds.add(data.message.id);
+        var container = document.getElementById('cc-messages');
+        container.insertAdjacentHTML('beforeend', _buildMsgBody({
+          id: data.message.id, sender_role: 'admin', type: 'location',
+          content: null, createdAt: data.message.createdAt || new Date().toISOString(),
+          meta: { lat: lat, lng: lng, label: 'Position partagée' },
+        }));
+        container.scrollTop = container.scrollHeight;
+      }
+    } catch { alert('Erreur réseau.'); }
+  }, function() { alert('Impossible d\'obtenir la position. Vérifiez les permissions de localisation.'); });
+}
+
+/* ── Réactions emoji ──────────────────────────────────────────────────────── */
+async function toggleReaction(msgId, emoji) {
+  if (!msgId) return;
+  try {
+    var res = await fetch(API + '/api/admin/messages/' + msgId + '/react', {
+      method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ emoji: emoji }),
+    });
+    if (!res.ok) return;
+    var data = await res.json();
+    // Mettre à jour le DOM directement
+    var msgEl = document.querySelector('.cc-msg[data-msg-id="' + msgId + '"]');
+    if (!msgEl) return;
+    var existing = msgEl.querySelector('.cc-reactions');
+    var reactionKeys = Object.keys(data.reactions || {});
+    var newHtml = reactionKeys.length
+      ? '<div class="cc-reactions">'
+          + reactionKeys.map(function(e) {
+              return '<span class="cc-reaction-chip" onclick="toggleReaction(\'' + msgId + '\',\'' + e + '\')" title="Cliquer pour retirer">'
+                + e
+                + (data.reactions[e].length > 1 ? '<span class="cc-reaction-count">' + data.reactions[e].length + '</span>' : '')
+                + '</span>';
+            }).join('')
+          + '</div>'
+      : '';
+    if (existing) {
+      existing.outerHTML = newHtml;
+    } else if (newHtml) {
+      msgEl.insertAdjacentHTML('beforeend', newHtml);
+    }
+  } catch {}
 }
 
 function openLaunchPanel() {

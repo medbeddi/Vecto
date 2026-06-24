@@ -436,6 +436,32 @@ router.get('/deliveries/:id/messages', requireAuth, async (req, res) => {
   }
 });
 
+// ─── Réaction emoji sur un message ────────────────────────────────────────────
+router.patch('/messages/:id/react', requireAuth, async (req, res) => {
+  try {
+    const { emoji } = req.body;
+    if (!emoji) return res.status(400).json({ error: 'EMOJI_REQUIRED' });
+
+    const msg = await db('messages').where({ id: req.params.id }).first('id', 'meta');
+    if (!msg) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const reactions = { ...(msg.meta?.reactions || {}) };
+    const users = reactions[emoji] || [];
+    if (users.includes('driver')) {
+      const next = users.filter((u) => u !== 'driver');
+      if (next.length === 0) delete reactions[emoji]; else reactions[emoji] = next;
+    } else {
+      reactions[emoji] = [...users, 'driver'];
+    }
+
+    const newMeta = { ...(msg.meta || {}), reactions };
+    await db('messages').where({ id: req.params.id }).update({ meta: JSON.stringify(newMeta) });
+    res.json({ reactions });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 // ─── Upload média ─────────────────────────────────────────────────────────────
 
 // GET /api/deliveries/:id/presign?type=audio&ext=ogg

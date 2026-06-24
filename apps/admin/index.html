@@ -379,6 +379,25 @@
 
             <!-- Saisie réponse -->
             <div class="cc-reply-bar" id="cc-reply-bar">
+              <!-- Bouton + pièce jointe -->
+              <div class="cc-attach-wrap" id="cc-attach-wrap">
+                <button class="btn btn-ghost btn-sm cc-attach-toggle" onclick="toggleAttachMenu()" title="Joindre" style="flex-shrink:0;padding:0 10px">
+                  <svg viewBox="0 0 24 24" style="width:18px;height:18px" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                  </svg>
+                </button>
+                <div class="cc-attach-popup" id="cc-attach-popup" style="display:none">
+                  <label class="cc-attach-item" onclick="toggleAttachMenu()">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    Photo
+                    <input type="file" id="cc-img-input" accept="image/*" style="display:none" onchange="sendImageReply(this)">
+                  </label>
+                  <button class="cc-attach-item" onclick="sendLocationReply()">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                    Ma position
+                  </button>
+                </div>
+              </div>
               <button id="cc-mic-btn" class="btn btn-ghost btn-sm" onclick="toggleRecording()" title="Enregistrer un vocal" style="flex-shrink:0;padding:0 10px">
                 <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:currentColor"><path d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0012 6.32V20h-3v2h8v-2h-3v-2.68A7 7 0 0019 11h-2z"/></svg>
               </button>

@@ -28,6 +28,7 @@ export type MessageMeta = {
   label?: string;
   r2Key?: string;
   duration?: number | null;
+  reactions?: Record<string, string[]>;
 };
 
 export type Message = {

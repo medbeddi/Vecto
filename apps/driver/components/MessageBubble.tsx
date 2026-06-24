@@ -12,19 +12,37 @@ import { Audio } from 'expo-av';
 import { PRIMARY, TEXT, TEXT2, BUBBLE_DRIVER, BUBBLE_CLIENT } from '../lib/config';
 import type { Message } from '../types';
 
-type Props = { message: Message };
+type Props = { message: Message; onLongPress?: () => void };
 
-export function MessageBubble({ message }: Props) {
+export function MessageBubble({ message, onLongPress }: Props) {
   const isDriver = message.senderRole === 'driver';
+  const reactions = message.meta?.reactions ?? {};
+  const reactionEntries = Object.entries(reactions);
 
   return (
     <View style={[styles.row, isDriver ? styles.rowRight : styles.rowLeft]}>
-      <View style={[styles.bubble, isDriver ? styles.bubbleDriver : styles.bubbleClient]}>
-        <BubbleContent message={message} isDriver={isDriver} />
-        <Text style={[styles.time, isDriver ? styles.timeDriver : styles.timeClient]}>
-          {formatTime(message.createdAt)}
-        </Text>
-      </View>
+      <TouchableOpacity
+        onLongPress={onLongPress}
+        activeOpacity={0.85}
+        delayLongPress={350}
+      >
+        <View style={[styles.bubble, isDriver ? styles.bubbleDriver : styles.bubbleClient]}>
+          <BubbleContent message={message} isDriver={isDriver} />
+          <Text style={[styles.time, isDriver ? styles.timeDriver : styles.timeClient]}>
+            {formatTime(message.createdAt)}
+          </Text>
+        </View>
+        {reactionEntries.length > 0 && (
+          <View style={[styles.reactionsRow, isDriver ? styles.reactionsRight : styles.reactionsLeft]}>
+            {reactionEntries.map(([emoji, users]) => (
+              <View key={emoji} style={styles.reactionChip}>
+                <Text style={styles.reactionEmoji}>{emoji}</Text>
+                {users.length > 1 && <Text style={styles.reactionCount}>{users.length}</Text>}
+              </View>
+            ))}
+          </View>
+        )}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -168,6 +186,20 @@ const styles = StyleSheet.create({
   audioDur: { fontSize: 11 },
   audioDurDriver: { color: 'rgba(255,255,255,0.7)' },
   audioDurClient: { color: TEXT2 },
+
+  // Reactions
+  reactionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 3 },
+  reactionsLeft: { justifyContent: 'flex-start' },
+  reactionsRight: { justifyContent: 'flex-end' },
+  reactionChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: '#fff', borderRadius: 10,
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)',
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 2, elevation: 1,
+  },
+  reactionEmoji: { fontSize: 13 },
+  reactionCount: { fontSize: 10, fontWeight: '700', color: TEXT2 },
 
   // Location
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

@@ -6,11 +6,13 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -43,11 +45,12 @@ export default function ChatScreen() {
   const route = useRoute<Route>();
   const { delivery: initDelivery } = route.params;
 
-  const { activeDelivery, messages, loadingMessages, loadMessages, appendMessage, setActiveDelivery, updateActiveStatus, removeActiveCourse, setPendingCancellation } =
+  const { activeDelivery, messages, loadingMessages, loadMessages, appendMessage, updateMessageReactions, setActiveDelivery, updateActiveStatus, removeActiveCourse, setPendingCancellation } =
     useDeliveriesStore();
 
   const [text, setText] = useState('');
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [reactionMsgId, setReactionMsgId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
   const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -168,6 +171,18 @@ export default function ChatScreen() {
     await recording.stopAndUnloadAsync();
     setRecording(null);
   }, [recording]);
+
+  // ─── Réaction emoji ───────────────────────────────────────────────────────
+  const reactToMessage = useCallback(async (msgId: string, emoji: string) => {
+    setReactionMsgId(null);
+    try {
+      const { reactions } = await api<{ reactions: Record<string, string[]> }>(
+        `/api/messages/${msgId}/react`,
+        { method: 'PATCH', body: { emoji } }
+      );
+      updateMessageReactions(msgId, reactions);
+    } catch {}
+  }, []);
 
   // ─── Image ────────────────────────────────────────────────────────────────
   const pickImage = useCallback(async () => {
@@ -400,12 +415,38 @@ export default function ChatScreen() {
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
-          renderItem={({ item }) => <MessageBubble message={item} />}
+          renderItem={({ item }) => (
+            <MessageBubble
+              message={item}
+              onLongPress={() => setReactionMsgId(item.id)}
+            />
+          )}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
           style={{ flex: 1 }}
         />
       )}
+
+      {/* Modal réactions emoji */}
+      <Modal visible={!!reactionMsgId} transparent animationType="fade" onRequestClose={() => setReactionMsgId(null)}>
+        <TouchableWithoutFeedback onPress={() => setReactionMsgId(null)}>
+          <View style={styles.reactionOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.reactionBox}>
+                {['👍','❤️','😂','😮','😢','🙏'].map((emoji) => (
+                  <TouchableOpacity
+                    key={emoji}
+                    style={styles.reactionEmoji}
+                    onPress={() => reactionMsgId && reactToMessage(reactionMsgId, emoji)}
+                  >
+                    <Text style={styles.reactionEmojiTxt}>{emoji}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
 
       {/* Boutons statut */}
       {!isClosed && (
@@ -642,6 +683,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   sendIcon: { color: '#fff', fontSize: 15, marginLeft: 1 },
+
+  // Reaction modal
+  reactionOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  reactionBox: {
+    flexDirection: 'row', backgroundColor: '#fff',
+    borderRadius: 32, padding: 8, gap: 4,
+    shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, elevation: 8,
+  },
+  reactionEmoji: {
+    width: 44, height: 44, borderRadius: 22,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  reactionEmojiTxt: { fontSize: 26 },
 
   // Recording bar
   recBar: {

@@ -6,7 +6,7 @@ import db from '../config/db.js';
 import { emitNewOrder, emitCCMessageToDriver, emitDriverReplyToCC, emitConversationClaimed, emitConversationUnclaimed } from '../services/socket.js';
 import { createDelivery, launchDelivery } from '../services/delivery.js';
 import { hashWaId, encryptWaId, decryptWaId } from '../services/pii-filter.js';
-import { sendText, sendAudio } from '../services/messaging.js';
+import { sendText, sendAudio, sendImage, sendLocation } from '../services/messaging.js';
 
 const router = Router();
 
@@ -732,6 +732,91 @@ router.post('/admin/inbox/:id/reply-audio', requireCallCenter, async (req, res) 
     });
 
     res.json({ message: { id: message.id, content: message.content, createdAt: message.created_at } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : image admin → client WhatsApp ───────────────────────────────
+router.post('/admin/inbox/:id/reply-image', requireCallCenter, async (req, res) => {
+  try {
+    const { imageUrl } = req.body;
+    if (!imageUrl) return res.status(400).json({ error: 'IMAGE_URL_REQUIRED' });
+
+    const delivery = await db('deliveries')
+      .join('clients', 'deliveries.client_id', 'clients.id')
+      .where('deliveries.id', req.params.id)
+      .select('deliveries.*', 'clients.wa_id_enc as waIdEnc')
+      .first();
+    if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const rawWaId = decryptWaId(delivery.waIdEnc);
+
+    const [message] = await db('messages')
+      .insert({ delivery_id: req.params.id, sender_role: 'admin', type: 'image', content: imageUrl, meta: null })
+      .returning('*');
+
+    await sendImage(rawWaId, imageUrl).catch((err) => {
+      console.error('[admin/reply-image] WhatsApp erreur:', err.message);
+    });
+
+    res.json({ message: { id: message.id, content: message.content, createdAt: message.created_at } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Call Center : localisation admin → client WhatsApp ────────────────────────
+router.post('/admin/inbox/:id/reply-location', requireCallCenter, async (req, res) => {
+  try {
+    const { lat, lng, label } = req.body;
+    if (!lat || !lng) return res.status(400).json({ error: 'LAT_LNG_REQUIRED' });
+
+    const delivery = await db('deliveries')
+      .join('clients', 'deliveries.client_id', 'clients.id')
+      .where('deliveries.id', req.params.id)
+      .select('deliveries.*', 'clients.wa_id_enc as waIdEnc')
+      .first();
+    if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const rawWaId = decryptWaId(delivery.waIdEnc);
+    const locLabel = label || 'Position partagée';
+
+    const [message] = await db('messages')
+      .insert({ delivery_id: req.params.id, sender_role: 'admin', type: 'location', content: null, meta: { lat, lng, label: locLabel } })
+      .returning('*');
+
+    await sendLocation(rawWaId, lat, lng, locLabel).catch((err) => {
+      console.error('[admin/reply-location] WhatsApp erreur:', err.message);
+    });
+
+    res.json({ message: { id: message.id, meta: message.meta, createdAt: message.created_at } });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
+// ── Réaction emoji sur un message ─────────────────────────────────────────────
+router.patch('/admin/messages/:id/react', requireCallCenter, async (req, res) => {
+  try {
+    const { emoji } = req.body;
+    if (!emoji) return res.status(400).json({ error: 'EMOJI_REQUIRED' });
+
+    const msg = await db('messages').where({ id: req.params.id }).first('id', 'meta');
+    if (!msg) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const reactions = { ...(msg.meta?.reactions || {}) };
+    const users = reactions[emoji] || [];
+    if (users.includes('admin')) {
+      const next = users.filter((u) => u !== 'admin');
+      if (next.length === 0) delete reactions[emoji]; else reactions[emoji] = next;
+    } else {
+      reactions[emoji] = [...users, 'admin'];
+    }
+
+    const newMeta = { ...(msg.meta || {}), reactions };
+    await db('messages').where({ id: req.params.id }).update({ meta: JSON.stringify(newMeta) });
+    res.json({ reactions });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }

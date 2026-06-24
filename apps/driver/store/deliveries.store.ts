@@ -24,6 +24,7 @@ type DeliveriesState = {
 
   loadMessages: (deliveryId: string) => Promise<void>;
   appendMessage: (m: Message) => void;
+  updateMessageReactions: (msgId: string, reactions: Record<string, string[]>) => void;
 
   pendingCancellation: { deliveryId: string; clientAlias: string } | null;
   setPendingCancellation: (c: { deliveryId: string; clientAlias: string } | null) => void;
@@ -115,6 +116,15 @@ export const useDeliveriesStore = create<DeliveriesState>((set) => ({
         ? s
         : { messages: [...s.messages, m] }
     ),
+
+  updateMessageReactions: (msgId, reactions) =>
+    set((s) => ({
+      messages: s.messages.map((msg) =>
+        msg.id === msgId
+          ? { ...msg, meta: { ...(msg.meta || {}), reactions } }
+          : msg
+      ),
+    })),
 
   pendingCancellation: null,
   setPendingCancellation: (c) => set({ pendingCancellation: c }),
