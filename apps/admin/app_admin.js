@@ -2173,14 +2173,19 @@ async function sendReply() {
     });
     if (!res.ok) { alert('Erreur lors de l\'envoi.'); return; }
     var data = await res.json();
-    // Ajouter localement sans recharger
-    var container = document.getElementById('cc-messages');
-    var div = document.createElement('div');
-    div.className = 'cc-msg admin';
-    div.innerHTML = escHtml(text) + '<div class="cc-msg-time">maintenant</div>';
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
-    if (data.message && data.message.id) _renderedMsgIds.add(data.message.id);
+    if (data.message && data.message.id && !_renderedMsgIds.has(data.message.id)) {
+      _renderedMsgIds.add(data.message.id);
+      var container = document.getElementById('cc-messages');
+      container.insertAdjacentHTML('beforeend', _buildMsgBody({
+        id: data.message.id,
+        sender_role: 'admin',
+        type: 'text',
+        content: text,
+        createdAt: data.message.createdAt || new Date().toISOString(),
+        meta: null,
+      }));
+      container.scrollTop = container.scrollHeight;
+    }
   } catch {
     alert('Erreur réseau.');
   }
@@ -2680,9 +2685,12 @@ function confirmMapModal() {
 }
 
 /* ── Enregistrement vocal admin ───────────────────────────────────────── */
-var _mediaRecorder = null;
-var _audioChunks   = [];
-var _isRecording   = false;
+var _mediaRecorder    = null;
+var _audioChunks      = [];
+var _isRecording      = false;
+var _recShouldSend    = false;
+var _recTimerInterval = null;
+var _recSeconds       = 0;
 
 async function toggleRecording() {
   if (_isRecording) { stopRecording(); } else { await startRecording(); }
@@ -2697,29 +2705,60 @@ async function startRecording() {
     _mediaRecorder.ondataavailable = function (e) { if (e.data.size > 0) _audioChunks.push(e.data); };
     _mediaRecorder.onstop = async function () {
       stream.getTracks().forEach(function (t) { t.stop(); });
-      var blob = new Blob(_audioChunks, { type: mimeType });
-      await uploadAndSendAudio(blob);
+      if (_recShouldSend) {
+        var blob = new Blob(_audioChunks, { type: mimeType });
+        await uploadAndSendAudio(blob);
+      }
     };
     _mediaRecorder.start();
     _isRecording = true;
-    var btn = document.getElementById('cc-mic-btn');
-    if (btn) { btn.classList.add('recording'); btn.title = 'Arrêter l\'enregistrement'; }
-    // Timer visuel dans l'input
-    var input = document.getElementById('cc-reply-input');
-    if (input) { input.placeholder = '🔴 Enregistrement en cours…'; input.disabled = true; }
+    _recShouldSend = false;
+
+    // Cacher la barre de saisie, afficher la barre d'enregistrement
+    var replyBar = document.getElementById('cc-reply-bar');
+    if (replyBar) replyBar.style.display = 'none';
+    var recBar = document.getElementById('cc-rec-bar');
+    if (recBar) recBar.style.display = 'flex';
+
+    // Démarrer le timer
+    _recSeconds = 0;
+    var timerEl = document.getElementById('cc-rec-timer');
+    if (timerEl) timerEl.textContent = '0:00';
+    _recTimerInterval = setInterval(function () {
+      _recSeconds++;
+      var m = Math.floor(_recSeconds / 60);
+      var s = _recSeconds % 60;
+      var el = document.getElementById('cc-rec-timer');
+      if (el) el.textContent = m + ':' + String(s).padStart(2, '0');
+    }, 1000);
   } catch (e) {
     alert('Microphone non accessible. Vérifiez les permissions du navigateur.');
   }
 }
 
+function _stopRecordingUI() {
+  if (_recTimerInterval) { clearInterval(_recTimerInterval); _recTimerInterval = null; }
+  var replyBar = document.getElementById('cc-reply-bar');
+  if (replyBar) replyBar.style.display = '';
+  var recBar = document.getElementById('cc-rec-bar');
+  if (recBar) recBar.style.display = 'none';
+}
+
 function stopRecording() {
   if (_mediaRecorder && _isRecording) {
+    _recShouldSend = true;
     _mediaRecorder.stop();
     _isRecording = false;
-    var btn = document.getElementById('cc-mic-btn');
-    if (btn) { btn.classList.remove('recording'); btn.title = 'Enregistrer un vocal'; }
-    var input = document.getElementById('cc-reply-input');
-    if (input) { input.placeholder = 'Répondre au client…'; input.disabled = false; }
+    _stopRecordingUI();
+  }
+}
+
+function cancelRecording() {
+  if (_mediaRecorder && _isRecording) {
+    _recShouldSend = false;
+    _mediaRecorder.stop();
+    _isRecording = false;
+    _stopRecordingUI();
   }
 }
 
@@ -2740,15 +2779,20 @@ async function uploadAndSendAudio(blob) {
     if (!res.ok) { alert('Erreur envoi vocal'); return; }
     var replyData = await res.json();
 
-    var container = document.getElementById('cc-messages');
-    if (container) {
-      var div = document.createElement('div');
-      div.className = 'cc-msg admin';
-      div.innerHTML = '<audio controls src="' + escHtml(upData.url) + '" style="max-width:220px"></audio>'
-        + '<div class="cc-msg-time">maintenant</div>';
-      container.appendChild(div);
-      container.scrollTop = container.scrollHeight;
-      if (replyData.message && replyData.message.id) _renderedMsgIds.add(replyData.message.id);
+    if (replyData.message && replyData.message.id && !_renderedMsgIds.has(replyData.message.id)) {
+      _renderedMsgIds.add(replyData.message.id);
+      var container = document.getElementById('cc-messages');
+      if (container) {
+        container.insertAdjacentHTML('beforeend', _buildMsgBody({
+          id: replyData.message.id,
+          sender_role: 'admin',
+          type: 'audio',
+          content: upData.url,
+          createdAt: replyData.message.createdAt || new Date().toISOString(),
+          meta: null,
+        }));
+        container.scrollTop = container.scrollHeight;
+      }
     }
   } catch { alert('Erreur réseau lors de l\'envoi du vocal.'); }
 }

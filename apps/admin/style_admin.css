@@ -910,3 +910,55 @@ input:focus, textarea:focus { outline: none; }
 }
 .btn-doc-upload:hover { background: var(--text-1); color: #fff; }
 .btn-doc-upload:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Barre d'enregistrement vocal (WhatsApp style) ───────────────────── */
+.cc-rec-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border-top: 0.5px solid var(--border); flex-shrink: 0;
+  background: var(--bg);
+}
+.cc-rec-cancel {
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
+  border: none; background: none; cursor: pointer;
+  color: var(--text-2); display: flex; align-items: center; justify-content: center;
+  transition: color .15s, background .15s;
+}
+.cc-rec-cancel:hover { color: #FF3B30; background: rgba(255,59,48,.08); }
+.cc-rec-dot {
+  flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%;
+  background: #FF3B30;
+  animation: rec-blink 1s ease-in-out infinite;
+}
+@keyframes rec-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.15; } }
+.cc-rec-timer {
+  flex-shrink: 0; min-width: 34px;
+  font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--text-1);
+}
+.cc-rec-wave {
+  flex: 1; display: flex; align-items: center; gap: 2.5px; height: 30px;
+}
+.cc-rec-bar-w {
+  flex: 1; border-radius: 2px;
+  background: var(--text-1); opacity: 0.45;
+  animation: rec-wave 0.55s ease-in-out infinite alternate;
+}
+.cc-rec-bar-w:nth-child(1)  { animation-delay: 0s;     height: 6px; }
+.cc-rec-bar-w:nth-child(2)  { animation-delay: 0.08s;  height: 14px; }
+.cc-rec-bar-w:nth-child(3)  { animation-delay: 0.16s;  height: 20px; }
+.cc-rec-bar-w:nth-child(4)  { animation-delay: 0.04s;  height: 12px; }
+.cc-rec-bar-w:nth-child(5)  { animation-delay: 0.20s;  height: 22px; }
+.cc-rec-bar-w:nth-child(6)  { animation-delay: 0.12s;  height: 8px; }
+.cc-rec-bar-w:nth-child(7)  { animation-delay: 0.06s;  height: 18px; }
+.cc-rec-bar-w:nth-child(8)  { animation-delay: 0.18s;  height: 10px; }
+.cc-rec-bar-w:nth-child(9)  { animation-delay: 0.10s;  height: 16px; }
+.cc-rec-bar-w:nth-child(10) { animation-delay: 0.14s;  height: 6px; }
+@keyframes rec-wave { from { opacity: 0.2; transform: scaleY(0.4); } to { opacity: 0.85; transform: scaleY(1); } }
+.cc-rec-send {
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
+  border: none; background: var(--text-1); color: #fff;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: opacity .15s;
+}
+.cc-rec-send:hover { opacity: 0.8; }
