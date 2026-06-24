@@ -532,33 +532,25 @@ function NavBtn({ label, onPress }: { label: string; onPress: () => void }) {
   );
 }
 
-const BAR_CONFIGS = [
-  { init: 0.3, end: 0.9, dur: 250 },
-  { init: 0.7, end: 0.35, dur: 290 },
-  { init: 0.4, end: 1.0, dur: 220 },
-  { init: 0.8, end: 0.3, dur: 310 },
-  { init: 0.25, end: 0.85, dur: 260 },
-  { init: 0.6, end: 0.2, dur: 280 },
-  { init: 0.5, end: 0.95, dur: 240 },
-  { init: 0.75, end: 0.4, dur: 300 },
-  { init: 0.35, end: 0.8, dur: 270 },
-  { init: 0.65, end: 0.25, dur: 230 },
-];
+// Hauteurs (dp) et durées (ms) pour 30 barres fines — motif waveform
+const BAR_H = [4,14,22,8,18,6,20,12,26,6,16,10,24,8,18,4,14,20,6,26,10,16,8,22,12,6,18,14,24,8];
+const BAR_D = [250,285,220,300,260,280,240,305,265,235,255,290,215,295,270,275,245,310,255,230,250,275,225,315,260,270,240,285,270,240];
+const N_BARS = BAR_H.length;
 
 function RecordingWave() {
-  const anims = useRef(BAR_CONFIGS.map((c) => new Animated.Value(c.init))).current;
+  const anims = useRef(Array.from({ length: N_BARS }, () => new Animated.Value(0.3))).current;
 
   useEffect(() => {
-    const loops = anims.map((val, i) => {
-      const { init, end, dur } = BAR_CONFIGS[i];
-      return Animated.loop(
+    const loops = anims.map((val, i) =>
+      Animated.loop(
         Animated.sequence([
-          Animated.timing(val, { toValue: end, duration: dur, useNativeDriver: true }),
-          Animated.timing(val, { toValue: init, duration: dur, useNativeDriver: true }),
+          Animated.timing(val, { toValue: 1, duration: BAR_D[i], useNativeDriver: true }),
+          Animated.timing(val, { toValue: 0.2, duration: BAR_D[i], useNativeDriver: true }),
         ])
-      );
-    });
-    loops.forEach((l) => l.start());
+      )
+    );
+    // Décaler le démarrage pour éviter que toutes les barres bougent en même temps
+    loops.forEach((l, i) => setTimeout(() => l.start(), i * 18));
     return () => loops.forEach((l) => l.stop());
   }, []);
 
@@ -567,7 +559,7 @@ function RecordingWave() {
       {anims.map((val, i) => (
         <Animated.View
           key={i}
-          style={[recWaveStyles.bar, { transform: [{ scaleY: val }] }]}
+          style={[recWaveStyles.bar, { height: BAR_H[i], transform: [{ scaleY: val }] }]}
         />
       ))}
     </View>
@@ -575,8 +567,8 @@ function RecordingWave() {
 }
 
 const recWaveStyles = StyleSheet.create({
-  wrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2.5, height: 30 },
-  bar: { flex: 1, height: 24, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.35)' },
+  wrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2, height: 32, overflow: 'hidden' },
+  bar: { width: 3, borderRadius: 2, backgroundColor: 'rgba(0,0,0,0.4)' },
 });
 
 const styles = StyleSheet.create({
