@@ -524,8 +524,7 @@ function _driverMsgBubble(m) {
   } else if (type === 'image') {
     inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img" onerror="_imgErr(this)" onclick="openImgModal(this.src)" style="cursor:pointer;max-width:200px;border-radius:8px" />';
   } else if (type === 'location') {
-    var meta = m.meta || {};
-    inner = '<div class="cc-msg-text">📍 ' + escHtml(meta.label || (meta.lat + ', ' + meta.lng)) + '</div>';
+    inner = _buildLocationHtml(m.meta);
   } else if (type === 'call') {
     return '<div class="cc-msg-wrap cc-msg-system-wrap">'
       + '<div class="cc-msg-system-bubble">📞 ' + escHtml(m.content || 'Appel') + ' · ' + fmtTime(m.createdAt) + '</div>'
@@ -2223,6 +2222,20 @@ async function loadMessages(deliveryId) {
   } catch {}
 }
 
+function _buildLocationHtml(meta) {
+  if (!meta || (!meta.lat && !meta.lng)) return '<div class="cc-msg-text">📍 Position</div>';
+  var lat = meta.lat, lng = meta.lng;
+  var label = escHtml(meta.label || 'Position partagée');
+  var mapsUrl = 'https://maps.google.com/?q=' + lat + ',' + lng;
+  var imgUrl  = 'https://staticmap.openstreetmap.de/staticmap.php?center=' + lat + ',' + lng
+              + '&zoom=15&size=280x140&markers=' + lat + ',' + lng + ',red-pushpin';
+  return '<a href="' + escHtml(mapsUrl) + '" target="_blank" class="cc-msg-location">'
+       + '<img src="' + escHtml(imgUrl) + '" class="cc-msg-location-map" loading="lazy"'
+       + ' onerror="this.style.display=\'none\'" />'
+       + '<div class="cc-msg-location-label">📍 ' + label + '</div>'
+       + '</a>';
+}
+
 function _buildMsgBody(m) {
   var side = (m.sender_role === 'admin') ? 'admin' : 'client';
   var body = '';
@@ -2257,8 +2270,7 @@ function _buildMsgBody(m) {
       ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px;cursor:pointer" onerror="_imgErr(this)" onclick="openImgModal(this.src)" />'
       : '[Image]';
   } else if (m.type === 'location') {
-    var meta = m.meta || {};
-    body = 'Localisation : ' + (meta.label || (meta.lat + ', ' + meta.lng));
+    body = _buildLocationHtml(m.meta);
   } else {
     body = '[' + m.type + ']';
   }
