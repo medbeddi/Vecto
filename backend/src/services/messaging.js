@@ -30,13 +30,6 @@ async function uploadAudioToWhatsApp(url) {
   const contentType = dlRes.headers['content-type'] || '';
   console.info('[messaging] audio téléchargé: Content-Type=%s taille=%d octets', contentType, dlRes.data.byteLength);
 
-  if (!contentType.includes('ogg') && !contentType.includes('opus')) {
-    throw Object.assign(
-      new Error(`Format non supporté par WhatsApp PTT: ${contentType}`),
-      { code: 'UNSUPPORTED_FORMAT' }
-    );
-  }
-
   const buffer = Buffer.from(dlRes.data);
 
   const form = new FormData();
@@ -63,7 +56,10 @@ export async function sendText(waId, text) {
 }
 
 export async function sendAudio(waId, urlOrKey) {
-  const url = urlOrKey?.startsWith('http') ? urlOrKey : await getSignedMediaUrl(urlOrKey, 300);
+  // Pour le fallback link, générer une URL longue durée (7 jours) si on a une clé R2
+  const isKey = !urlOrKey?.startsWith('http');
+  const url    = isKey ? await getSignedMediaUrl(urlOrKey, 604800) : urlOrKey;
+  const fallbackUrl = isKey ? url : urlOrKey; // déjà une URL publique permanente
 
   // Try media upload first (shows as PTT voice note in WhatsApp)
   try {
@@ -77,12 +73,12 @@ export async function sendAudio(waId, urlOrKey) {
   } catch (uploadErr) {
     const detail = uploadErr.response?.data ?? uploadErr.message;
     console.error('[messaging] media upload failed → fallback link. raison:', JSON.stringify(detail));
-    console.info('[messaging] fallback link URL:', url.slice(0, 120));
+    console.info('[messaging] fallback link URL:', fallbackUrl.slice(0, 120));
     return post({
       messaging_product: 'whatsapp',
       to: waId,
       type: 'audio',
-      audio: { link: url },
+      audio: { link: fallbackUrl },
     });
   }
 }

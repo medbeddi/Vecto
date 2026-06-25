@@ -48,9 +48,9 @@ function convertToOgg(inputPath) {
     const proc = spawn(ffmpegPath, [
       '-y', '-i', inputPath,
       '-c:a', 'libopus',
-      '-b:a', '16k',
-      '-ac', '1',       // mono (required for WhatsApp PTT voice notes)
-      '-ar', '8000',    // 8kHz sample rate (native WhatsApp PTT format)
+      '-b:a', '32k',
+      '-ac', '1',
+      '-ar', '16000',
       '-f', 'ogg',
       outputPath,
     ]);
