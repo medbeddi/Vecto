@@ -698,9 +698,15 @@ function AdminChatTab() {
   const [messages, setMessages]   = useState<CCMessage[]>([]);
   const [input,    setInput]      = useState('');
   const [sending,  setSending]    = useState(false);
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [ccPhone,  setCcPhone]    = useState<string | null>(null);
-  const flatRef = useRef<FlatList<CCMessage>>(null);
+  const [recording, setRecording]         = useState<Audio.Recording | null>(null);
+  const [recPaused, setRecPaused]         = useState(false);
+  const [recSeconds, setRecSeconds]       = useState(0);
+  const [previewSoundCC, setPreviewSoundCC]   = useState<Audio.Sound | null>(null);
+  const [previewPlayingCC, setPreviewPlayingCC] = useState(false);
+  const [ccPhone,  setCcPhone]            = useState<string | null>(null);
+  const flatRef    = useRef<FlatList<CCMessage>>(null);
+  const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recSecsRef  = useRef(0);
 
   useEffect(() => {
     api<{ messages: CCMessage[] }>('/api/drivers/cc-chat')
@@ -779,26 +785,86 @@ function AdminChatTab() {
     sendMsg(t, 'text');
   };
 
-  const toggleRecording = async () => {
-    if (recording) {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
-      if (!uri) return;
-      setSending(true);
-      try {
-        const fd = new FormData();
-        fd.append('file', { uri, type: 'audio/mp4', name: 'voice.m4a' } as any);
-        const { url } = await uploadFile('/api/upload', fd);
-        await sendMsg(url, 'audio');
-      } catch {} finally { setSending(false); }
-      return;
-    }
+  const _startTimer = () => {
+    recSecsRef.current = 0;
+    setRecSeconds(0);
+    recTimerRef.current = setInterval(() => { recSecsRef.current += 1; setRecSeconds(recSecsRef.current); }, 1000);
+  };
+  const _stopTimer = () => {
+    if (recTimerRef.current) { clearInterval(recTimerRef.current); recTimerRef.current = null; }
+  };
+
+  const startRecordingCC = async () => {
     const { status } = await Audio.requestPermissionsAsync();
     if (status !== 'granted') { Alert.alert('Permission refusée', 'Activez le microphone.'); return; }
     await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
     const { recording: rec } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
     setRecording(rec);
+    _startTimer();
+  };
+
+  const stopRecordingCC = async () => {
+    if (!recording) return;
+    if (previewSoundCC) { await previewSoundCC.unloadAsync(); setPreviewSoundCC(null); }
+    _stopTimer();
+    if (recPaused) await recording.startAsync();
+    await recording.stopAndUnloadAsync();
+    const uri = recording.getURI();
+    setRecording(null); setRecPaused(false); setPreviewPlayingCC(false); setRecSeconds(0);
+    if (!uri) return;
+    setSending(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', { uri, type: 'audio/mp4', name: 'voice.m4a' } as any);
+      const { url } = await uploadFile('/api/upload', fd);
+      await sendMsg(url, 'audio');
+    } catch {} finally { setSending(false); }
+  };
+
+  const cancelRecordingCC = async () => {
+    if (!recording) return;
+    if (previewSoundCC) { await previewSoundCC.unloadAsync(); setPreviewSoundCC(null); }
+    _stopTimer();
+    if (recPaused) await recording.startAsync();
+    await recording.stopAndUnloadAsync();
+    setRecording(null); setRecPaused(false); setPreviewPlayingCC(false); setRecSeconds(0);
+  };
+
+  const pauseRecordingCC = async () => {
+    if (!recording || recPaused) return;
+    _stopTimer();
+    await recording.pauseAsync();
+    setRecPaused(true);
+  };
+
+  const resumeRecordingCC = async () => {
+    if (!recording || !recPaused) return;
+    if (previewSoundCC) { await previewSoundCC.unloadAsync(); setPreviewSoundCC(null); setPreviewPlayingCC(false); }
+    await recording.startAsync();
+    setRecPaused(false);
+    recTimerRef.current = setInterval(() => { recSecsRef.current += 1; setRecSeconds(recSecsRef.current); }, 1000);
+  };
+
+  const togglePreviewCC = async () => {
+    if (!recording || !recPaused) return;
+    const uri = recording.getURI();
+    if (!uri) return;
+    if (previewPlayingCC && previewSoundCC) {
+      await previewSoundCC.pauseAsync();
+      setPreviewPlayingCC(false);
+      return;
+    }
+    let snd = previewSoundCC;
+    if (!snd) {
+      const { sound } = await Audio.Sound.createAsync({ uri });
+      sound.setOnPlaybackStatusUpdate((st) => {
+        if (st.isLoaded && st.didJustFinish) { setPreviewPlayingCC(false); setPreviewSoundCC(null); }
+      });
+      snd = sound;
+      setPreviewSoundCC(snd);
+    }
+    await snd.playAsync();
+    setPreviewPlayingCC(true);
   };
 
   const pickImage = async () => {
@@ -895,54 +961,73 @@ function AdminChatTab() {
         />
       )}
 
-      {/* Barre de saisie */}
-      <View style={adminChat.inputBar}>
-        {/* Image */}
-        <TouchableOpacity style={adminChat.iconBtn} onPress={pickImage} disabled={sending || !!recording}>
-          <Icon name="image" size={20} color={TEXT2} strokeWidth={1.75} />
-        </TouchableOpacity>
-        {/* Location */}
-        <TouchableOpacity style={adminChat.iconBtn} onPress={sendCCLocation} disabled={sending || !!recording}>
-          <Icon name="location" size={20} color={TEXT2} strokeWidth={1.75} />
-        </TouchableOpacity>
-        {/* TextInput */}
-        <TextInput
-          style={adminChat.input}
-          value={input}
-          onChangeText={setInput}
-          placeholder={recording ? '🔴 Enregistrement...' : 'Répondre au centre d\'appels…'}
-          placeholderTextColor={recording ? '#FF3B30' : TEXT2}
-          returnKeyType="send"
-          onSubmitEditing={sendText}
-          editable={!recording}
-          multiline
-          maxLength={1000}
-        />
-        {/* Mic ou Send */}
-        {input.trim() ? (
-          <TouchableOpacity
-            style={[adminChat.actionBtn, sending && { opacity: 0.5 }]}
-            onPress={sendText}
-            disabled={sending}
-            activeOpacity={0.75}
-          >
-            {sending
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Icon name="send" size={18} color="#fff" />}
+      {/* Barre de saisie / enregistrement */}
+      {!recording ? (
+        <View style={adminChat.inputBar}>
+          <TouchableOpacity style={adminChat.iconBtn} onPress={pickImage} disabled={sending}>
+            <Icon name="image" size={20} color={TEXT2} strokeWidth={1.75} />
           </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[adminChat.actionBtn, recording && adminChat.actionBtnRec]}
-            onPress={toggleRecording}
-            disabled={sending && !recording}
-            activeOpacity={0.75}
-          >
-            {recording
-              ? <Icon name="pause" size={18} color="#fff" strokeWidth={2} />
-              : <Icon name="mic" size={20} color="#fff" strokeWidth={1.75} />}
+          <TouchableOpacity style={adminChat.iconBtn} onPress={sendCCLocation} disabled={sending}>
+            <Icon name="location" size={20} color={TEXT2} strokeWidth={1.75} />
           </TouchableOpacity>
-        )}
-      </View>
+          <TextInput
+            style={adminChat.input}
+            value={input}
+            onChangeText={setInput}
+            placeholder="Répondre au centre d'appels…"
+            placeholderTextColor={TEXT2}
+            returnKeyType="send"
+            onSubmitEditing={sendText}
+            multiline
+            maxLength={1000}
+          />
+          {input.trim() ? (
+            <TouchableOpacity style={[adminChat.actionBtn, sending && { opacity: 0.5 }]} onPress={sendText} disabled={sending} activeOpacity={0.75}>
+              {sending ? <ActivityIndicator size="small" color="#fff" /> : <Icon name="send" size={18} color="#fff" />}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={adminChat.actionBtn} onPress={startRecordingCC} disabled={sending} activeOpacity={0.75}>
+              <Icon name="mic" size={20} color="#fff" strokeWidth={1.75} />
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : recPaused ? (
+        <View style={adminChat.recBar}>
+          <TouchableOpacity style={adminChat.recCancel} onPress={cancelRecordingCC}>
+            <Icon name="trash" size={20} color={TEXT2} strokeWidth={1.75} />
+          </TouchableOpacity>
+          <TouchableOpacity style={adminChat.recCtrlBtn} onPress={togglePreviewCC}>
+            <Icon name={previewPlayingCC ? 'pause' : 'play'} size={18} color={TEXT} strokeWidth={2} />
+          </TouchableOpacity>
+          <Text style={adminChat.recTimer}>
+            {Math.floor(recSeconds / 60).toString().padStart(2, '0')}:{String(recSeconds % 60).padStart(2, '0')}
+          </Text>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity style={adminChat.recCtrlBtn} onPress={resumeRecordingCC}>
+            <Icon name="mic" size={18} color="#FF3B30" strokeWidth={1.75} />
+          </TouchableOpacity>
+          <TouchableOpacity style={adminChat.actionBtn} onPress={stopRecordingCC} activeOpacity={0.75}>
+            <Icon name="send" size={18} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={adminChat.recBar}>
+          <TouchableOpacity style={adminChat.recCancel} onPress={cancelRecordingCC}>
+            <Icon name="trash" size={20} color={TEXT2} strokeWidth={1.75} />
+          </TouchableOpacity>
+          <View style={adminChat.recDot} />
+          <Text style={adminChat.recTimer}>
+            {Math.floor(recSeconds / 60).toString().padStart(2, '0')}:{String(recSeconds % 60).padStart(2, '0')}
+          </Text>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity style={adminChat.recCtrlBtn} onPress={pauseRecordingCC}>
+            <Icon name="pause" size={18} color={TEXT} strokeWidth={2} />
+          </TouchableOpacity>
+          <TouchableOpacity style={adminChat.actionBtn} onPress={stopRecordingCC} activeOpacity={0.75}>
+            <Icon name="send" size={18} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -1157,6 +1242,28 @@ const adminChat = StyleSheet.create({
     backgroundColor: PRIMARY, justifyContent: 'center', alignItems: 'center',
   },
   actionBtnRec: { backgroundColor: '#FF3B30' },
+  // Recording bar
+  recBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderTopWidth: 0.5, borderTopColor: BORDER, backgroundColor: CARD,
+  },
+  recCancel: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: SURFACE, justifyContent: 'center', alignItems: 'center',
+  },
+  recDot: {
+    width: 10, height: 10, borderRadius: 5,
+    backgroundColor: '#FF3B30', flexShrink: 0,
+  },
+  recTimer: {
+    fontSize: 14, fontWeight: '700' as const,
+    color: TEXT, minWidth: 40,
+  },
+  recCtrlBtn: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: SURFACE, justifyContent: 'center', alignItems: 'center',
+  },
   // Call button in header
   callBtn: {
     width: 36, height: 36, borderRadius: 18,

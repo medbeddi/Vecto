@@ -50,6 +50,9 @@ export default function ChatScreen() {
 
   const [text, setText] = useState('');
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [recordingPaused, setRecordingPaused] = useState(false);
+  const [previewSound, setPreviewSound] = useState<Audio.Sound | null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
   const [reactionMsgId, setReactionMsgId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
@@ -158,19 +161,64 @@ export default function ChatScreen() {
 
   const stopRecording = useCallback(async () => {
     if (!recording) return;
+    if (previewSound) { await previewSound.unloadAsync(); setPreviewSound(null); }
     _stopRecordingTimer();
+    if (recordingPaused) await recording.startAsync();
     await recording.stopAndUnloadAsync();
     const uri = recording.getURI();
     setRecording(null);
+    setRecordingPaused(false);
+    setPreviewPlaying(false);
     if (uri) await uploadAndSendMedia('audio', uri, 'audio/mp4', 'm4a');
-  }, [recording]);
+  }, [recording, recordingPaused, previewSound]);
 
   const cancelRecording = useCallback(async () => {
     if (!recording) return;
+    if (previewSound) { await previewSound.unloadAsync(); setPreviewSound(null); }
     _stopRecordingTimer();
+    if (recordingPaused) await recording.startAsync();
     await recording.stopAndUnloadAsync();
     setRecording(null);
-  }, [recording]);
+    setRecordingPaused(false);
+    setPreviewPlaying(false);
+  }, [recording, recordingPaused, previewSound]);
+
+  const pauseRecording = useCallback(async () => {
+    if (!recording || recordingPaused) return;
+    _stopRecordingTimer();
+    await recording.pauseAsync();
+    setRecordingPaused(true);
+  }, [recording, recordingPaused]);
+
+  const resumeRecording = useCallback(async () => {
+    if (!recording || !recordingPaused) return;
+    if (previewSound) { await previewSound.unloadAsync(); setPreviewSound(null); setPreviewPlaying(false); }
+    await recording.startAsync();
+    setRecordingPaused(false);
+    _startRecordingTimer();
+  }, [recording, recordingPaused, previewSound]);
+
+  const togglePreview = useCallback(async () => {
+    if (!recording || !recordingPaused) return;
+    const uri = recording.getURI();
+    if (!uri) return;
+    if (previewPlaying && previewSound) {
+      await previewSound.pauseAsync();
+      setPreviewPlaying(false);
+      return;
+    }
+    let snd = previewSound;
+    if (!snd) {
+      const { sound } = await Audio.Sound.createAsync({ uri });
+      sound.setOnPlaybackStatusUpdate((st) => {
+        if (st.isLoaded && st.didJustFinish) { setPreviewPlaying(false); setPreviewSound(null); }
+      });
+      snd = sound;
+      setPreviewSound(snd);
+    }
+    await snd.playAsync();
+    setPreviewPlaying(true);
+  }, [recording, recordingPaused, previewSound, previewPlaying]);
 
   // ─── Réaction emoji ───────────────────────────────────────────────────────
   const reactToMessage = useCallback(async (msgId: string, emoji: string) => {
@@ -523,11 +571,33 @@ export default function ChatScreen() {
           <TouchableOpacity style={styles.recCancel} onPress={cancelRecording}>
             <Icon name="trash" size={20} color={TEXT2} strokeWidth={1.75} />
           </TouchableOpacity>
-          <View style={styles.recDot} />
-          <Text style={styles.recTimer}>
-            {Math.floor(recSeconds / 60)}:{String(recSeconds % 60).padStart(2, '0')}
-          </Text>
-          <RecordingWave />
+
+          {recordingPaused ? (
+            <>
+              <TouchableOpacity style={styles.recCtrlBtn} onPress={togglePreview}>
+                <Icon name={previewPlaying ? 'pause' : 'play'} size={18} color={TEXT} strokeWidth={2} />
+              </TouchableOpacity>
+              <Text style={styles.recTimer}>
+                {Math.floor(recSeconds / 60)}:{String(recSeconds % 60).padStart(2, '0')}
+              </Text>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity style={styles.recCtrlBtn} onPress={resumeRecording}>
+                <Icon name="mic" size={18} color="#FF3B30" strokeWidth={1.75} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <View style={styles.recDot} />
+              <Text style={styles.recTimer}>
+                {Math.floor(recSeconds / 60)}:{String(recSeconds % 60).padStart(2, '0')}
+              </Text>
+              <RecordingWave paused={false} />
+              <TouchableOpacity style={styles.recCtrlBtn} onPress={pauseRecording}>
+                <Icon name="pause" size={18} color={TEXT} strokeWidth={2} />
+              </TouchableOpacity>
+            </>
+          )}
+
           <TouchableOpacity style={styles.micBtn} onPress={stopRecording}>
             <Icon name="send" size={18} color="#fff" />
           </TouchableOpacity>
@@ -578,7 +648,7 @@ const BAR_H = [4,14,22,8,18,6,20,12,26,6,16,10,24,8,18,4,14,20,6,26,10,16,8,22,1
 const BAR_D = [250,285,220,300,260,280,240,305,265,235,255,290,215,295,270,275,245,310,255,230,250,275,225,315,260,270,240,285,270,240];
 const N_BARS = BAR_H.length;
 
-function RecordingWave() {
+function RecordingWave({ paused }: { paused: boolean }) {
   const anims = useRef(Array.from({ length: N_BARS }, () => new Animated.Value(0.3))).current;
 
   useEffect(() => {
@@ -590,10 +660,11 @@ function RecordingWave() {
         ])
       )
     );
-    // Décaler le démarrage pour éviter que toutes les barres bougent en même temps
-    loops.forEach((l, i) => setTimeout(() => l.start(), i * 18));
+    if (!paused) {
+      loops.forEach((l, i) => setTimeout(() => l.start(), i * 18));
+    }
     return () => loops.forEach((l) => l.stop());
-  }, []);
+  }, [paused]);
 
   return (
     <View style={recWaveStyles.wrap}>
@@ -708,6 +779,11 @@ const styles = StyleSheet.create({
   },
   recCancel: {
     width: 40, height: 40, borderRadius: 20,
+    justifyContent: 'center', alignItems: 'center',
+    backgroundColor: SURFACE,
+  },
+  recCtrlBtn: {
+    width: 38, height: 38, borderRadius: 19,
     justifyContent: 'center', alignItems: 'center',
     backgroundColor: SURFACE,
   },
