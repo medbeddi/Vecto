@@ -1147,13 +1147,14 @@ router.post('/admin/upload', requireCallCenter, adminUpload.single('file'), asyn
 router.get('/admin/settings/tarif', requireAdmin, async (req, res) => {
   try {
     const rows = await db('app_settings')
-      .whereIn('key', ['tarif_base_km', 'tarif_base_prix', 'tarif_par_km_supp']);
+      .whereIn('key', ['tarif_base_km', 'tarif_base_prix', 'tarif_par_km_supp', 'commission_pourcentage']);
     const s = {};
     rows.forEach((r) => { s[r.key] = parseFloat(r.value); });
     res.json({
-      base_km:    s.tarif_base_km      ?? 3,
-      base_prix:  s.tarif_base_prix    ?? 100,
-      prix_par_km: s.tarif_par_km_supp ?? 20,
+      base_km:               s.tarif_base_km         ?? 3,
+      base_prix:             s.tarif_base_prix        ?? 100,
+      prix_par_km:           s.tarif_par_km_supp      ?? 20,
+      commission_pourcentage: s.commission_pourcentage ?? 15,
     });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -1162,20 +1163,25 @@ router.get('/admin/settings/tarif', requireAdmin, async (req, res) => {
 
 router.put('/admin/settings/tarif', requireAdmin, async (req, res) => {
   try {
-    const { base_km, base_prix, prix_par_km } = req.body;
+    const { base_km, base_prix, prix_par_km, commission_pourcentage } = req.body;
     if (
-      typeof base_km !== 'number'      || base_km < 0 ||
-      typeof base_prix !== 'number'    || base_prix < 0 ||
-      typeof prix_par_km !== 'number'  || prix_par_km < 0
+      typeof base_km !== 'number'               || base_km < 0 ||
+      typeof base_prix !== 'number'             || base_prix < 0 ||
+      typeof prix_par_km !== 'number'           || prix_par_km < 0 ||
+      (commission_pourcentage !== undefined && (typeof commission_pourcentage !== 'number' || commission_pourcentage < 0 || commission_pourcentage > 100))
     ) return res.status(400).json({ error: 'INVALID_PARAMS' });
 
     const now = new Date();
+    const rows = [
+      { key: 'tarif_base_km',     value: String(base_km),     updated_at: now },
+      { key: 'tarif_base_prix',   value: String(base_prix),   updated_at: now },
+      { key: 'tarif_par_km_supp', value: String(prix_par_km), updated_at: now },
+    ];
+    if (commission_pourcentage !== undefined) {
+      rows.push({ key: 'commission_pourcentage', value: String(commission_pourcentage), updated_at: now });
+    }
     await db('app_settings')
-      .insert([
-        { key: 'tarif_base_km',     value: String(base_km),     updated_at: now },
-        { key: 'tarif_base_prix',   value: String(base_prix),   updated_at: now },
-        { key: 'tarif_par_km_supp', value: String(prix_par_km), updated_at: now },
-      ])
+      .insert(rows)
       .onConflict('key').merge(['value', 'updated_at']);
 
     res.json({ ok: true });

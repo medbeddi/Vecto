@@ -182,8 +182,10 @@ export async function updateDeliveryStatus(deliveryId, driverId, newStatus) {
 
   // Déduire la commission du wallet quand la course est terminée
   if (newStatus === 'done') {
-    const commRow = await db('app_settings').where({ key: 'commission_par_course' }).first('value');
-    const commission = parseFloat(commRow?.value || '5');
+    const pctRow = await db('app_settings').where({ key: 'commission_pourcentage' }).first('value');
+    const pct = parseFloat(pctRow?.value || '15');
+    const deliveryPrice = parseFloat(updated.price || '0');
+    const commission = parseFloat(((deliveryPrice * pct) / 100).toFixed(2));
     const wallet = await db('wallets').where({ driver_id: driverId }).first('id', 'balance');
     if (wallet && commission > 0) {
       const newBalance = parseFloat(wallet.balance) - commission;
@@ -192,7 +194,7 @@ export async function updateDeliveryStatus(deliveryId, driverId, newStatus) {
         wallet_id: wallet.id,
         amount: -commission,
         type: 'commission',
-        description: `Commission course #${deliveryId.slice(-6)}`,
+        description: `Commission ${pct}% course #${deliveryId.slice(-6)} (${deliveryPrice} MRU)`,
         status: 'completed',
       });
     }
