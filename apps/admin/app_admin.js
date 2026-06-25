@@ -272,7 +272,7 @@ function initSocket() {
       _navBadgeCC++;
       _updateNavBadge('nav-badge-cc', _navBadgeCC);
     }
-    var preview = data.message && data.message.type === 'text' ? data.message.content : '🎤 Message vocal';
+    var preview = _previewText(data.message);
     _sendBrowserNotif(
       '💬 ' + (data.clientAlias || 'Client'),
       preview || 'Nouveau message',
@@ -2121,7 +2121,7 @@ function renderInboxList(items) {
 
   list.innerHTML = items.map(function (item) {
     var preview = item.lastMessage
-      ? (item.lastMessage.type === 'text' ? (item.lastMessage.content || '') : '[' + item.lastMessage.type + ']')
+      ? _previewText(item.lastMessage)
       : 'Nouveau contact';
     var time = item.lastMessage ? fmtTime(item.lastMessage.createdAt) : fmtTime(item.createdAt);
     var active = item.id === _inboxSelectedId ? ' active' : '';
@@ -2152,7 +2152,7 @@ function renderArchivedList(items) {
 
   list.innerHTML = items.map(function (item) {
     var preview = item.lastMessage
-      ? (item.lastMessage.type === 'text' ? (item.lastMessage.content || '') : '[' + item.lastMessage.type + ']')
+      ? _previewText(item.lastMessage)
       : '—';
     var time = item.doneAt ? fmtTime(item.doneAt) : fmtTime(item.createdAt);
     var active = item.id === _inboxSelectedId ? ' active' : '';
@@ -2261,7 +2261,25 @@ function _initLocationMaps() {
   });
 }
 
+function _previewText(msg) {
+  if (!msg) return '';
+  switch (msg.type) {
+    case 'text':     return msg.content || '';
+    case 'audio':    return '🎤 Message vocal';
+    case 'image':    return '📷 Photo';
+    case 'location': return '📍 Position partagée';
+    case 'reaction': return (msg.content || '💬') + ' Réaction';
+    default:         return msg.content ? msg.content.slice(0, 60) : ('📨 ' + msg.type);
+  }
+}
+
 function _buildMsgBody(m) {
+  if (m.type === 'reaction') {
+    return '<div class="cc-msg-wrap cc-msg-system-wrap">'
+      + '<div class="cc-msg-system-bubble">'
+      + escHtml(m.content || '💬') + ' — Client a réagi à un message'
+      + '</div></div>';
+  }
   var side = (m.sender_role === 'admin') ? 'admin' : 'client';
   var body = '';
   if (m.type === 'text') {

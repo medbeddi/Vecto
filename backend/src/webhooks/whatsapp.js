@@ -189,6 +189,23 @@ async function processMessage(msg) {
     return;
   }
 
+  // ── Réaction emoji native WhatsApp ────────────────────────────────────────────
+  if (msgType === 'reaction') {
+    const emoji = msg.reaction?.emoji;
+    if (!emoji) return; // emoji vide = suppression de réaction, on ignore
+    let delivery = existing?.status === 'admin_queue' ? existing
+      : existing?.status === 'pending' ? existing
+      : null;
+    if (!delivery) delivery = await createAdminQueueDelivery(client.id);
+    const [message] = await db('messages')
+      .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'reaction', content: emoji, meta: null })
+      .returning('*');
+    if (delivery.status === 'admin_queue') {
+      emitIncomingText(delivery, message, client.alias);
+    }
+    return;
+  }
+
   // ── Autres types (image, location, etc.) ─────────────────────────────────────
   {
     let delivery = existing?.status === 'admin_queue' ? existing
