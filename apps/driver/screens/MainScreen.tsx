@@ -719,8 +719,8 @@ function AdminChatTab() {
         let changed = false;
         for (const m of fetched) {
           const ex = prevById.get(m.id);
-          // Ajouter les nouveaux messages, ou remplacer les messages cassés (content/date manquants)
-          if (!ex || !ex.content || !ex.createdAt) {
+          // Ajouter les nouveaux messages, ou remplacer les messages cassés (date manquante)
+          if (!ex || !ex.createdAt || (ex.type !== 'location' && !ex.content)) {
             prevById.set(m.id, m);
             changed = true;
           }
@@ -820,6 +820,33 @@ function AdminChatTab() {
     finally { setSending(false); }
   };
 
+  const sendCCLocation = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission refusée', 'Activez la localisation dans les paramètres.'); return; }
+    setSending(true);
+    try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const lat = loc.coords.latitude;
+      const lng = loc.coords.longitude;
+      const tempId = `tmp_${Date.now()}`;
+      const tempMsg: CCMessage = {
+        id: tempId, senderRole: 'driver', type: 'location', content: null,
+        meta: { lat, lng, label: 'Position partagée' },
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, tempMsg]);
+      scrollBottom();
+      const { message } = await api<{ message: CCMessage }>('/api/drivers/cc-chat', {
+        method: 'POST', body: { type: 'location', meta: { lat, lng, label: 'Position partagée' } },
+      });
+      setMessages((prev) => prev.map((m) => m.id === tempId ? message : m));
+      scrollBottom();
+    } catch {
+      Alert.alert('Erreur', "Impossible d'envoyer la localisation.");
+      setMessages((prev) => prev.filter((m) => !m.id.startsWith('tmp_')));
+    } finally { setSending(false); }
+  };
+
   const callCC = () => {
     if (!ccPhone) { Alert.alert('Indisponible', 'Le numéro du Call Center n\'est pas configuré.'); return; }
     // Enregistrer l'appel dans le chat
@@ -873,6 +900,10 @@ function AdminChatTab() {
         {/* Image */}
         <TouchableOpacity style={adminChat.iconBtn} onPress={pickImage} disabled={sending || !!recording}>
           <Icon name="image" size={20} color={TEXT2} strokeWidth={1.75} />
+        </TouchableOpacity>
+        {/* Location */}
+        <TouchableOpacity style={adminChat.iconBtn} onPress={sendCCLocation} disabled={sending || !!recording}>
+          <Icon name="location" size={20} color={TEXT2} strokeWidth={1.75} />
         </TouchableOpacity>
         {/* TextInput */}
         <TextInput

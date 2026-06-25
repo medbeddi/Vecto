@@ -1034,17 +1034,22 @@ input:focus, textarea:focus { outline: none; }
 .cc-msg:has(.cc-msg-location),
 .cc-msg-bubble:has(.cc-msg-location) { padding: 0; overflow: hidden; }
 .cc-msg-location {
-  display: block; text-decoration: none;
+  display: block;
   min-width: 220px; max-width: 240px;
+  cursor: pointer;
 }
 .cc-msg-location-map {
-  width: 100%; height: 130px; object-fit: cover;
+  width: 100%; height: 130px;
   display: block;
+  position: relative; overflow: hidden;
 }
+/* empêche Leaflet d'intercepter hover/click dans la bulle de chat */
+.cc-msg-location-map .leaflet-container { pointer-events: none !important; }
 .cc-msg-location-label {
   padding: 6px 10px 8px;
   font-size: 13px; font-weight: 600;
   color: #25d366;
+  display: block;
 }
 .cc-msg.admin .cc-msg-location-label,
 .cc-msg-bubble-out .cc-msg-location-label { color: rgba(255,255,255,0.85); }

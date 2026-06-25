@@ -263,6 +263,7 @@ function initSocket() {
           if (msgId) _renderedMsgIds.add(msgId);
           container.insertAdjacentHTML('beforeend', _buildMsgBody(data.message));
           container.scrollTop = container.scrollHeight;
+          setTimeout(_initLocationMaps, 50);
         }
       }
     }
@@ -291,7 +292,7 @@ function initSocket() {
         _navBadgeCC++;
         _updateNavBadge('nav-badge-cc', _navBadgeCC);
       }
-      _sendBrowserNotif('💬 Livreur', data.message.content || 'Nouveau message', 'driver-' + data.driverId);
+      _sendBrowserNotif('💬 Livreur', data.message && data.message.type === 'audio' ? '🎤 Message vocal du livreur' : (data.message && data.message.content) || 'Nouveau message', 'driver-' + data.driverId);
     }
   });
 
@@ -524,7 +525,7 @@ function _driverMsgBubble(m) {
   } else if (type === 'image') {
     inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img" onerror="_imgErr(this)" onclick="openImgModal(this.src)" style="cursor:pointer;max-width:200px;border-radius:8px" />';
   } else if (type === 'location') {
-    inner = _buildLocationHtml(m.meta);
+    inner = _buildLocationHtml(m.meta, m.id);
   } else if (type === 'call') {
     return '<div class="cc-msg-wrap cc-msg-system-wrap">'
       + '<div class="cc-msg-system-bubble">📞 ' + escHtml(m.content || 'Appel') + ' · ' + fmtTime(m.createdAt) + '</div>'
@@ -603,6 +604,7 @@ function renderDriverChatMessages(messages) {
   _driverMsgIds = new Set(messages.map(function(m) { return m.id; }));
   container.innerHTML = messages.map(_driverMsgBubble).join('');
   container.scrollTop = container.scrollHeight;
+  setTimeout(_initLocationMaps, 50);
 }
 
 function appendDriverChatMessage(msg) {
@@ -612,6 +614,8 @@ function appendDriverChatMessage(msg) {
   container.insertAdjacentHTML('beforeend', _driverMsgBubble(msg));
   _driverMsgIds.add(msg.id);
   requestAnimationFrame(function() { container.scrollTop = container.scrollHeight; });
+  if (msg.type === 'audio') _sendBrowserNotif('🎤 Livreur', 'Message vocal', 'drv-aud-' + msg.id);
+  setTimeout(_initLocationMaps, 50);
 }
 
 function startDriverChatPolling() {
@@ -2227,18 +2231,34 @@ async function loadMessages(deliveryId) {
   } catch {}
 }
 
-function _buildLocationHtml(meta) {
+function _buildLocationHtml(meta, msgId) {
   if (!meta || (!meta.lat && !meta.lng)) return '<div class="cc-msg-text">📍 Position</div>';
-  var lat = meta.lat, lng = meta.lng;
+  var lat   = parseFloat(meta.lat);
+  var lng   = parseFloat(meta.lng);
   var label = escHtml(meta.label || 'Position partagée');
-  var mapsUrl = 'https://maps.google.com/?q=' + lat + ',' + lng;
-  var imgUrl  = 'https://staticmap.openstreetmap.de/staticmap.php?center=' + lat + ',' + lng
-              + '&zoom=15&size=280x140&markers=' + lat + ',' + lng + ',red-pushpin';
-  return '<a href="' + escHtml(mapsUrl) + '" target="_blank" class="cc-msg-location">'
-       + '<img src="' + escHtml(imgUrl) + '" class="cc-msg-location-map" loading="lazy"'
-       + ' onerror="this.style.display=\'none\'" />'
+  var mapId = 'cc-loc-' + (msgId ? String(msgId).replace(/[^a-z0-9]/gi,'') : 'r' + (Math.random()*1e8|0));
+  var gUrl  = 'https://maps.google.com/?q=' + lat + ',' + lng;
+  return '<div class="cc-msg-location" onclick="window.open(\'' + gUrl + '\',\'_blank\')">'
+       + '<div id="' + mapId + '" class="cc-msg-location-map" data-lat="' + lat + '" data-lng="' + lng + '"></div>'
        + '<div class="cc-msg-location-label">📍 ' + label + '</div>'
-       + '</a>';
+       + '</div>';
+}
+
+function _initLocationMaps() {
+  if (typeof L === 'undefined') return;
+  document.querySelectorAll('.cc-msg-location-map[data-lat]:not([data-lm])').forEach(function(el) {
+    el.setAttribute('data-lm', '1');
+    var lat = parseFloat(el.getAttribute('data-lat'));
+    var lng = parseFloat(el.getAttribute('data-lng'));
+    try {
+      var lmap = L.map(el, {
+        zoomControl: false, dragging: false, scrollWheelZoom: false,
+        tap: false, keyboard: false, doubleClickZoom: false, attributionControl: false
+      }).setView([lat, lng], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(lmap);
+      L.circleMarker([lat, lng], { radius: 8, color: '#d00', fillColor: '#f44', fillOpacity: 1, weight: 2 }).addTo(lmap);
+    } catch(e) {}
+  });
 }
 
 function _buildMsgBody(m) {
@@ -2275,7 +2295,7 @@ function _buildMsgBody(m) {
       ? '<img src="' + escHtml(m.content) + '" style="max-width:200px;border-radius:8px;cursor:pointer" onerror="_imgErr(this)" onclick="openImgModal(this.src)" />'
       : '[Image]';
   } else if (m.type === 'location') {
-    body = _buildLocationHtml(m.meta);
+    body = _buildLocationHtml(m.meta, m.id);
   } else {
     body = '[' + m.type + ']';
   }
@@ -2326,6 +2346,7 @@ function renderMessages(messages) {
   }).join('');
 
   container.scrollTop = container.scrollHeight;
+  setTimeout(_initLocationMaps, 50);
 }
 
 function startMsgPolling(deliveryId) {
@@ -2347,7 +2368,7 @@ function startMsgPolling(deliveryId) {
           hasNew = true;
         }
       });
-      if (hasNew) container.scrollTop = container.scrollHeight;
+      if (hasNew) { container.scrollTop = container.scrollHeight; setTimeout(_initLocationMaps, 50); }
     } catch {}
   }, 2000);
 }
@@ -2459,6 +2480,7 @@ async function sendLocationReply() {
           meta: { lat: lat, lng: lng, label: 'Position partagée' },
         }));
         container.scrollTop = container.scrollHeight;
+        setTimeout(_initLocationMaps, 50);
       }
     } catch { alert('Erreur réseau.'); }
   }, function() { alert('Impossible d\'obtenir la position. Vérifiez les permissions de localisation.'); });

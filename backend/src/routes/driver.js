@@ -501,14 +501,27 @@ router.get('/drivers/cc-chat', requireAuth, async (req, res) => {
 
 router.post('/drivers/cc-chat', requireAuth, async (req, res) => {
   try {
-    const { content, type = 'text' } = req.body;
-    if (!content?.trim()) return res.status(400).json({ error: 'EMPTY_MESSAGE' });
-    const validTypes = ['text', 'audio', 'image', 'call'];
+    const { content, type = 'text', meta } = req.body;
+    const validTypes = ['text', 'audio', 'image', 'call', 'location'];
     const msgType = validTypes.includes(type) ? type : 'text';
+    if (msgType === 'location') {
+      if (!meta?.lat || !meta?.lng) return res.status(400).json({ error: 'LOCATION_REQUIRED' });
+    } else {
+      if (!content?.trim()) return res.status(400).json({ error: 'EMPTY_MESSAGE' });
+    }
     const [msg] = await db('cc_driver_messages')
-      .insert({ driver_id: req.driver.id, sender_role: 'driver', type: msgType, content: content.trim() })
-      .returning(['id', 'sender_role', 'type', 'content', 'created_at']);
-    const out = { id: msg.id, senderRole: msg.sender_role, type: msg.type, content: msg.content, createdAt: msg.created_at };
+      .insert({
+        driver_id: req.driver.id,
+        sender_role: 'driver',
+        type: msgType,
+        content: msgType === 'location' ? null : content.trim(),
+        meta: meta ? JSON.stringify(meta) : null,
+      })
+      .returning(['id', 'sender_role', 'type', 'content', 'meta', 'created_at']);
+    const out = {
+      id: msg.id, senderRole: msg.sender_role, type: msg.type,
+      content: msg.content, meta: msg.meta, createdAt: msg.created_at,
+    };
     emitDriverReplyToCC(req.driver.id, req.driver.name, out);
     res.json({ message: out });
   } catch {
