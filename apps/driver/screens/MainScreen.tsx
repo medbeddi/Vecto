@@ -118,7 +118,7 @@ export default function MainScreen() {
       setChatUnread((n) => n + 1);
       Notifications.scheduleNotificationAsync({
         content: {
-          title: `💬 ${delivery.clientAlias}`,
+          title: '💬 Message client',
           body: msg.type === 'audio' ? 'Message vocal'
                : msg.type === 'image' ? 'Photo'
                : msg.type === 'location' ? 'Position partagée'
@@ -389,8 +389,8 @@ function CoursesTab() {
           content: {
             title: '🛵 Nouvelle course',
             body: order.message.type === 'audio'
-              ? `Message vocal de ${order.clientAlias}`
-              : (order.message.content ?? `Course de ${order.clientAlias}`),
+              ? 'Message vocal'
+              : (order.message.content ?? 'Nouvelle course'),
             data: { deliveryId: order.deliveryId, type: 'new_order' },
             sound: Platform.OS === 'ios' ? 'ringtone.wav' : undefined,
           },

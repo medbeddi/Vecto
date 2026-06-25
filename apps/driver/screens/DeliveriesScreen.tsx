@@ -82,7 +82,7 @@ export default function DeliveriesScreen() {
       Notifications.scheduleNotificationAsync({
         content: {
           title: '🛵 Nouvelle course',
-          body: order.message.type === 'audio' ? `Message vocal de ${order.clientAlias}` : (order.message.content ?? `Course de ${order.clientAlias}`),
+          body: order.message.type === 'audio' ? 'Message vocal' : (order.message.content ?? 'Nouvelle course'),
           data: { deliveryId: order.deliveryId },
         },
         trigger: null,
