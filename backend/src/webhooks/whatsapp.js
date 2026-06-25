@@ -103,6 +103,26 @@ async function processMessage(msg) {
 
   // ── Livraison en cours → message de chat vers livreur ────────────────────────
   if (existing && (existing.status === 'assigned' || existing.status === 'in_progress')) {
+    // Réaction pendant la livraison → badge sur le message cible (pas un nouveau message)
+    if (msgType === 'reaction') {
+      const emoji   = msg.reaction?.emoji;
+      const refWaId = msg.reaction?.message_id;
+      if (!emoji || !refWaId) return;
+      const originalMsg = await db('messages')
+        .whereRaw("meta->>'waId' = ?", [refWaId])
+        .first('id', 'delivery_id', 'meta');
+      if (originalMsg) {
+        const currentMeta = (originalMsg.meta && typeof originalMsg.meta === 'object') ? originalMsg.meta : {};
+        const reactions = { ...(currentMeta.reactions || {}) };
+        const users = reactions[emoji] || [];
+        if (!users.includes('client')) reactions[emoji] = [...users, 'client'];
+        const newMeta = { ...currentMeta, reactions };
+        await db('messages').where({ id: originalMsg.id }).update({ meta: JSON.stringify(newMeta) });
+        emitMessageReaction(existing.id, originalMsg.id, reactions);
+      }
+      return;
+    }
+
     const { content, meta } = await extractContent(msg, existing.id);
     const [message] = await db('messages')
       .insert({ delivery_id: existing.id, sender_role: 'client', type: msgType, content, meta: JSON.stringify(mergeWaId(meta, msg.id)) })

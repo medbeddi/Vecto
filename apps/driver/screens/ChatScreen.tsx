@@ -88,15 +88,20 @@ export default function ChatScreen() {
         Alert.alert('Course annulée', 'Cette course a été annulée.');
       }
     };
+    const onReaction = ({ messageId, reactions }: { messageId: string; deliveryId: string; reactions: Record<string, string[]> }) => {
+      updateMessageReactions(messageId, reactions);
+    };
     // Re-joindre la room après reconnexion socket (réseau coupé, app background)
     const onConnect = () => socketService.joinRoom(initDelivery.id);
 
     socketService.on('client_message', onMsg);
     socketService.on('delivery_cancelled', onCancelled);
+    socketService.on('message_reaction', onReaction as any);
     socketService.on('connect', onConnect);
     return () => {
       socketService.off('client_message', onMsg);
       socketService.off('delivery_cancelled', onCancelled);
+      socketService.off('message_reaction', onReaction as any);
       socketService.off('connect', onConnect);
       setActiveDelivery(null);
     };

@@ -295,5 +295,7 @@ export function emitAllDriversRefused(deliveryId) {
 // ── Réaction WhatsApp attachée à un message → mettre à jour le DOM admin ──────
 export function emitMessageReaction(deliveryId, messageId, reactions) {
   if (!io) return;
-  io.to(ADMINS_ROOM).emit('message_reaction', { deliveryId, messageId, reactions });
+  const payload = { deliveryId, messageId, reactions };
+  io.to(ADMINS_ROOM).emit('message_reaction', payload);
+  io.to(`course_${deliveryId}`).emit('message_reaction', payload);
 }
