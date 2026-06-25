@@ -6,7 +6,7 @@ import db from '../config/db.js';
 import { hashWaId, encryptWaId, sanitizeText } from '../services/pii-filter.js';
 import { downloadFromMeta, uploadToR2, extFromMime, getSignedMediaUrl } from '../services/media.js';
 import { getActiveDelivery, createAdminQueueDelivery } from '../services/delivery.js';
-import { emitClientMessage, emitIncomingCall, emitIncomingText, emitNewOrder } from '../services/socket.js';
+import { emitClientMessage, emitIncomingCall, emitIncomingText, emitNewOrder, emitMessageReaction } from '../services/socket.js';
 import { notifyAssignedDriver } from '../services/fcm.js';
 import { sendText } from '../services/messaging.js';
 import { transcribeAndAnalyze, containsOffensiveWords } from '../services/transcription.js';
@@ -76,6 +76,12 @@ async function processPayload(body) {
   }
 }
 
+function mergeWaId(meta, waId) {
+  const base = (meta && typeof meta === 'object') ? { ...meta } : {};
+  base.waId = waId;
+  return base;
+}
+
 async function processMessage(msg) {
   const rawWaId = msg.from;
   console.info(`[webhook] message reçu id=${msg.id} type=${msg.type} from=${rawWaId?.slice(-4)}`);
@@ -99,7 +105,7 @@ async function processMessage(msg) {
   if (existing && (existing.status === 'assigned' || existing.status === 'in_progress')) {
     const { content, meta } = await extractContent(msg, existing.id);
     const [message] = await db('messages')
-      .insert({ delivery_id: existing.id, sender_role: 'client', type: msgType, content, meta: meta ?? null })
+      .insert({ delivery_id: existing.id, sender_role: 'client', type: msgType, content, meta: JSON.stringify(mergeWaId(meta, msg.id)) })
       .returning('*');
 
     emitClientMessage(existing.id, message);
@@ -157,7 +163,7 @@ async function processMessage(msg) {
     }
 
     const [message] = await db('messages')
-      .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'audio', content: signedUrl, meta: audioMeta })
+      .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'audio', content: signedUrl, meta: JSON.stringify(mergeWaId(audioMeta, msg.id)) })
       .returning('*');
 
     emitIncomingText(delivery, message, client.alias);
@@ -181,7 +187,7 @@ async function processMessage(msg) {
     }
 
     const [message] = await db('messages')
-      .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'text', content: textBody, meta: null })
+      .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'text', content: textBody, meta: JSON.stringify({ waId: msg.id }) })
       .returning('*');
 
     console.info(`[webhook] message texte sauvegardé id=${message.id} → emitIncomingText`);
@@ -189,20 +195,31 @@ async function processMessage(msg) {
     return;
   }
 
-  // ── Réaction emoji native WhatsApp ────────────────────────────────────────────
+  // ── Réaction emoji native WhatsApp → badge sur le message cible ──────────────
   if (msgType === 'reaction') {
-    const emoji = msg.reaction?.emoji;
+    const emoji   = msg.reaction?.emoji;
+    const refWaId = msg.reaction?.message_id;
     if (!emoji) return; // emoji vide = suppression de réaction, on ignore
-    let delivery = existing?.status === 'admin_queue' ? existing
-      : existing?.status === 'pending' ? existing
-      : null;
-    if (!delivery) delivery = await createAdminQueueDelivery(client.id);
-    const [message] = await db('messages')
-      .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'reaction', content: emoji, meta: null })
-      .returning('*');
-    if (delivery.status === 'admin_queue') {
-      emitIncomingText(delivery, message, client.alias);
+
+    if (refWaId) {
+      const originalMsg = await db('messages')
+        .whereRaw("meta->>'waId' = ?", [refWaId])
+        .first('id', 'delivery_id', 'meta');
+
+      if (originalMsg) {
+        const currentMeta = (originalMsg.meta && typeof originalMsg.meta === 'object') ? originalMsg.meta : {};
+        const reactions = { ...(currentMeta.reactions || {}) };
+        const users = reactions[emoji] || [];
+        if (!users.includes('client')) {
+          reactions[emoji] = [...users, 'client'];
+        }
+        const newMeta = { ...currentMeta, reactions };
+        await db('messages').where({ id: originalMsg.id }).update({ meta: JSON.stringify(newMeta) });
+        emitMessageReaction(originalMsg.delivery_id, originalMsg.id, reactions);
+        return;
+      }
     }
+    // Message original introuvable (message ancien sans waId) → on ignore silencieusement
     return;
   }
 
@@ -216,7 +233,7 @@ async function processMessage(msg) {
 
     const { content, meta } = await extractContent(msg, delivery.id);
     const [message] = await db('messages')
-      .insert({ delivery_id: delivery.id, sender_role: 'client', type: msgType, content, meta: meta ?? null })
+      .insert({ delivery_id: delivery.id, sender_role: 'client', type: msgType, content, meta: JSON.stringify(mergeWaId(meta, msg.id)) })
       .returning('*');
 
     if (delivery.status === 'admin_queue') {

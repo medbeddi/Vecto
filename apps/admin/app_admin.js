@@ -296,6 +296,26 @@ function initSocket() {
     }
   });
 
+  // Réaction WhatsApp sur un message → badge emoji sur la bulle concernée
+  _socket.on('message_reaction', function(data) {
+    var msgEl = document.querySelector('.cc-msg[data-msg-id="' + data.messageId + '"]');
+    if (!msgEl) return;
+    var existing = msgEl.querySelector('.cc-reactions');
+    var reactionKeys = Object.keys(data.reactions || {});
+    var newHtml = reactionKeys.length
+      ? '<div class="cc-reactions">'
+          + reactionKeys.map(function(e) {
+              return '<span class="cc-reaction-chip" onclick="event.stopPropagation();toggleReaction(\'' + data.messageId + '\',\'' + e + '\')" title="Cliquer pour retirer">'
+                + e
+                + (data.reactions[e].length > 1 ? '<span class="cc-reaction-count">' + data.reactions[e].length + '</span>' : '')
+                + '</span>';
+            }).join('')
+          + '</div>'
+      : '';
+    if (existing) { existing.outerHTML = newHtml || ''; }
+    else if (newHtml) { msgEl.insertAdjacentHTML('beforeend', newHtml); }
+  });
+
   // Une conversation a été prise par un autre agent CC → la retirer de notre inbox
   _socket.on('conversation_claimed', function (data) {
     if (data.claimedBy === _myAdminId) return; // c'est nous qui l'avons claimée
@@ -2336,18 +2356,13 @@ function _previewText(msg) {
     case 'audio':    return '🎤 Message vocal';
     case 'image':    return '📷 Photo';
     case 'location': return '📍 Position partagée';
-    case 'reaction': return (msg.content || '💬') + ' Réaction';
+    case 'reaction': return ''; // ne pas afficher les réactions comme aperçu
     default:         return msg.content ? msg.content.slice(0, 60) : ('📨 ' + msg.type);
   }
 }
 
 function _buildMsgBody(m) {
-  if (m.type === 'reaction') {
-    return '<div class="cc-msg-wrap cc-msg-system-wrap">'
-      + '<div class="cc-msg-system-bubble">'
-      + escHtml(m.content || '💬') + ' — Client a réagi à un message'
-      + '</div></div>';
-  }
+  if (m.type === 'reaction') return ''; // réactions affichées comme badges sur le message cible
   var side = (m.sender_role === 'admin') ? 'admin' : 'client';
   var body = '';
   if (m.type === 'text') {

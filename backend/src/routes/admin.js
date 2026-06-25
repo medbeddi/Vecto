@@ -697,10 +697,16 @@ router.post('/admin/inbox/:id/reply', requireCallCenter, async (req, res) => {
       .insert({ delivery_id: req.params.id, sender_role: 'admin', type: 'text', content: text.trim(), meta: null })
       .returning('*');
 
-    // Envoyer via WhatsApp
-    await sendText(rawWaId, text.trim()).catch((err) => {
+    // Envoyer via WhatsApp et stocker le wamid pour permettre les réactions
+    try {
+      const waResp = await sendText(rawWaId, text.trim());
+      const waMsgId = waResp?.messages?.[0]?.id;
+      if (waMsgId) {
+        await db('messages').where({ id: message.id }).update({ meta: JSON.stringify({ waId: waMsgId }) });
+      }
+    } catch (err) {
       console.error('[admin/reply] WhatsApp erreur:', err.message);
-    });
+    }
 
     res.json({ message: { id: message.id, content: message.content, createdAt: message.created_at } });
   } catch {
@@ -727,9 +733,15 @@ router.post('/admin/inbox/:id/reply-audio', requireCallCenter, async (req, res) 
       .insert({ delivery_id: req.params.id, sender_role: 'admin', type: 'audio', content: audioUrl, meta: null })
       .returning('*');
 
-    await sendAudio(rawWaId, audioUrl).catch((err) => {
+    try {
+      const waResp = await sendAudio(rawWaId, audioUrl);
+      const waMsgId = waResp?.messages?.[0]?.id;
+      if (waMsgId) {
+        await db('messages').where({ id: message.id }).update({ meta: JSON.stringify({ waId: waMsgId }) });
+      }
+    } catch (err) {
       console.error('[admin/reply-audio] WhatsApp erreur:', err.message);
-    });
+    }
 
     res.json({ message: { id: message.id, content: message.content, createdAt: message.created_at } });
   } catch {
@@ -756,9 +768,15 @@ router.post('/admin/inbox/:id/reply-image', requireCallCenter, async (req, res) 
       .insert({ delivery_id: req.params.id, sender_role: 'admin', type: 'image', content: imageUrl, meta: null })
       .returning('*');
 
-    await sendImage(rawWaId, imageUrl).catch((err) => {
+    try {
+      const waResp = await sendImage(rawWaId, imageUrl);
+      const waMsgId = waResp?.messages?.[0]?.id;
+      if (waMsgId) {
+        await db('messages').where({ id: message.id }).update({ meta: JSON.stringify({ waId: waMsgId }) });
+      }
+    } catch (err) {
       console.error('[admin/reply-image] WhatsApp erreur:', err.message);
-    });
+    }
 
     res.json({ message: { id: message.id, content: message.content, createdAt: message.created_at } });
   } catch {
@@ -786,9 +804,15 @@ router.post('/admin/inbox/:id/reply-location', requireCallCenter, async (req, re
       .insert({ delivery_id: req.params.id, sender_role: 'admin', type: 'location', content: null, meta: { lat, lng, label: locLabel } })
       .returning('*');
 
-    await sendLocation(rawWaId, lat, lng, locLabel).catch((err) => {
+    try {
+      const waResp = await sendLocation(rawWaId, lat, lng, locLabel);
+      const waMsgId = waResp?.messages?.[0]?.id;
+      if (waMsgId) {
+        await db('messages').where({ id: message.id }).update({ meta: JSON.stringify({ lat, lng, label: locLabel, waId: waMsgId }) });
+      }
+    } catch (err) {
       console.error('[admin/reply-location] WhatsApp erreur:', err.message);
-    });
+    }
 
     res.json({ message: { id: message.id, meta: message.meta, createdAt: message.created_at } });
   } catch {
