@@ -349,6 +349,9 @@ var _driverRecShouldSend    = false;
 var _driverRecTimerInterval = null;
 var _driverRecSeconds       = 0;
 var _driverIsRecording      = false;
+var _driverRecPaused        = false;
+var _driverRecPreviewUrl    = null;
+var _driverRecPreviewAudio  = null;
 var _ccMapInitialized = false;
 
 function showPage(pageId) {
@@ -666,19 +669,32 @@ async function sendDriverChatMsg(content, type) {
 }
 
 async function startDriverRecording() {
-  if (_driverIsRecording) return;
+  if (_driverIsRecording || _driverRecPaused) return;
   try {
     var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     _driverMicChunks = [];
+    _driverRecPaused = false;
+    _driverRecPreviewUrl = null;
+    _driverRecPreviewAudio = null;
     var mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
     _driverMicRecorder = new MediaRecorder(stream, { mimeType: mimeType });
-    _driverMicRecorder.ondataavailable = function(e) { if (e.data.size > 0) _driverMicChunks.push(e.data); };
+    _driverMicRecorder.ondataavailable = function(e) {
+      if (e.data.size > 0) {
+        _driverMicChunks.push(e.data);
+        if (_driverRecPaused) {
+          if (_driverRecPreviewUrl) URL.revokeObjectURL(_driverRecPreviewUrl);
+          _driverRecPreviewUrl = URL.createObjectURL(new Blob(_driverMicChunks, { type: mimeType }));
+        }
+      }
+    };
     _driverMicRecorder.onstop = async function() {
       stream.getTracks().forEach(function(t) { t.stop(); });
       if (_driverRecShouldSend) {
         var blob = new Blob(_driverMicChunks, { type: mimeType });
         await _uploadAndSendDriverAudio(blob);
       }
+      if (_driverRecPreviewUrl) { URL.revokeObjectURL(_driverRecPreviewUrl); _driverRecPreviewUrl = null; }
+      if (_driverRecPreviewAudio) { _driverRecPreviewAudio.pause(); _driverRecPreviewAudio = null; }
     };
     _driverMicRecorder.start();
     _driverIsRecording = true;
@@ -702,22 +718,74 @@ function _stopDriverRecordingUI() {
   if (_driverRecTimerInterval) { clearInterval(_driverRecTimerInterval); _driverRecTimerInterval = null; }
   var recBar = document.getElementById('cc-driver-rec-bar');
   var replyBar = document.getElementById('cc-driver-reply-bar');
-  if (recBar) recBar.style.display = 'none';
+  if (recBar) { recBar.style.display = 'none'; recBar.classList.remove('paused'); }
   if (replyBar) replyBar.style.display = 'flex';
   _driverIsRecording = false;
+  _driverRecPaused = false;
+}
+
+function pauseDriverRecording() {
+  if (!_driverMicRecorder || !_driverIsRecording || _driverRecPaused) return;
+  _driverRecPaused = true;
+  _driverMicRecorder.requestData();
+  _driverMicRecorder.pause();
+  clearInterval(_driverRecTimerInterval); _driverRecTimerInterval = null;
+  var recBar = document.getElementById('cc-driver-rec-bar');
+  if (recBar) recBar.classList.add('paused');
+  var btn = document.getElementById('cc-driver-play-btn');
+  if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-driver-play-ico"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+}
+
+function resumeDriverRecording() {
+  if (!_driverMicRecorder || !_driverRecPaused) return;
+  if (_driverRecPreviewAudio) { _driverRecPreviewAudio.pause(); _driverRecPreviewAudio = null; }
+  var btn = document.getElementById('cc-driver-play-btn');
+  if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-driver-play-ico"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  _driverRecPaused = false;
+  _driverMicRecorder.resume();
+  var recBar = document.getElementById('cc-driver-rec-bar');
+  if (recBar) recBar.classList.remove('paused');
+  _driverRecTimerInterval = setInterval(function() {
+    _driverRecSeconds++;
+    var m = Math.floor(_driverRecSeconds / 60), s = _driverRecSeconds % 60;
+    var el = document.getElementById('cc-driver-rec-timer');
+    if (el) el.textContent = m + ':' + String(s).padStart(2, '0');
+  }, 1000);
+}
+
+function toggleDriverRecordingPreview() {
+  if (!_driverRecPreviewUrl) return;
+  if (!_driverRecPreviewAudio) {
+    _driverRecPreviewAudio = new Audio(_driverRecPreviewUrl);
+    _driverRecPreviewAudio.onended = function() {
+      _driverRecPreviewAudio = null;
+      var btn = document.getElementById('cc-driver-play-btn');
+      if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-driver-play-ico"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+    };
+  }
+  var btn = document.getElementById('cc-driver-play-btn');
+  if (_driverRecPreviewAudio.paused) {
+    _driverRecPreviewAudio.play();
+    if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-driver-play-ico"><rect x="5" y="3" width="4" height="18" rx="1"/><rect x="15" y="3" width="4" height="18" rx="1"/></svg>';
+  } else {
+    _driverRecPreviewAudio.pause();
+    if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-driver-play-ico"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  }
 }
 
 function stopDriverRecording() {
-  if (_driverMicRecorder && _driverIsRecording) {
+  if (_driverMicRecorder && (_driverIsRecording || _driverRecPaused)) {
     _driverRecShouldSend = true;
+    if (_driverRecPaused) _driverMicRecorder.resume();
     _driverMicRecorder.stop();
     _stopDriverRecordingUI();
   }
 }
 
 function cancelDriverRecording() {
-  if (_driverMicRecorder && _driverIsRecording) {
+  if (_driverMicRecorder && (_driverIsRecording || _driverRecPaused)) {
     _driverRecShouldSend = false;
+    if (_driverRecPaused) _driverMicRecorder.resume();
     _driverMicRecorder.stop();
     _stopDriverRecordingUI();
   }
@@ -3036,6 +3104,9 @@ var _isRecording      = false;
 var _recShouldSend    = false;
 var _recTimerInterval = null;
 var _recSeconds       = 0;
+var _recPaused        = false;
+var _recPreviewUrl    = null;
+var _recPreviewAudio  = null;
 
 async function toggleRecording() {
   if (_isRecording) { stopRecording(); } else { await startRecording(); }
@@ -3045,15 +3116,28 @@ async function startRecording() {
   try {
     var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     _audioChunks = [];
+    _recPaused = false;
+    _recPreviewUrl = null;
+    _recPreviewAudio = null;
     var mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
     _mediaRecorder = new MediaRecorder(stream, { mimeType });
-    _mediaRecorder.ondataavailable = function (e) { if (e.data.size > 0) _audioChunks.push(e.data); };
+    _mediaRecorder.ondataavailable = function (e) {
+      if (e.data.size > 0) {
+        _audioChunks.push(e.data);
+        if (_recPaused) {
+          if (_recPreviewUrl) URL.revokeObjectURL(_recPreviewUrl);
+          _recPreviewUrl = URL.createObjectURL(new Blob(_audioChunks, { type: mimeType }));
+        }
+      }
+    };
     _mediaRecorder.onstop = async function () {
       stream.getTracks().forEach(function (t) { t.stop(); });
       if (_recShouldSend) {
         var blob = new Blob(_audioChunks, { type: mimeType });
         await uploadAndSendAudio(blob);
       }
+      if (_recPreviewUrl) { URL.revokeObjectURL(_recPreviewUrl); _recPreviewUrl = null; }
+      if (_recPreviewAudio) { _recPreviewAudio.pause(); _recPreviewAudio = null; }
     };
     _mediaRecorder.start();
     _isRecording = true;
@@ -3086,12 +3170,63 @@ function _stopRecordingUI() {
   var replyBar = document.getElementById('cc-reply-bar');
   if (replyBar) replyBar.style.display = '';
   var recBar = document.getElementById('cc-rec-bar');
-  if (recBar) recBar.style.display = 'none';
+  if (recBar) { recBar.style.display = 'none'; recBar.classList.remove('paused'); }
+  _recPaused = false;
+}
+
+function pauseRecording() {
+  if (!_mediaRecorder || !_isRecording || _recPaused) return;
+  _recPaused = true;
+  _mediaRecorder.requestData();
+  _mediaRecorder.pause();
+  clearInterval(_recTimerInterval); _recTimerInterval = null;
+  var recBar = document.getElementById('cc-rec-bar');
+  if (recBar) recBar.classList.add('paused');
+  var btn = document.getElementById('cc-rec-play-btn');
+  if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-rec-play-ico"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+}
+
+function resumeRecording() {
+  if (!_mediaRecorder || !_recPaused) return;
+  if (_recPreviewAudio) { _recPreviewAudio.pause(); _recPreviewAudio = null; }
+  var btn = document.getElementById('cc-rec-play-btn');
+  if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-rec-play-ico"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  _recPaused = false;
+  _mediaRecorder.resume();
+  var recBar = document.getElementById('cc-rec-bar');
+  if (recBar) recBar.classList.remove('paused');
+  _recTimerInterval = setInterval(function () {
+    _recSeconds++;
+    var m = Math.floor(_recSeconds / 60), s = _recSeconds % 60;
+    var el = document.getElementById('cc-rec-timer');
+    if (el) el.textContent = m + ':' + String(s).padStart(2, '0');
+  }, 1000);
+}
+
+function toggleRecordingPreview() {
+  if (!_recPreviewUrl) return;
+  if (!_recPreviewAudio) {
+    _recPreviewAudio = new Audio(_recPreviewUrl);
+    _recPreviewAudio.onended = function () {
+      _recPreviewAudio = null;
+      var btn = document.getElementById('cc-rec-play-btn');
+      if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-rec-play-ico"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+    };
+  }
+  var btn = document.getElementById('cc-rec-play-btn');
+  if (_recPreviewAudio.paused) {
+    _recPreviewAudio.play();
+    if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-rec-play-ico"><rect x="5" y="3" width="4" height="18" rx="1"/><rect x="15" y="3" width="4" height="18" rx="1"/></svg>';
+  } else {
+    _recPreviewAudio.pause();
+    if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" id="cc-rec-play-ico"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+  }
 }
 
 function stopRecording() {
-  if (_mediaRecorder && _isRecording) {
+  if (_mediaRecorder && (_isRecording || _recPaused)) {
     _recShouldSend = true;
+    if (_recPaused) _mediaRecorder.resume();
     _mediaRecorder.stop();
     _isRecording = false;
     _stopRecordingUI();
@@ -3099,8 +3234,9 @@ function stopRecording() {
 }
 
 function cancelRecording() {
-  if (_mediaRecorder && _isRecording) {
+  if (_mediaRecorder && (_isRecording || _recPaused)) {
     _recShouldSend = false;
+    if (_recPaused) _mediaRecorder.resume();
     _mediaRecorder.stop();
     _isRecording = false;
     _stopRecordingUI();

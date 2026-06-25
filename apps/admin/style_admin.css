@@ -957,6 +957,27 @@ input:focus, textarea:focus { outline: none; }
   from { opacity: 0.25; transform: scaleY(0.35); }
   to   { opacity: 0.9;  transform: scaleY(1); }
 }
+/* Boutons pause / play / resume partagés */
+.cc-rec-ctrl-btn {
+  flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%;
+  border: none; background: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-1); transition: background .15s;
+}
+.cc-rec-ctrl-btn:hover { background: rgba(0,0,0,.07); }
+
+/* Par défaut (enregistrement en cours) : cacher play et resume */
+.cc-rec-play-btn   { display: none !important; }
+.cc-rec-resume-btn { display: none !important; }
+.cc-rec-pause-btn  { display: inline-flex; }
+
+/* État pausé : swap des boutons + waveform figée */
+.cc-rec-bar.paused .cc-rec-pause-btn  { display: none !important; }
+.cc-rec-bar.paused .cc-rec-play-btn   { display: inline-flex !important; }
+.cc-rec-bar.paused .cc-rec-resume-btn { display: inline-flex !important; }
+.cc-rec-bar.paused .cc-rec-dot        { animation: none; opacity: 0.25; }
+.cc-rec-bar.paused .cc-rec-bar-w      { animation-play-state: paused; opacity: 0.35; }
+
 .cc-rec-send {
   flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
   border: none; background: var(--text-1); color: #fff;
