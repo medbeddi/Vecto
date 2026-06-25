@@ -10,11 +10,12 @@ import {
 } from 'react-native';
 import { Audio } from 'expo-av';
 import { PRIMARY, TEXT, TEXT2, BUBBLE_DRIVER, BUBBLE_CLIENT } from '../lib/config';
+import { api } from '../lib/api';
 import type { Message } from '../types';
 
-type Props = { message: Message; onLongPress?: () => void };
+type Props = { message: Message; onLongPress?: () => void; onPressImage?: (url: string) => void };
 
-export function MessageBubble({ message, onLongPress }: Props) {
+export function MessageBubble({ message, onLongPress, onPressImage }: Props) {
   const isDriver = message.senderRole === 'driver';
   const reactions = message.meta?.reactions ?? {};
   const reactionEntries = Object.entries(reactions);
@@ -27,7 +28,7 @@ export function MessageBubble({ message, onLongPress }: Props) {
         delayLongPress={350}
       >
         <View style={[styles.bubble, isDriver ? styles.bubbleDriver : styles.bubbleClient]}>
-          <BubbleContent message={message} isDriver={isDriver} />
+          <BubbleContent message={message} isDriver={isDriver} onPressImage={onPressImage} />
           <Text style={[styles.time, isDriver ? styles.timeDriver : styles.timeClient]}>
             {formatTime(message.createdAt)}
           </Text>
@@ -47,14 +48,14 @@ export function MessageBubble({ message, onLongPress }: Props) {
   );
 }
 
-function BubbleContent({ message, isDriver }: Props & { isDriver: boolean }) {
+function BubbleContent({ message, isDriver, onPressImage }: Props & { isDriver: boolean }) {
   switch (message.type) {
     case 'text':
       return <Text style={[styles.text, isDriver ? styles.textDriver : styles.textClient]}>{message.content}</Text>;
     case 'image':
-      return <ImageContent url={message.content} />;
+      return <ImageContent url={message.content} onPress={onPressImage} />;
     case 'audio':
-      return <AudioContent url={message.content} isDriver={isDriver} />;
+      return <AudioContent url={message.meta?.r2Key ?? message.content} isDriver={isDriver} />;
     case 'location':
       return <LocationContent meta={message.meta} isDriver={isDriver} />;
     default:
@@ -62,9 +63,24 @@ function BubbleContent({ message, isDriver }: Props & { isDriver: boolean }) {
   }
 }
 
-function ImageContent({ url }: { url: string | null }) {
+function ImageContent({ url, onPress }: { url: string | null; onPress?: (url: string) => void }) {
   if (!url) return <Text style={styles.textClient}>[image indisponible]</Text>;
-  return <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />;
+  return (
+    <TouchableOpacity onPress={() => onPress?.(url)} activeOpacity={0.85} disabled={!onPress}>
+      <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />
+    </TouchableOpacity>
+  );
+}
+
+async function resolveAudioUrl(urlOrKey: string | null): Promise<string | null> {
+  if (!urlOrKey) return null;
+  if (urlOrKey.startsWith('http')) return urlOrKey;
+  try {
+    const { url } = await api<{ url: string }>(`/api/media/url?key=${encodeURIComponent(urlOrKey)}`);
+    return url;
+  } catch {
+    return null;
+  }
 }
 
 function AudioContent({ url, isDriver }: { url: string | null; isDriver: boolean }) {
@@ -87,7 +103,9 @@ function AudioContent({ url, isDriver }: { url: string | null; isDriver: boolean
     try {
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
       if (!soundRef.current) {
-        const { sound } = await Audio.Sound.createAsync({ uri: url });
+        const resolvedUrl = await resolveAudioUrl(url);
+        if (!resolvedUrl) return;
+        const { sound } = await Audio.Sound.createAsync({ uri: resolvedUrl });
         soundRef.current = sound;
         sound.setOnPlaybackStatusUpdate((s) => {
           if (s.isLoaded && s.didJustFinish) setPlaying(false);

@@ -4,7 +4,7 @@ import { randomInt } from 'crypto';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { hashWaId, encryptWaId, sanitizeText } from '../services/pii-filter.js';
-import { downloadFromMeta, uploadToR2, extFromMime, getSignedMediaUrl } from '../services/media.js';
+import { downloadFromMeta, uploadToR2, extFromMime } from '../services/media.js';
 import { getActiveDelivery, createAdminQueueDelivery } from '../services/delivery.js';
 import { emitClientMessage, emitIncomingCall, emitIncomingText, emitNewOrder, emitMessageReaction } from '../services/socket.js';
 import { notifyAssignedDriver } from '../services/fcm.js';
@@ -168,14 +168,15 @@ async function processMessage(msg) {
     if (!delivery) delivery = await createAdminQueueDelivery(client.id);
 
     // Upload R2 avec le vrai deliveryId
-    let signedUrl = null;
+    let audioContent = null;
     let audioMeta = { duration: msg.audio?.duration ?? null };
     if (audioBuffer) {
       try {
         const ext = extFromMime(mimeType);
         const key = `media/${delivery.id}/audio/${Date.now()}_${mediaId}.${ext}`;
         await uploadToR2(audioBuffer, key, mimeType);
-        signedUrl = await getSignedMediaUrl(key);
+        // Stocker URL publique permanente si disponible, sinon la clé (URL fraîche générée à la demande)
+        audioContent = env.R2_PUBLIC_URL ? `${env.R2_PUBLIC_URL}/${key}` : key;
         audioMeta.r2Key = key;
       } catch (err) {
         console.warn('[webhook] audio R2 erreur:', err.message);
@@ -183,7 +184,7 @@ async function processMessage(msg) {
     }
 
     const [message] = await db('messages')
-      .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'audio', content: signedUrl, meta: JSON.stringify(mergeWaId(audioMeta, msg.id)) })
+      .insert({ delivery_id: delivery.id, sender_role: 'client', type: 'audio', content: audioContent, meta: JSON.stringify(mergeWaId(audioMeta, msg.id)) })
       .returning('*');
 
     emitIncomingText(delivery, message, client.alias);
@@ -279,11 +280,12 @@ async function extractContent(msg, deliveryId) {
         const ext = extFromMime(mimeType);
         const key = `media/${deliveryId}/${msg.type}/${Date.now()}_${mediaId}.${ext}`;
         await uploadToR2(buffer, key, mimeType);
-        const signedUrl = await getSignedMediaUrl(key);
+        // URL publique permanente si disponible, sinon la clé R2 (URL fraîche à la demande)
+        const content = env.R2_PUBLIC_URL ? `${env.R2_PUBLIC_URL}/${key}` : key;
         const meta = msg.type === 'audio'
           ? { duration: msg.audio?.duration ?? null, r2Key: key }
           : { r2Key: key };
-        return { content: signedUrl, meta };
+        return { content, meta };
       } catch (err) {
         console.warn(`[webhook] media ${msg.type} non stocké: ${err.message}`);
         return { content: null, meta: { raw_type: msg.type } };

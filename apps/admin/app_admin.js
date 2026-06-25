@@ -532,6 +532,12 @@ function _driverMsgBubble(m) {
   var inner = '';
   if (type === 'audio') {
     var uid = 'aud_' + (m.id || Date.now()).toString().replace(/-/g,'');
+    var r2KeyD = m.meta && m.meta.r2Key;
+    var isKeyD = m.content && !m.content.startsWith('http');
+    var audioKeyD = r2KeyD || (isKeyD ? m.content : null);
+    var audioAttrD = audioKeyD
+      ? 'data-audio-key="' + escHtml(audioKeyD) + '"'
+      : 'src="' + escHtml(m.content) + '" preload="metadata"';
     inner = '<div class="cc-audio-wrap" id="wrp_' + uid + '">'
           + '<button class="cc-audio-btn" onclick="toggleAudioMsg(\'' + uid + '\')">'
           + '<span class="cc-audio-icon" id="ico_' + uid + '">▶</span>'
@@ -542,7 +548,7 @@ function _driverMsgBubble(m) {
           + '</div>'
           + '<span class="cc-audio-dur" id="dur_' + uid + '">0:00</span>'
           + '</div></div>'
-          + '<audio id="' + uid + '" src="' + escHtml(m.content) + '" preload="metadata" style="display:none"'
+          + '<audio id="' + uid + '" ' + audioAttrD + ' style="display:none"'
           + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0,el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"'
           + ' onended="(function(){var ic=document.getElementById(\'ico_' + uid + '\');if(ic)ic.textContent=\'▶\';var w=document.getElementById(\'wrp_' + uid + '\');if(w)w.classList.remove(\'playing\')}).call(this)"></audio>';
   } else if (type === 'image') {
@@ -594,9 +600,20 @@ function _driverMsgBubble(m) {
     + '</div></div>';
 }
 
-function toggleAudioMsg(uid) {
+async function toggleAudioMsg(uid) {
   var audio = document.getElementById(uid);
   if (!audio) return;
+  // Si le src est vide (clé R2), résoudre via l'endpoint avant de jouer
+  var key = audio.getAttribute('data-audio-key');
+  if (key && (!audio.src || audio.src === window.location.href)) {
+    try {
+      var r = await fetch(API + '/api/media/url?key=' + encodeURIComponent(key), {
+        headers: { Authorization: 'Bearer ' + _token }
+      });
+      var d = await r.json();
+      if (d.url) { audio.src = d.url; audio.load(); }
+    } catch (e) { return; }
+  }
   if (audio.paused) {
     document.querySelectorAll('audio').forEach(function(a) {
       if (a.id !== uid && !a.paused) {
@@ -2370,6 +2387,16 @@ function _buildMsgBody(m) {
   } else if (m.type === 'audio') {
     if (m.content) {
       var uid = 'aud_' + (m.id || Date.now()).toString().replace(/-/g, '');
+      // Si meta.r2Key existe → URL signée fraîche à la demande (couvre les anciens URLs expirés aussi)
+      // Si content est une clé (pas http) → URL fraîche à la demande
+      // Sinon → URL permanente directe
+      var r2KeyCC = m.meta && m.meta.r2Key;
+      var isKeyCC = !m.content.startsWith('http');
+      var audioKeyCC = r2KeyCC || (isKeyCC ? m.content : null);
+      var audioAttr = audioKeyCC
+        ? 'data-audio-key="' + escHtml(audioKeyCC) + '"'
+        : 'src="' + escHtml(m.content) + '" preload="metadata"';
+      var fwdContent = r2KeyCC || m.content; // clé prioritaire pour le forward (backend gère)
       body = '<div class="cc-audio-wrap" id="wrp_' + uid + '">'
            + '<button class="cc-audio-btn" onclick="toggleAudioMsg(\'' + uid + '\')" title="Lire / Pause">'
            + '<span class="cc-audio-icon" id="ico_' + uid + '">▶</span>'
@@ -2380,11 +2407,11 @@ function _buildMsgBody(m) {
            + '</div>'
            + '<span class="cc-audio-dur" id="dur_' + uid + '">0:00</span>'
            + '</div></div>'
-           + '<audio id="' + uid + '" src="' + escHtml(m.content) + '" preload="metadata" style="display:none"'
+           + '<audio id="' + uid + '" ' + audioAttr + ' style="display:none"'
            + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0;var el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"'
            + ' onended="(function(){var ic=document.getElementById(\'ico_' + uid + '\');if(ic)ic.textContent=\'▶\';var w=document.getElementById(\'wrp_' + uid + '\');if(w)w.classList.remove(\'playing\')}).call(this)"></audio>';
       if (side === 'client') {
-        body += '<button class="cc-forward-btn" onclick="forwardAudioToDrivers(\'' + escHtml(m.content) + '\')" title="Utiliser ce vocal comme message de course">'
+        body += '<button class="cc-forward-btn" onclick="forwardAudioToDrivers(\'' + escHtml(fwdContent) + '\')" title="Utiliser ce vocal comme message de course">'
           + '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg>'
           + 'Transférer aux livreurs</button>';
       }
@@ -3421,14 +3448,23 @@ async function uploadLaunchAudio(blob) {
   finally { if (btn) { btn.disabled = false; } }
 }
 
-function forwardAudioToDrivers(audioUrl) {
+async function forwardAudioToDrivers(audioUrl) {
   openLaunchPanel();
-  setTimeout(function () {
-    _forwardedAudioUrl = audioUrl;
+  _forwardedAudioUrl = audioUrl; // stocker clé ou URL (le backend gère les deux)
+  setTimeout(async function () {
     var preview = document.getElementById('cc-launch-audio-preview');
     var player  = document.getElementById('cc-launch-audio-player');
     if (preview) preview.style.display = 'block';
-    if (player)  player.src = audioUrl;
+    // Résoudre la clé R2 en URL fraîche pour le player local
+    var playUrl = audioUrl;
+    if (audioUrl && !audioUrl.startsWith('http')) {
+      try {
+        var r = await fetch(API + '/api/media/url?key=' + encodeURIComponent(audioUrl), { headers: { Authorization: 'Bearer ' + _token } });
+        var d = await r.json();
+        if (d.url) playUrl = d.url;
+      } catch (e) {}
+    }
+    if (player) player.src = playUrl;
   }, 350);
 }
 

@@ -25,6 +25,7 @@ import { useDeliveriesStore } from '../store/deliveries.store';
 import { socketService } from '../lib/socket';
 import { api, uploadFile } from '../lib/api';
 import { MessageBubble } from '../components/MessageBubble';
+import { ImageViewer } from '../components/ImageViewer';
 import { PRIMARY, BG, CARD, SURFACE, TEXT, TEXT2, BORDER } from '../lib/config';
 import { Icon } from '../components/Icon';
 import type { Message, RootStackParamList } from '../types';
@@ -54,6 +55,7 @@ export default function ChatScreen() {
   const [previewSound, setPreviewSound] = useState<Audio.Sound | null>(null);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [reactionMsgId, setReactionMsgId] = useState<string | null>(null);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [recSeconds, setRecSeconds] = useState(0);
   const recTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -472,11 +474,21 @@ export default function ChatScreen() {
             <MessageBubble
               message={item}
               onLongPress={() => setReactionMsgId(item.id)}
+              onPressImage={(url) => setViewerUrl(url)}
             />
           )}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
           style={{ flex: 1 }}
+        />
+      )}
+
+      {/* Image viewer plein écran */}
+      {viewerUrl !== null && (
+        <ImageViewer
+          url={viewerUrl}
+          visible={viewerUrl !== null}
+          onClose={() => setViewerUrl(null)}
         />
       )}
 

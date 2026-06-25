@@ -7,7 +7,7 @@ import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import jwt from 'jsonwebtoken';
 import { requireAuth } from '../middleware/auth.js';
-import { uploadToR2, extFromMime } from '../services/media.js';
+import { uploadToR2, extFromMime, getSignedMediaUrl } from '../services/media.js';
 import { env } from '../config/env.js';
 
 function requireAnyAuth(req, res, next) {
@@ -94,8 +94,7 @@ async function handleUpload(req, res) {
     }
   }
 
-  const base = env.PUBLIC_URL;
-  if (!base) return res.status(500).json({ error: 'PUBLIC_URL_NOT_CONFIGURED' });
+  const base = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
   res.json({ url: `${base}/uploads/${path.basename(filePath)}`, key: path.basename(filePath) });
 }
 
@@ -103,5 +102,19 @@ const router = Router();
 
 router.post('/upload', requireAuth, upload.single('file'), handleUpload);
 router.post('/upload-public', requireAnyAuth, upload.single('file'), handleUpload);
+
+// Génère une URL signée fraîche pour une clé R2 (pour les médias WhatsApp entrants)
+router.get('/media/url', requireAnyAuth, async (req, res) => {
+  const { key } = req.query;
+  if (!key || typeof key !== 'string') return res.status(400).json({ error: 'KEY_REQUIRED' });
+  if (key.startsWith('http')) return res.json({ url: key }); // déjà une URL publique
+  try {
+    const url = await getSignedMediaUrl(key, 3600);
+    res.json({ url });
+  } catch (err) {
+    console.error('[media/url] erreur:', err.message);
+    res.status(500).json({ error: 'MEDIA_ERROR' });
+  }
+});
 
 export default router;

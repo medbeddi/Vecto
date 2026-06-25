@@ -61,6 +61,8 @@ Notifications.setNotificationHandler({
 
 // deliveryId issu d'une notification qui a ouvert l'app (app était fermée)
 let _pendingNotifDeliveryId: string | null = null;
+// Commande reçue via socket pendant que le driver était sur un autre onglet
+let _pendingSocketOrder: IncomingOrder | null = null;
 
 export default function MainScreen() {
   const navigation = useNavigation<Nav>();
@@ -146,11 +148,32 @@ export default function MainScreen() {
       }
     });
 
+    // Listener permanent pour new_order — actif même si CoursesTab n'est pas monté
+    const onNewOrderFallback = (order: IncomingOrder) => {
+      useDeliveriesStore.getState().upsertAvailable({
+        id: order.deliveryId,
+        clientAlias: order.clientAlias,
+        createdAt: order.createdAt,
+        broadcastAt: order.broadcastAt ?? null,
+        status: 'pending',
+        description: order.message.content ?? '',
+        initialMediaType: order.message.type,
+        initialMediaUrl: order.message.type === 'audio' ? order.message.content : null,
+        pickupAddress: order.pickupAddress ?? null,
+        dropoffAddress: order.dropoffAddress ?? null,
+        price: order.price ?? null,
+      });
+      _pendingSocketOrder = order;
+      setActiveTab('courses');
+    };
+
     socketService.on('cc_message', onCCMsg as any);
     socketService.on('client_message', onClientMsg);
+    socketService.on('new_order', onNewOrderFallback);
     return () => {
       socketService.off('cc_message', onCCMsg as any);
       socketService.off('client_message', onClientMsg);
+      socketService.off('new_order', onNewOrderFallback);
       notifSub.remove();
     };
   }, [navigation]);
@@ -280,6 +303,28 @@ function CoursesTab() {
           }, 60 * 1000);
         }
       }
+      // Commande reçue via socket pendant qu'on était sur un autre onglet
+      if (_pendingSocketOrder) {
+        const order = _pendingSocketOrder;
+        _pendingSocketOrder = null;
+        setIncomingOrder(order);
+        setModalCountdown(60);
+        if (modalCountdownRef.current) clearInterval(modalCountdownRef.current);
+        modalCountdownRef.current = setInterval(() => {
+          setModalCountdown((prev) => {
+            if (prev <= 1) { clearInterval(modalCountdownRef.current!); return 0; }
+            return prev - 1;
+          });
+        }, 1000);
+        if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
+        modalTimerRef.current = setTimeout(() => {
+          setIncomingOrder((prev) => prev?.deliveryId === order.deliveryId ? null : prev);
+          modalTimerRef.current = null;
+        }, 60 * 1000);
+        if (order.message.type === 'audio' && order.message.content) {
+          playAudio(order.message.content);
+        }
+      }
     });
     loadActiveCourses().then(joinActiveRooms);
     registerFCMToken();
@@ -310,6 +355,7 @@ function CoursesTab() {
     }, 5000);
 
     const onNewOrder = (order: IncomingOrder) => {
+      _pendingSocketOrder = null; // déjà géré ici, effacer pour éviter modal en double au montage
       socketDeliveryIds.current.add(order.deliveryId);
 
       // Check if the order is already visible in the list (rebroadcast of existing card)
@@ -406,11 +452,16 @@ function CoursesTab() {
     } catch {}
   };
 
-  const playAudio = async (url: string) => {
+  const playAudio = async (urlOrKey: string) => {
     try {
       if (soundRef.current) { await soundRef.current.unloadAsync(); soundRef.current = null; }
+      let uri = urlOrKey;
+      if (!urlOrKey.startsWith('http')) {
+        const { url } = await api<{ url: string }>(`/api/media/url?key=${encodeURIComponent(urlOrKey)}`);
+        uri = url;
+      }
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
-      const { sound } = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: true });
+      const { sound } = await Audio.Sound.createAsync({ uri }, { shouldPlay: true });
       soundRef.current = sound;
       sound.setOnPlaybackStatusUpdate((s) => {
         if (s.isLoaded && s.didJustFinish) { sound.unloadAsync(); soundRef.current = null; }
@@ -1049,16 +1100,22 @@ function CCBubble({ message }: { message: CCMessage }) {
   }, []);
 
   const togglePlay = async () => {
-    if (!message.content) return;
+    const rawUrl = message.meta?.r2Key ?? message.content;
+    if (!rawUrl) return;
     try {
       if (!soundRef.current) {
+        let uri = rawUrl;
+        if (!rawUrl.startsWith('http')) {
+          const { url } = await api<{ url: string }>(`/api/media/url?key=${encodeURIComponent(rawUrl)}`);
+          uri = url;
+        }
         await Audio.setAudioModeAsync({
           playsInSilentModeIOS: true,
           allowsRecordingIOS: false,
           staysActiveInBackground: false,
         });
         const { sound, status } = await Audio.Sound.createAsync(
-          { uri: message.content },
+          { uri },
           { shouldPlay: true, progressUpdateIntervalMillis: 500 },
           (s) => {
             if (s.isLoaded) {
