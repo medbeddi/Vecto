@@ -4,7 +4,7 @@ import { randomInt } from 'crypto';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { hashWaId, encryptWaId, sanitizeText } from '../services/pii-filter.js';
-import { downloadFromMeta, uploadToR2WithRetry, extFromMime } from '../services/media.js';
+import { downloadFromMeta, uploadToR2WithRetry, extFromMime, saveToLocalDisk } from '../services/media.js';
 import { getActiveDelivery, createAdminQueueDelivery } from '../services/delivery.js';
 import { emitClientMessage, emitIncomingCall, emitIncomingText, emitNewOrder, emitMessageReaction } from '../services/socket.js';
 import { notifyAssignedDriver } from '../services/fcm.js';
@@ -179,15 +179,26 @@ async function processMessage(msg) {
     let audioContent = null;
     let audioMeta = { duration: msg.audio?.duration ?? null, metaMediaId: mediaId };
     if (audioBuffer) {
+      const ext = extFromMime(mimeType);
+      const key = `media/${delivery.id}/audio/${Date.now()}_${mediaId}.${ext}`;
       try {
-        const ext = extFromMime(mimeType);
-        const key = `media/${delivery.id}/audio/${Date.now()}_${mediaId}.${ext}`;
         await uploadToR2WithRetry(audioBuffer, key, mimeType);
         audioContent = env.R2_PUBLIC_URL ? `${env.R2_PUBLIC_URL}/${key}` : key;
         audioMeta.r2Key = key;
       } catch (err) {
         console.error('[webhook] audio R2 erreur après retry:', err.message);
-        audioMeta.uploadFailed = true;
+        if (env.PUBLIC_URL) {
+          try {
+            const filename = saveToLocalDisk(audioBuffer, key);
+            audioContent = `${env.PUBLIC_URL}/uploads/${filename}`;
+            console.info('[webhook] audio sauvegardé localement (fallback disk):', filename);
+          } catch (localErr) {
+            console.error('[webhook] local disk fallback échoué:', localErr.message);
+            audioMeta.uploadFailed = true;
+          }
+        } else {
+          audioMeta.uploadFailed = true;
+        }
       }
     }
 
@@ -283,10 +294,11 @@ async function extractContent(msg, deliveryId) {
     case 'image': {
       const mediaId  = msg[msg.type]?.id;
       const mimeType = msg[msg.type]?.mime_type || 'application/octet-stream';
+      const ext = extFromMime(mimeType);
+      const key = `media/${deliveryId}/${msg.type}/${Date.now()}_${mediaId}.${ext}`;
+      let buffer = null;
       try {
-        const { buffer } = await downloadFromMeta(mediaId);
-        const ext = extFromMime(mimeType);
-        const key = `media/${deliveryId}/${msg.type}/${Date.now()}_${mediaId}.${ext}`;
+        ({ buffer } = await downloadFromMeta(mediaId));
         await uploadToR2WithRetry(buffer, key, mimeType);
         const content = env.R2_PUBLIC_URL ? `${env.R2_PUBLIC_URL}/${key}` : key;
         const meta = msg.type === 'audio'
@@ -294,7 +306,19 @@ async function extractContent(msg, deliveryId) {
           : { r2Key: key };
         return { content, meta };
       } catch (err) {
-        console.error(`[webhook] media ${msg.type} non stocké après retry: ${err.message}`);
+        console.error(`[webhook] media ${msg.type} R2 échoué: ${err.message}`);
+        // Fallback disk local si R2 indisponible
+        if (buffer && env.PUBLIC_URL) {
+          try {
+            const filename = saveToLocalDisk(buffer, key);
+            const content = `${env.PUBLIC_URL}/uploads/${filename}`;
+            const meta = msg.type === 'audio' ? { duration: msg.audio?.duration ?? null } : {};
+            console.info(`[webhook] media ${msg.type} sauvegardé localement (fallback disk):`, filename);
+            return { content, meta };
+          } catch (localErr) {
+            console.error('[webhook] local disk fallback échoué:', localErr.message);
+          }
+        }
         return { content: null, meta: { raw_type: msg.type, metaMediaId: mediaId, uploadFailed: true } };
       }
     }

@@ -1,7 +1,14 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { writeFileSync, mkdirSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import axios from 'axios';
 import { env } from '../config/env.js';
+
+const __dirnameMedia = path.dirname(fileURLToPath(import.meta.url));
+export const LOCAL_UPLOADS_DIR = path.join(__dirnameMedia, '../../uploads');
+mkdirSync(LOCAL_UPLOADS_DIR, { recursive: true });
 
 const r2 = env.R2_ENABLED
   ? new S3Client({
@@ -83,6 +90,14 @@ export async function getSignedUploadUrl(key, expiresIn = 300) {
     new PutObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: key }),
     { expiresIn }
   );
+}
+
+// Sauvegarde locale quand R2 est indisponible — fallback disk
+// Retourne le filename plat (slashes remplacés par _)
+export function saveToLocalDisk(buffer, key) {
+  const filename = key.replace(/\//g, '_');
+  writeFileSync(path.join(LOCAL_UPLOADS_DIR, filename), buffer);
+  return filename;
 }
 
 // Dérive l'extension depuis le Content-Type
