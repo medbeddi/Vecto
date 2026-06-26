@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1000999927100",
+    "project_id": "vecto-39bd3",
+    "storage_bucket": "vecto-39bd3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1000999927100:android:a9d82c42b5357caf437239",
+        "android_client_info": {
+          "package_name": "com.medbeddi.vecto.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC6gSk5BKepuuz3ALenLqJWfN5ui1uH314"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -43,3 +43,6 @@ Thumbs.db
 # Firebase config (contain API keys — ne jamais commiter)
 google-services.json
 GoogleService-Info.plist
+
+# Exception: driver app google-services.json nécessaire pour EAS Build
+!apps/driver/google-services.json
