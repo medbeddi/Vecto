@@ -518,6 +518,17 @@ function CoursesTab() {
         </View>
       </View>
 
+      {/* Bandeau hors-ligne */}
+      {!dispo && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerIcon}>🔕</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.offlineBannerTitle}>Vous êtes hors ligne</Text>
+            <Text style={styles.offlineBannerSub}>Vous ne recevrez pas de nouvelles courses tant que vous n'êtes pas disponible.</Text>
+          </View>
+        </View>
+      )}
+
       {/* Modal nouvelle commande */}
       <Modal visible={!!incomingOrder} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -2457,6 +2468,17 @@ const styles = StyleSheet.create({
   headerBrand: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
   dispoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   dispoLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '500' },
+
+  // Bandeau hors-ligne
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    backgroundColor: '#2C2C2E',
+    paddingHorizontal: 16, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  offlineBannerIcon: { fontSize: 20, marginTop: 1 },
+  offlineBannerTitle: { color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 2 },
+  offlineBannerSub: { color: 'rgba(255,255,255,0.5)', fontSize: 12, lineHeight: 17 },
 
   // Section header
   sectionHeader: {
