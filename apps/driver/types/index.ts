@@ -29,6 +29,8 @@ export type MessageMeta = {
   r2Key?: string;
   duration?: number | null;
   reactions?: Record<string, string[]>;
+  uploadFailed?: boolean;
+  waId?: string;
 };
 
 export type Message = {

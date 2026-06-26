@@ -7,7 +7,7 @@ import { spawn } from 'child_process';
 import ffmpegPath from 'ffmpeg-static';
 import jwt from 'jsonwebtoken';
 import { requireAuth } from '../middleware/auth.js';
-import { uploadToR2, extFromMime, getSignedMediaUrl } from '../services/media.js';
+import { uploadToR2WithRetry, extFromMime, getSignedMediaUrl } from '../services/media.js';
 import { env } from '../config/env.js';
 
 function requireAnyAuth(req, res, next) {
@@ -86,7 +86,7 @@ async function handleUpload(req, res) {
       const ext = extFromMime(mimetype) || path.extname(filePath).slice(1) || 'bin';
       const key = `uploads/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
       const buffer = readFileSync(filePath);
-      await uploadToR2(buffer, key, mimetype);
+      await uploadToR2WithRetry(buffer, key, mimetype);
       try { unlinkSync(filePath); } catch {}
       return res.json({ url: `${env.R2_PUBLIC_URL}/${key}`, key });
     } catch (err) {

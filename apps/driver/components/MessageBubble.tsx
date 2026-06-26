@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Linking,
   StyleSheet,
@@ -93,12 +94,12 @@ function AudioContent({ url, isDriver, uploadFailed }: { url: string | null; isD
     return () => { soundRef.current?.unloadAsync(); };
   }, []);
 
-  if (!url && uploadFailed) {
-    return <Text style={[styles.text, isDriver ? styles.textDriver : styles.textClient]}>⚠ Audio non reçu (erreur upload)</Text>;
+  if (!url) {
+    const msg = uploadFailed ? '⚠ Audio non reçu (erreur upload)' : '⚠ Audio indisponible';
+    return <Text style={[styles.text, isDriver ? styles.textDriver : styles.textClient]}>{msg}</Text>;
   }
 
   const toggle = async () => {
-    if (!url) return;
     if (playing) {
       await soundRef.current?.pauseAsync();
       setPlaying(false);
@@ -109,7 +110,10 @@ function AudioContent({ url, isDriver, uploadFailed }: { url: string | null; isD
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true, allowsRecordingIOS: false });
       if (!soundRef.current) {
         const resolvedUrl = await resolveAudioUrl(url);
-        if (!resolvedUrl) return;
+        if (!resolvedUrl) {
+          Alert.alert('Erreur', 'Impossible de charger cet audio.');
+          return;
+        }
         const { sound, status } = await Audio.Sound.createAsync({ uri: resolvedUrl });
         soundRef.current = sound;
         if (status.isLoaded && status.durationMillis) setDuration(status.durationMillis);
@@ -123,6 +127,9 @@ function AudioContent({ url, isDriver, uploadFailed }: { url: string | null; isD
       }
       await soundRef.current.playAsync();
       setPlaying(true);
+    } catch {
+      Alert.alert('Erreur', 'Impossible de lire ce message audio.');
+      soundRef.current = null;
     } finally {
       setLoading(false);
     }
