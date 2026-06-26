@@ -5,7 +5,7 @@ import { emitOrderTaken, emitOrderAssigned } from './socket.js';
 export async function getActiveDelivery(clientId) {
   return db('deliveries')
     .where({ client_id: clientId })
-    .whereIn('status', ['pending', 'assigned', 'admin_queue'])
+    .whereIn('status', ['pending', 'assigned', 'admin_queue', 'in_progress'])
     .orderBy('created_at', 'desc')
     .first();
 }

@@ -321,9 +321,6 @@ function CoursesTab() {
           setIncomingOrder((prev) => prev?.deliveryId === order.deliveryId ? null : prev);
           modalTimerRef.current = null;
         }, 60 * 1000);
-        if (order.message.type === 'audio' && order.message.content) {
-          playAudio(order.message.content);
-        }
       }
     });
     loadActiveCourses().then(joinActiveRooms);
@@ -382,9 +379,6 @@ function CoursesTab() {
           modalTimerRef.current = null;
         }, 60 * 1000);
 
-        if (order.message.type === 'audio' && order.message.content) {
-          playAudio(order.message.content);
-        }
         Notifications.scheduleNotificationAsync({
           content: {
             title: '🛵 Nouvelle course',
@@ -789,10 +783,11 @@ function AdminChatTab() {
     };
 
     const pollId = setInterval(() => {
+      if (socketService.connected) return;
       api<{ messages: CCMessage[] }>('/api/drivers/cc-chat')
         .then((d) => merge(d.messages ?? []))
         .catch(() => {});
-    }, 2000);
+    }, 10000);
 
     const onMsg = (msg: CCMessage) => {
       setMessages((prev) => {
@@ -909,7 +904,11 @@ function AdminChatTab() {
     if (!snd) {
       const { sound } = await Audio.Sound.createAsync({ uri });
       sound.setOnPlaybackStatusUpdate((st) => {
-        if (st.isLoaded && st.didJustFinish) { setPreviewPlayingCC(false); setPreviewSoundCC(null); }
+        if (st.isLoaded && st.didJustFinish) {
+          setPreviewPlayingCC(false);
+          sound.unloadAsync().catch(() => {});
+          setPreviewSoundCC(null);
+        }
       });
       snd = sound;
       setPreviewSoundCC(snd);
@@ -918,14 +917,8 @@ function AdminChatTab() {
     setPreviewPlayingCC(true);
   };
 
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    // 'limited' = iOS 14 accès partiel, on autorise quand même
-    if (status === 'denied') { Alert.alert('Permission refusée', 'Activez la galerie dans les paramètres.'); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.75 });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
-    const ext  = asset.uri.split('.').pop() ?? 'jpg';
+  const _sendImageAssetCC = async (asset: ImagePicker.ImagePickerAsset) => {
+    const ext = asset.uri.split('.').pop() ?? 'jpg';
     const mime = asset.mimeType ?? `image/${ext}`;
     setSending(true);
     try {
@@ -933,8 +926,32 @@ function AdminChatTab() {
       fd.append('file', { uri: asset.uri, type: mime, name: `img.${ext}` } as any);
       const { url } = await uploadFile('/api/upload', fd);
       await sendMsg(url, 'image');
-    } catch { Alert.alert('Erreur', 'Impossible d\'envoyer l\'image.'); }
+    } catch { Alert.alert('Erreur', "Impossible d'envoyer l'image."); }
     finally { setSending(false); }
+  };
+
+  const pickImage = () => {
+    Alert.alert('Envoyer une image', '', [
+      {
+        text: '📷  Prendre une photo',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') { Alert.alert('Permission refusée', "Activez l'appareil photo dans les paramètres."); return; }
+          const result = await ImagePicker.launchCameraAsync({ quality: 0.75 });
+          if (!result.canceled && result.assets[0]) await _sendImageAssetCC(result.assets[0]);
+        },
+      },
+      {
+        text: '🖼  Choisir depuis la galerie',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status === 'denied') { Alert.alert('Permission refusée', 'Activez la galerie dans les paramètres.'); return; }
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.75 });
+          if (!result.canceled && result.assets[0]) await _sendImageAssetCC(result.assets[0]);
+        },
+      },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
   };
 
   const sendCCLocation = async () => {
@@ -1120,7 +1137,11 @@ function CCBubble({ message }: { message: CCMessage }) {
           (s) => {
             if (s.isLoaded) {
               if (s.durationMillis) setDuration(Math.round(s.durationMillis / 1000));
-              if (s.didJustFinish) setPlaying(false);
+              if (s.didJustFinish) {
+                setPlaying(false);
+                soundRef.current?.unloadAsync().catch(() => {});
+                soundRef.current = null;
+              }
             }
           }
         );
@@ -1743,6 +1764,7 @@ function BankilyPayModal({ visible, onClose, onSuccess }: {
     } catch {
       Alert.alert('Erreur', "Impossible d'envoyer la demande.");
     } finally {
+      setBpayCode('');
       setSubmitting(false);
     }
   };
@@ -1759,7 +1781,7 @@ function BankilyPayModal({ visible, onClose, onSuccess }: {
             placeholderTextColor={TEXT2} keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
           <View style={styles.modalDivider} />
           <TextInput style={styles.modalInput} placeholder="Passcode"
-            placeholderTextColor={TEXT2} keyboardType="numeric" maxLength={4} value={bpayCode} onChangeText={setBpayCode} />
+            placeholderTextColor={TEXT2} keyboardType="numeric" maxLength={4} secureTextEntry value={bpayCode} onChangeText={setBpayCode} />
           <View style={styles.modalBtns}>
             <TouchableOpacity onPress={() => { reset(); onClose(); }}>
               <Text style={styles.modalBtnCancel}>ANNULER</Text>

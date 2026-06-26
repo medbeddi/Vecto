@@ -1176,6 +1176,33 @@ function cancelCommande(id) {
   showModal('modal-confirm');
 }
 
+function cancelCCCourse() {
+  if (!_inboxSelectedId) return;
+  document.getElementById('confirm-title').textContent   = 'Annuler cette course ?';
+  document.getElementById('confirm-message').textContent = 'La course sera marquée annulée. Cette action est irréversible.';
+  document.getElementById('confirm-btn').onclick = async function () {
+    closeModal('modal-confirm');
+    try {
+      const r = await fetch(API + '/api/admin/orders/' + _inboxSelectedId + '/cancel', {
+        method: 'PATCH',
+        headers: authHeaders(),
+      });
+      if (!r.ok) {
+        var err = await r.json().catch(() => ({}));
+        alert('Erreur : ' + (err.error || r.status));
+        return;
+      }
+      // Masquer le bouton et rafraîchir la liste
+      var cancelBtn = document.getElementById('cc-cancel-course-btn');
+      if (cancelBtn) cancelBtn.style.display = 'none';
+      refreshCurrentInboxTab();
+    } catch (e) {
+      alert('Erreur réseau : ' + e.message);
+    }
+  };
+  showModal('modal-confirm');
+}
+
 /* ================================================================
    LIVREURS
 ================================================================ */
@@ -1262,6 +1289,44 @@ function filterLivreurs() {
       + '</tr>';
   });
   tbody.innerHTML = html;
+}
+
+async function addLivreur() {
+  var name  = (document.getElementById('add-livreur-name').value  || '').trim();
+  var phone = (document.getElementById('add-livreur-phone').value || '').trim();
+  var pass  = (document.getElementById('add-livreur-pass').value  || '').trim();
+  var errEl = document.getElementById('add-livreur-error');
+  var btn   = document.getElementById('btn-add-livreur');
+
+  errEl.style.display = 'none';
+  if (!name)  { errEl.textContent = 'Le nom est requis.'; errEl.style.display = 'block'; return; }
+  if (!phone) { errEl.textContent = 'Le téléphone est requis.'; errEl.style.display = 'block'; return; }
+  if (!/^\d{4}$/.test(pass)) { errEl.textContent = 'Mot de passe : exactement 4 chiffres.'; errEl.style.display = 'block'; return; }
+
+  btn.disabled = true; btn.textContent = 'Création…';
+  try {
+    var res = await fetch(API + '/api/admin/drivers', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+      body: JSON.stringify({ name: name, phone: phone, password: pass }),
+    });
+    var data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error === 'PHONE_ALREADY_USED' ? 'Ce numéro est déjà utilisé.' : ('Erreur : ' + (data.error || res.status));
+      errEl.style.display = 'block';
+      return;
+    }
+    _livreurs.unshift(data.driver);
+    renderLivreurs();
+    closeModal('modal-add-livreur');
+    document.getElementById('add-livreur-name').value  = '';
+    document.getElementById('add-livreur-phone').value = '';
+    document.getElementById('add-livreur-pass').value  = '';
+  } catch {
+    errEl.textContent = 'Erreur réseau. Réessayez.'; errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Créer le compte';
+  }
 }
 
 function openEditDriver(id, index) {
@@ -1703,11 +1768,23 @@ var _ncFoundClient   = null;   // { id, alias, phone } ou null
 var _ncLeafletMap    = null;
 var _ncPickupMarker  = null;
 var _ncDropoffMarker = null;
-var _ncDebounce      = null;
+var _ncDebounce        = null;
+var _ncSearchDebounce  = null;
 var _ncAudioUrl      = null;
 var _ncRecorder      = null;
 var _ncAudioChunks   = [];
 var _ncIsRecording   = false;
+
+function debounceNCSearch() {
+  clearTimeout(_ncSearchDebounce);
+  var phone = (document.getElementById('nc-phone')?.value || '').trim();
+  if (!phone || phone.length < 4) {
+    document.getElementById('nc-client-banner').style.display = 'none';
+    _ncFoundClient = null;
+    return;
+  }
+  _ncSearchDebounce = setTimeout(function () { searchNCClient(); }, 400);
+}
 
 async function searchNCClient() {
   var phone = (document.getElementById('nc-phone')?.value || '').trim();
@@ -2320,6 +2397,12 @@ async function openConversation(deliveryId) {
   // Réactiver le bouton Lancer (désactivé pour les archives)
   var launchBtn = document.querySelector('.cc-chat-topbar .btn-danger');
   if (launchBtn) launchBtn.style.display = '';
+  // Bouton Annuler : visible si la course n'est pas encore terminée/annulée
+  var cancelBtn = document.getElementById('cc-cancel-course-btn');
+  if (cancelBtn) {
+    var cancellable = item && ['admin_queue','pending','assigned','in_progress'].includes(item.status);
+    cancelBtn.style.display = cancellable ? '' : 'none';
+  }
 
   // Barre de progression
   renderDeliveryProgress(item ? (item.status || 'pending') : 'pending');
@@ -2342,9 +2425,11 @@ async function openArchivedConversation(deliveryId) {
   var chatView = document.getElementById('cc-chat-view');
   chatView.style.display = 'flex';
   document.getElementById('cc-chat-client-name').textContent = item ? item.clientAlias : '—';
-  // Cacher le bouton "Lancer la course" pour les archives (read-only)
+  // Cacher les boutons d'action pour les archives (read-only)
   var launchBtn = document.querySelector('.cc-chat-topbar .btn-danger');
   if (launchBtn) launchBtn.style.display = 'none';
+  var cancelBtn = document.getElementById('cc-cancel-course-btn');
+  if (cancelBtn) cancelBtn.style.display = 'none';
 
   // Barre de progression
   renderDeliveryProgress(item ? (item.status || 'done') : 'done');

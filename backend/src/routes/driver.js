@@ -89,10 +89,12 @@ router.post('/auth/login', loginLimiter, validate(loginSchema), async (req, res)
   }
 });
 
-router.post('/auth/refresh', validate(refreshSchema), async (req, res) => {
+router.post('/auth/refresh', loginLimiter, validate(refreshSchema), async (req, res) => {
   try {
-    const { id, name } = jwt.verify(req.body.refreshToken, env.JWT_REFRESH_SECRET);
-    const accessToken = jwt.sign({ id, name }, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_EXPIRES });
+    const { id, name, role } = jwt.verify(req.body.refreshToken, env.JWT_REFRESH_SECRET);
+    const driver = await db('drivers').where({ id }).first('id', 'suspended');
+    if (!driver || driver.suspended) return res.status(403).json({ error: 'ACCOUNT_SUSPENDED' });
+    const accessToken = jwt.sign({ id, name, role: role ?? 'driver' }, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_EXPIRES });
     res.json({ accessToken });
   } catch {
     res.status(401).json({ error: 'REFRESH_INVALID' });
@@ -333,7 +335,7 @@ router.get('/deliveries/mine', requireAuth, async (req, res) => {
 router.post('/deliveries/:id/accept', requireAuth, async (req, res) => {
   try {
     const delivery = await acceptDelivery(req.params.id, req.driver.id);
-    sendStatusMessageToClient(req.params.id, 'Votre course a été acceptée').catch(() => {});
+    sendStatusMessageToClient(req.params.id, 'Votre course a été acceptée 😊').catch(() => {});
     res.json({ delivery });
   } catch (err) {
     if (err.code === 'WALLET_BLOCKED') return res.status(402).json({ error: 'WALLET_BLOCKED' });
@@ -440,9 +442,14 @@ router.get('/deliveries/:id/messages', requireAuth, async (req, res) => {
 router.patch('/messages/:id/react', requireAuth, async (req, res) => {
   try {
     const { emoji } = req.body;
-    if (!emoji) return res.status(400).json({ error: 'EMOJI_REQUIRED' });
+    if (!emoji || typeof emoji !== 'string' || !/^\p{Emoji}{1,2}$/u.test(emoji)) {
+      return res.status(400).json({ error: 'EMOJI_INVALID' });
+    }
 
-    const msg = await db('messages').where({ id: req.params.id }).first('id', 'meta');
+    const msg = await db('messages')
+      .join('deliveries', 'messages.delivery_id', 'deliveries.id')
+      .where({ 'messages.id': req.params.id, 'deliveries.driver_id': req.driver.id })
+      .first('messages.id as id', 'messages.meta as meta');
     if (!msg) return res.status(404).json({ error: 'NOT_FOUND' });
 
     const reactions = { ...(msg.meta?.reactions || {}) };
@@ -473,6 +480,11 @@ router.get(
   async (req, res) => {
     try {
       const { type, ext } = req.query;
+      const delivery = await db('deliveries')
+        .where({ id: req.params.id, driver_id: req.driver.id })
+        .whereIn('status', ['assigned', 'in_progress'])
+        .first('id');
+      if (!delivery) return res.status(403).json({ error: 'FORBIDDEN' });
       const key = `media/${req.params.id}/${type}/${Date.now()}_${req.driver.id}.${ext}`;
       const uploadUrl = await getSignedUploadUrl(key);
       res.json({ uploadUrl, key });
