@@ -87,6 +87,13 @@ async function processMessage(msg) {
   const rawWaId = msg.from;
   console.info(`[webhook] message reçu id=${msg.id} type=${msg.type} from=${rawWaId?.slice(-4)}`);
 
+  // Idempotence : Meta peut retenter le webhook — ignorer les doublons
+  const alreadyProcessed = await db('messages').whereRaw("meta->>'waId' = ?", [msg.id]).first('id');
+  if (alreadyProcessed) {
+    console.info(`[webhook] message id=${msg.id} déjà traité → ignoré`);
+    return;
+  }
+
   const waHash  = hashWaId(rawWaId);
   const waEnc   = encryptWaId(rawWaId);
 
@@ -180,7 +187,7 @@ async function processMessage(msg) {
         audioMeta.r2Key = key;
       } catch (err) {
         console.error('[webhook] audio R2 erreur après retry:', err.message);
-        // audioContent reste null — message stocké avec metaMediaId pour diagnostic
+        audioMeta.uploadFailed = true;
       }
     }
 
@@ -288,8 +295,7 @@ async function extractContent(msg, deliveryId) {
         return { content, meta };
       } catch (err) {
         console.error(`[webhook] media ${msg.type} non stocké après retry: ${err.message}`);
-        // Stocker le mediaId Meta en fallback pour diagnostic (content null = non lisible côté driver)
-        return { content: null, meta: { raw_type: msg.type, metaMediaId: mediaId } };
+        return { content: null, meta: { raw_type: msg.type, metaMediaId: mediaId, uploadFailed: true } };
       }
     }
 

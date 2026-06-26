@@ -53,9 +53,9 @@ function BubbleContent({ message, isDriver, onPressImage }: Props & { isDriver: 
     case 'text':
       return <Text style={[styles.text, isDriver ? styles.textDriver : styles.textClient]}>{message.content}</Text>;
     case 'image':
-      return <ImageContent url={message.content} onPress={onPressImage} />;
+      return <ImageContent url={message.content} uploadFailed={!!message.meta?.uploadFailed} onPress={onPressImage} />;
     case 'audio':
-      return <AudioContent url={message.meta?.r2Key ?? message.content} isDriver={isDriver} />;
+      return <AudioContent url={message.meta?.r2Key ?? message.content} isDriver={isDriver} uploadFailed={!!message.meta?.uploadFailed} />;
     case 'location':
       return <LocationContent meta={message.meta} isDriver={isDriver} />;
     default:
@@ -63,8 +63,8 @@ function BubbleContent({ message, isDriver, onPressImage }: Props & { isDriver: 
   }
 }
 
-function ImageContent({ url, onPress }: { url: string | null; onPress?: (url: string) => void }) {
-  if (!url) return <Text style={styles.textClient}>[image indisponible]</Text>;
+function ImageContent({ url, uploadFailed, onPress }: { url: string | null; uploadFailed?: boolean; onPress?: (url: string) => void }) {
+  if (!url) return <Text style={styles.textClient}>{uploadFailed ? '⚠ Image non reçue (erreur upload)' : '[image indisponible]'}</Text>;
   return (
     <TouchableOpacity onPress={() => onPress?.(url)} activeOpacity={0.85} disabled={!onPress}>
       <Image source={{ uri: url }} style={styles.image} resizeMode="cover" />
@@ -83,7 +83,7 @@ async function resolveAudioUrl(urlOrKey: string | null): Promise<string | null> 
   }
 }
 
-function AudioContent({ url, isDriver }: { url: string | null; isDriver: boolean }) {
+function AudioContent({ url, isDriver, uploadFailed }: { url: string | null; isDriver: boolean; uploadFailed?: boolean }) {
   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -92,6 +92,10 @@ function AudioContent({ url, isDriver }: { url: string | null; isDriver: boolean
   useEffect(() => {
     return () => { soundRef.current?.unloadAsync(); };
   }, []);
+
+  if (!url && uploadFailed) {
+    return <Text style={[styles.text, isDriver ? styles.textDriver : styles.textClient]}>⚠ Audio non reçu (erreur upload)</Text>;
+  }
 
   const toggle = async () => {
     if (!url) return;
