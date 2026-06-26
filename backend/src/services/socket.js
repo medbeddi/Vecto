@@ -199,16 +199,23 @@ export function emitOrderAssigned(deliveryId) {
 }
 
 // ── Message client → livreur (socket) ────────────────────────────────────────
-export function emitClientMessage(deliveryId, message) {
+// Émet sur la room du chat ET directement sur la room du livreur (si driverId fourni)
+// pour garantir la réception même si le livreur n'a pas encore rejoint le chat.
+export function emitClientMessage(deliveryId, message, driverId) {
   if (!io) return;
-  io.to(`course_${deliveryId}`).emit('client_message', {
+  const payload = {
     id:         message.id,
     senderRole: 'client',
     type:       message.type,
     content:    message.content,
     meta:       message.meta,
     createdAt:  message.created_at,
-  });
+  };
+  io.to(`course_${deliveryId}`).emit('client_message', payload);
+  if (driverId) {
+    // Double-envoi sécurisé : le store driver déduplique par message.id
+    io.to(`driver:${driverId}`).emit('client_message', payload);
+  }
 }
 
 // ── Message driver → client (socket) ─────────────────────────────────────────

@@ -93,8 +93,12 @@ export default function ChatScreen() {
     const onReaction = ({ messageId, reactions }: { messageId: string; deliveryId: string; reactions: Record<string, string[]> }) => {
       updateMessageReactions(messageId, reactions);
     };
-    // Re-joindre la room après reconnexion socket (réseau coupé, app background)
-    const onConnect = () => socketService.joinRoom(initDelivery.id);
+    // Re-joindre la room ET recharger les messages après reconnexion
+    // pour rattraper tout message reçu pendant la coupure réseau
+    const onConnect = () => {
+      socketService.joinRoom(initDelivery.id);
+      loadMessages(initDelivery.id);
+    };
 
     socketService.on('client_message', onMsg);
     socketService.on('delivery_cancelled', onCancelled);
@@ -240,22 +244,40 @@ export default function ChatScreen() {
   }, []);
 
   // ─── Image ────────────────────────────────────────────────────────────────
+  const _sendImageAsset = async (asset: ImagePicker.ImagePickerAsset) => {
+    const ext = asset.uri.split('.').pop() ?? 'jpg';
+    const mime = asset.mimeType ?? `image/${ext}`;
+    await uploadAndSendMedia('image', asset.uri, mime, ext);
+  };
+
   const pickImage = useCallback(async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission refusée', 'Activez la galerie dans les paramètres.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.75,
-    });
-    if (!result.canceled && result.assets[0]) {
-      const asset = result.assets[0];
-      const ext = asset.uri.split('.').pop() ?? 'jpg';
-      const mime = asset.mimeType ?? `image/${ext}`;
-      await uploadAndSendMedia('image', asset.uri, mime, ext);
-    }
+    Alert.alert('Envoyer une image', '', [
+      {
+        text: '📷  Prendre une photo',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission refusée', "Activez l'appareil photo dans les paramètres.");
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({ quality: 0.75 });
+          if (!result.canceled && result.assets[0]) await _sendImageAsset(result.assets[0]);
+        },
+      },
+      {
+        text: '🖼  Choisir depuis la galerie',
+        onPress: async () => {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission refusée', 'Activez la galerie dans les paramètres.');
+            return;
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.75 });
+          if (!result.canceled && result.assets[0]) await _sendImageAsset(result.assets[0]);
+        },
+      },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
   }, [delivery.id]);
 
   // ─── Localisation ─────────────────────────────────────────────────────────

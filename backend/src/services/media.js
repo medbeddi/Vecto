@@ -14,24 +14,38 @@ const r2 = env.R2_ENABLED
     })
   : null;
 
+const META_TIMEOUT = 20_000; // 20s max par appel Meta
+
 // Télécharge un media depuis Meta Cloud API et retourne le buffer + mimeType
 export async function downloadFromMeta(mediaId) {
   // Étape 1 : obtenir l'URL de téléchargement
   const { data: meta } = await axios.get(
     `https://graph.facebook.com/v19.0/${mediaId}`,
-    { headers: { Authorization: `Bearer ${env.WA_TOKEN}` } }
+    { headers: { Authorization: `Bearer ${env.WA_TOKEN}` }, timeout: META_TIMEOUT }
   );
 
   // Étape 2 : télécharger le binaire
   const { data, headers } = await axios.get(meta.url, {
     responseType: 'arraybuffer',
     headers: { Authorization: `Bearer ${env.WA_TOKEN}` },
+    timeout: META_TIMEOUT,
   });
 
   return {
     buffer: Buffer.from(data),
     mimeType: headers['content-type'] || 'application/octet-stream',
   };
+}
+
+// Upload vers R2 avec 1 retry automatique
+export async function uploadToR2WithRetry(buffer, key, contentType) {
+  try {
+    return await uploadToR2(buffer, key, contentType);
+  } catch (err) {
+    // 1 retry après 1.5s
+    await new Promise((r) => setTimeout(r, 1500));
+    return await uploadToR2(buffer, key, contentType);
+  }
 }
 
 // Upload vers R2 et retourne la clé de stockage
