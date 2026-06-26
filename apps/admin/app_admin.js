@@ -8,6 +8,16 @@ let _token = localStorage.getItem('vecto_admin_token');
 let _role  = localStorage.getItem('vecto_admin_role') || 'admin';
 let _socket = null;
 
+/* ── Toggle Sidebar ─────────────────────────────────────────────── */
+function toggleSidebar() {
+  var sidebar = document.querySelector('.sidebar');
+  var main    = document.querySelector('.main');
+  var isOpen  = !sidebar.classList.contains('collapsed');
+  sidebar.classList.toggle('collapsed', isOpen);
+  main.classList.toggle('sidebar-collapsed', isOpen);
+  localStorage.setItem('vecto_sidebar_open', isOpen ? '0' : '1');
+}
+
 /* ── Config tarification ─────────────────────────────────────────── */
 // ≤4.5 km → 100 MRU ; sinon +2.5 MRU/tranche de 100 m
 // Arrondi : .5 → arrondi inférieur (102.5→100, 112.5→110, 267.5→265)
@@ -125,6 +135,13 @@ function showApp() {
 
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+
+  // Restaurer l'état du sidebar
+  var sidebarOpen = localStorage.getItem('vecto_sidebar_open');
+  if (sidebarOpen === '0') {
+    document.querySelector('.sidebar').classList.add('collapsed');
+    document.querySelector('.main').classList.add('sidebar-collapsed');
+  }
 
   // Masquer les éléments réservés aux admins si rôle call_center
   document.querySelectorAll('[data-role="admin"]').forEach(function (el) {
@@ -471,16 +488,24 @@ function renderDriversChatList(drivers) {
     list.innerHTML = '<div class="cc-inbox-empty">Aucun livreur enregistré</div>';
     return;
   }
-  list.innerHTML = drivers.map(function (d) {
+  // Construire les éléments via DOM pour éviter le XSS dans les attributs onclick
+  list.innerHTML = '';
+  drivers.forEach(function (d) {
     var dot = d.status === 'available' ? '🟢' : d.status === 'busy' ? '🔴' : '⚫';
     var statusLabel = d.status === 'available' ? 'Disponible' : d.status === 'busy' ? 'En course' : 'Hors ligne';
     var isActive = d.id === _selectedDriverId;
-    var phone = (d.phone || '').replace(/'/g, "\\'");
-    return '<div class="cc-inbox-item' + (isActive ? ' active' : '') + '" onclick="selectDriverChat(\'' + d.id + '\',\'' + (d.name || '').replace(/'/g, "\\'") + '\',\'' + phone + '\')">'
-      + '<div class="cc-inbox-alias">' + escHtml(d.name) + '</div>'
-      + '<div class="cc-inbox-preview">' + dot + ' ' + statusLabel + '</div>'
-      + '</div>';
-  }).join('');
+    var el = document.createElement('div');
+    el.className = 'cc-inbox-item' + (isActive ? ' active' : '');
+    el.dataset.driverId    = d.id;
+    el.dataset.driverName  = d.name || '';
+    el.dataset.driverPhone = d.phone || '';
+    el.innerHTML = '<div class="cc-inbox-alias">' + escHtml(d.name) + '</div>'
+      + '<div class="cc-inbox-preview">' + dot + ' ' + escHtml(statusLabel) + '</div>';
+    el.addEventListener('click', function () {
+      selectDriverChat(el.dataset.driverId, el.dataset.driverName, el.dataset.driverPhone);
+    });
+    list.appendChild(el);
+  });
 }
 
 function selectDriverChat(driverId, driverName, driverPhone) {
