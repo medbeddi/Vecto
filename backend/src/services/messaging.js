@@ -56,10 +56,17 @@ export async function sendText(waId, text) {
 }
 
 export async function sendAudio(waId, urlOrKey) {
-  // Pour le fallback link, générer une URL longue durée (7 jours) si on a une clé R2
-  const isKey = !urlOrKey?.startsWith('http');
-  const url    = isKey ? await getSignedMediaUrl(urlOrKey, 604800) : urlOrKey;
-  const fallbackUrl = isKey ? url : urlOrKey; // déjà une URL publique permanente
+  // Résoudre en URL signée 7 jours (fonctionne bucket public ET privé)
+  let url = urlOrKey;
+  if (!urlOrKey?.startsWith('http')) {
+    // C'est une clé R2
+    url = await getSignedMediaUrl(urlOrKey, 604800);
+  } else if (env.R2_PUBLIC_URL && urlOrKey.startsWith(env.R2_PUBLIC_URL + '/')) {
+    // C'est une URL publique R2 → extraire la clé → URL signée fiable
+    const key = urlOrKey.slice(env.R2_PUBLIC_URL.length + 1);
+    try { url = await getSignedMediaUrl(key, 604800); } catch {}
+  }
+  const fallbackUrl = url;
 
   // Try media upload first (shows as PTT voice note in WhatsApp)
   try {
