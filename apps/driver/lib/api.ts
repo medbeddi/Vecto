@@ -127,12 +127,26 @@ export async function uploadFile(
   return res.json() as Promise<{ url: string; key: string }>;
 }
 
+const ALLOWED_R2_HOSTS = ['r2.cloudflarestorage.com', 'pub-', 'railway.app'];
+
 // Upload direct vers R2 via URL pré-signée (PUT)
 export async function uploadToR2(
   presignedUrl: string,
   fileUri: string,
   mimeType: string
 ): Promise<void> {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(presignedUrl);
+  } catch {
+    throw new ApiError('INVALID_UPLOAD_URL', 400);
+  }
+  if (parsedUrl.protocol !== 'https:') throw new ApiError('INVALID_UPLOAD_URL', 400);
+  const hostOk = ALLOWED_R2_HOSTS.some((h) => parsedUrl.hostname.includes(h));
+  if (!hostOk) throw new ApiError('INVALID_UPLOAD_URL', 400);
+  if (!fileUri.startsWith('file://') && !fileUri.startsWith('content://')) {
+    throw new ApiError('INVALID_FILE_URI', 400);
+  }
   const blob = await fetch(fileUri).then((r) => r.blob());
   const res = await fetch(presignedUrl, {
     method: 'PUT',

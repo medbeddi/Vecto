@@ -107,7 +107,15 @@ router.post('/upload-public', requireAnyAuth, upload.single('file'), handleUploa
 router.get('/media/url', requireAnyAuth, async (req, res) => {
   const { key } = req.query;
   if (!key || typeof key !== 'string') return res.status(400).json({ error: 'KEY_REQUIRED' });
-  if (key.startsWith('http')) return res.json({ url: key }); // déjà une URL publique
+  if (key.startsWith('http')) {
+    // Valider que c'est bien une URL http(s) et pas une tentative d'injection
+    try { new URL(key); } catch { return res.status(400).json({ error: 'KEY_INVALID' }); }
+    return res.json({ url: key });
+  }
+  const ALLOWED_PREFIXES = ['media/', 'uploads/'];
+  if (!ALLOWED_PREFIXES.some((p) => key.startsWith(p))) {
+    return res.status(400).json({ error: 'KEY_INVALID' });
+  }
   try {
     const url = await getSignedMediaUrl(key, 3600);
     res.json({ url });

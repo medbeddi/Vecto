@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomInt } from 'crypto';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { env } from '../config/env.js';
@@ -9,7 +10,35 @@ import { otpLimiter, loginLimiter } from '../middleware/rate-limit.js';
 const router = Router();
 
 function generateCode() {
-  return Math.floor(1000 + Math.random() * 9000).toString(); // 4 chiffres
+  return randomInt(1000, 10000).toString();
+}
+
+async function sendOtpViaWati(phone, code) {
+  const to = phone.replace(/^\+/, '');
+  const res = await fetch(
+    `${env.WATI_API_URL}/api/v1/sendTemplateMessages`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.WATI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        template_name: 'otp',
+        broadcast_name: `otp_${Date.now()}`,
+        receivers: [
+          {
+            whatsappNumber: to,
+            customParams: [{ name: '1', value: code }],
+          },
+        ],
+      }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('[OTP] WATI échec:', err?.message ?? res.status);
+  }
 }
 
 async function sendOtpWhatsApp(phone, phoneHash, code) {
@@ -19,8 +48,38 @@ async function sendOtpWhatsApp(phone, phoneHash, code) {
     return;
   }
 
+  // WATI en priorité — pas de restriction de niveau de confiance
+  if (env.WATI_API_URL && env.WATI_API_KEY) {
+    return sendOtpViaWati(phone, code);
+  }
+
   // Numéro en format E.164 sans le +
   const to = phone.replace(/\D/g, '');
+
+  // Les messages OTP sont business-initiated → obligation d'utiliser un template approuvé.
+  // Un message texte libre ne fonctionnerait que si le driver a écrit en premier (fenêtre 24h).
+  // Si un template approuvé est configuré, l'utiliser (préféré pour les nouveaux drivers)
+  // Sinon fallback en texte libre (fonctionne uniquement si le driver a déjà écrit au numéro)
+  const body = env.WA_OTP_TEMPLATE_NAME
+    ? {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'template',
+        template: {
+          name: env.WA_OTP_TEMPLATE_NAME,
+          language: { code: 'fr' },
+          components: [
+            { type: 'body', parameters: [{ type: 'text', text: code }] },
+            { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+          ],
+        },
+      }
+    : {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: `🛵 *Vecto* — Votre code de vérification est : *${code}*\n\nValable 10 minutes. Ne le partagez jamais.` },
+      };
 
   const res = await fetch(
     `https://graph.facebook.com/v19.0/${env.WA_PHONE_ID}/messages`,
@@ -30,14 +89,7 @@ async function sendOtpWhatsApp(phone, phoneHash, code) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${env.WA_TOKEN}`,
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: {
-          body: `🛵 *Vecto* — Votre code de vérification est :\n\n*${code}*\n\nValable 10 minutes. Ne le partagez jamais.`,
-        },
-      }),
+      body: JSON.stringify(body),
     }
   );
 
@@ -69,9 +121,7 @@ router.post('/otp/send', otpLimiter, async (req, res) => {
       console.error('[OTP] WhatsApp failed (non-blocking):', err.message);
     });
 
-    // En dev : retourner le code directement
-    const isDev = env.NODE_ENV !== 'production';
-    res.json({ sent: true, ...(isDev ? { code } : {}) });
+    res.json({ sent: true });
   } catch (e) {
     console.error('[OTP] send error:', e.message);
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -141,6 +191,7 @@ router.post('/otp/verify/driver', otpLimiter, async (req, res) => {
 
     // Compte existant — connexion directe après OTP
     let driver = await db('drivers').where({ phone_hash: phoneHash }).first();
+    if (driver?.suspended) return res.status(403).json({ error: 'ACCOUNT_SUSPENDED' });
     if (driver && !driver.phone) {
       await db('drivers').where({ id: driver.id }).update({ phone: phone.trim() });
       driver.phone = phone.trim();
@@ -197,6 +248,7 @@ router.post('/auth/reset-password', otpLimiter, async (req, res) => {
       console.warn('[reset-password] driver introuvable pour hash:', phoneHash.slice(0, 8));
       return res.status(404).json({ error: 'DRIVER_NOT_FOUND' });
     }
+    if (driver.suspended) return res.status(403).json({ error: 'ACCOUNT_SUSPENDED' });
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await db('drivers').where({ id: driver.id }).update({ password_hash: passwordHash });

@@ -10,6 +10,10 @@ const DEV_HOST = Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
 export const API_BASE =
   fromEnv.length > 0 ? fromEnv : `http://${DEV_HOST}:3000`;
 
+if (!__DEV__ && !API_BASE.startsWith('https://')) {
+  console.error('[security] API_BASE must use HTTPS in production');
+}
+
 // Couleurs — thème clair
 export const BRAND   = '#E85D04';      // orange accent
 export const PRIMARY = '#1A1A1A';      // boutons principaux, texte fort

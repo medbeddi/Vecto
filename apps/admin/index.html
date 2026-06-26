@@ -673,12 +673,13 @@
               </button>
             </div>
             <!-- Résultat recherche -->
-            <div id="nc-client-banner" style="display:none;margin-top:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);align-items:center;gap:10px">
+            <div id="nc-client-banner" onclick="selectNCClientBanner(event)" style="display:none;margin-top:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);align-items:center;gap:10px;cursor:pointer;transition:border-color .15s,background .15s" title="Cliquer pour sélectionner">
               <div id="nc-client-dot" style="width:8px;height:8px;border-radius:50%;background:#34C759;flex-shrink:0"></div>
               <div style="flex:1;min-width:0">
                 <div id="nc-client-alias" style="font-weight:600;font-size:13px;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
                 <div id="nc-client-sub" style="font-size:11px;color:var(--text-3);margin-top:1px">—</div>
               </div>
+              <span id="nc-client-check" style="display:none;color:#34C759;font-size:16px;flex-shrink:0">✓</span>
               <button onclick="clearNCClient()" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:16px;padding:0 4px;line-height:1" title="Effacer">✕</button>
             </div>
           </div>

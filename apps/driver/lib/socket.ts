@@ -7,9 +7,16 @@ async function getFreshToken(): Promise<string | null> {
   try {
     const token = await storage.getAccessToken();
     if (!token) return null;
-    // Vérifie expiry sans lib externe — le payload JWT est en base64
-    const [, payload] = token.split('.');
-    const { exp } = JSON.parse(atob(payload));
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    let exp: number;
+    try {
+      const decoded = JSON.parse(atob(parts[1]));
+      if (typeof decoded?.exp !== 'number') return null;
+      exp = decoded.exp;
+    } catch {
+      return null;
+    }
     if (exp * 1000 > Date.now() + 60_000) return token; // valide > 1 min
     // Token bientôt expiré — refresh
     const rt = await storage.getRefreshToken();
@@ -75,13 +82,13 @@ class SocketService {
     // Re-attach any handlers registered before this socket was created
     this._reattachHandlers();
 
-    this._socket.on('connect', () =>
-      console.info('[socket] connecté sid=' + this._socket?.id)
-    );
+    this._socket.on('connect', () => {
+      if (__DEV__) console.info('[socket] connecté sid=' + this._socket?.id);
+    });
 
     // Si le token expire pendant la session, refresh et reconnecte
     this._socket.on('connect_error', async (err) => {
-      console.warn('[socket] erreur:', err.message);
+      if (__DEV__) console.warn('[socket] erreur:', err.message);
       if (err.message === 'AUTH_INVALID' || err.message === 'AUTH_REQUIRED') {
         this._socket?.disconnect();
         this._socket = null;  // cleared before connect() so the guard lets it through

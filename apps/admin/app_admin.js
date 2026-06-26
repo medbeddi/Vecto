@@ -1789,11 +1789,14 @@ function debounceNCSearch() {
 async function searchNCClient() {
   var phone = (document.getElementById('nc-phone')?.value || '').trim();
   if (!phone) return;
-  var banner = document.getElementById('nc-client-banner');
+  _ncClientSelected = false;
+  var banner  = document.getElementById('nc-client-banner');
   var aliasEl = document.getElementById('nc-client-alias');
   var subEl   = document.getElementById('nc-client-sub');
   var dotEl   = document.getElementById('nc-client-dot');
-  if (banner) banner.style.display = 'none';
+  var checkEl = document.getElementById('nc-client-check');
+  if (banner)  { banner.style.display = 'none'; banner.style.borderColor = ''; banner.style.background = ''; }
+  if (checkEl) checkEl.style.display = 'none';
   try {
     var res = await fetch(API + '/api/admin/clients/search?phone=' + encodeURIComponent(phone), { headers: authHeaders() });
     var data = await res.json();
@@ -1816,12 +1819,28 @@ async function searchNCClient() {
   }
 }
 
+var _ncClientSelected = false;
+
+function selectNCClientBanner(event) {
+  if (event && event.target && event.target.tagName === 'BUTTON') return; // ignore click on X
+  _ncClientSelected = true;
+  var banner   = document.getElementById('nc-client-banner');
+  var checkEl  = document.getElementById('nc-client-check');
+  var phoneEl  = document.getElementById('nc-phone');
+  if (banner)  { banner.style.borderColor = '#34C759'; banner.style.background = 'rgba(52,199,89,.06)'; }
+  if (checkEl) checkEl.style.display = 'inline';
+  if (phoneEl) phoneEl.disabled = true;
+}
+
 function clearNCClient() {
   _ncFoundClient = null;
+  _ncClientSelected = false;
   var phoneEl = document.getElementById('nc-phone');
-  if (phoneEl) phoneEl.value = '+222';
-  var banner = document.getElementById('nc-client-banner');
-  if (banner) banner.style.display = 'none';
+  if (phoneEl) { phoneEl.value = '+222'; phoneEl.disabled = false; }
+  var banner  = document.getElementById('nc-client-banner');
+  var checkEl = document.getElementById('nc-client-check');
+  if (banner)  { banner.style.display = 'none'; banner.style.borderColor = ''; banner.style.background = ''; }
+  if (checkEl) checkEl.style.display = 'none';
 }
 
 function debounceNCMap() {

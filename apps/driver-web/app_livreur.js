@@ -618,10 +618,12 @@ function renderChatMessages(chatId) {
       html += '<div class="' + wc + '"><div class="bubble">' + escHtml(msg.text || '') + '</div><div class="msg-time">' + msg.time + '</div></div>';
     } else if (msg.type === 'vocal' || msg.type === 'audio') {
       var bars = (msg.waves || genWaves(12)).map(function(h) { return '<div class="bwave-bar" style="height:' + h + '%"></div>'; }).join('');
+      var audioUrl = msg.text || '';
+      var audioKey = (msg.meta && msg.meta.r2Key) || '';
       html += '<div class="' + wc + '"><div class="bubble bubble-vocal">'
-        + '<button class="bubble-play" onclick="playBubbleVocal(this)"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>'
+        + '<button class="bubble-play" onclick="playBubbleVocal(this)" data-url="' + escHtml(audioUrl) + '" data-key="' + escHtml(audioKey) + '"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>'
         + '<div class="bubble-wave">' + bars + '</div>'
-        + '<span class="bubble-dur">' + (msg.duration || '0:05') + '</span>'
+        + '<span class="bubble-dur">' + (msg.duration || '0:00') + '</span>'
         + '</div><div class="msg-time">' + msg.time + '</div></div>';
     } else if (msg.type === 'image') {
       var src = msg.text || (msg.content || '');
@@ -646,21 +648,56 @@ function fmtRelTime(iso) { if (!iso) return 'maintenant'; try { var d = Date.now
 function fmtMsgTime(iso) { if (!iso) return getTime(); try { return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-// ─── Play vocal in chat (même que l'original) ─────────────────────────────────
-function playBubbleVocal(btn) {
-  var wave = btn.parentElement.querySelector('.bubble-wave');
-  var bars = wave ? wave.querySelectorAll('.bwave-bar') : [];
-  var step = 0;
-  btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
-  var iv = setInterval(function() {
-    bars.forEach(function(b, i) { b.style.opacity = i <= step ? '1' : '0.3'; });
-    step++;
-    if (step >= bars.length) {
-      clearInterval(iv);
+// ─── Play vocal in chat ────────────────────────────────────────────────────────
+var _currentAudio = null;
+
+async function playBubbleVocal(btn) {
+  var url = btn.getAttribute('data-url') || '';
+  var key = btn.getAttribute('data-key') || '';
+
+  // Toggle pause if already playing this button
+  if (_currentAudio && _currentAudio._btn === btn) {
+    if (_currentAudio.paused) {
+      _currentAudio.play().catch(function() {});
+      btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+    } else {
+      _currentAudio.pause();
       btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
-      bars.forEach(function(b) { b.style.opacity = '1'; });
     }
-  }, 130);
+    return;
+  }
+
+  // Stop any other playing audio
+  if (_currentAudio && !_currentAudio.paused) {
+    _currentAudio.pause();
+    if (_currentAudio._btn) _currentAudio._btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+  }
+
+  // Resolve R2 key if needed
+  if (key || (url && !url.startsWith('http'))) {
+    try {
+      var data = await apiFetch('/api/media/url?key=' + encodeURIComponent(key || url));
+      if (data.url) url = data.url;
+    } catch (e) {}
+  }
+
+  if (!url) return;
+
+  _currentAudio = new Audio(url);
+  _currentAudio._btn = btn;
+  _currentAudio.onended = function() {
+    btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    _currentAudio = null;
+  };
+  _currentAudio.onerror = function() {
+    btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    _currentAudio = null;
+  };
+  btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+  _currentAudio.play().catch(function() {
+    btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+    _currentAudio = null;
+  });
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -688,7 +725,39 @@ async function sendText() {
 
 function sendImage() {
   if (currentChatId === null) return;
-  alert('Upload d\'image disponible depuis l\'app mobile.');
+  var fileInput = document.createElement('input');
+  fileInput.type = 'file';
+  fileInput.accept = 'image/*';
+  fileInput.onchange = async function() {
+    if (!fileInput.files || !fileInput.files[0]) return;
+    var file = fileInput.files[0];
+    try {
+      var form = new FormData();
+      form.append('file', file);
+      var upRes = await fetch(API_BASE + '/api/upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: form
+      });
+      if (!upRes.ok) { alert('Erreur upload image'); return; }
+      var upData = await upRes.json();
+      var url = upData.url;
+      await apiFetch('/api/deliveries/' + currentChatId + '/message', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'image', content: url })
+      });
+      var chat = ACTIVE_CHATS.find(function(c) { return c.id === currentChatId; });
+      if (chat) {
+        chat.messages.push({ type: 'image', from: 'driver', text: url, time: getTime() });
+        chat.lastMsg = '📷 Image';
+        chat.lastTime = getTime();
+        renderChatMessages(currentChatId);
+        renderChatList();
+        setTimeout(scrollChatToBottom, 30);
+      }
+    } catch (e) { alert('Erreur envoi image.'); }
+  };
+  fileInput.click();
 }
 
 async function sendLocation() {
@@ -710,22 +779,66 @@ async function sendLocation() {
   }, function() { alert('Position non disponible.'); });
 }
 
-// ─── Voice recording (simulé — micro non dispo en web) ───────────────────────
-var _isRecording = false, _recordTimer = null;
+// ─── Voice recording (MediaRecorder) ─────────────────────────────────────────
+var _isRecording = false;
+var _mediaRec = null, _audioChunks = [];
 
-function startVoice() {
-  _isRecording = true;
-  var bar = document.querySelector('.chat-input-bar');
-  if (bar) bar.classList.add('recording');
-  _recordTimer = setTimeout(stopVoice, 8000);
+async function startVoice() {
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    _audioChunks = [];
+    var mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    _mediaRec = new MediaRecorder(stream, { mimeType: mimeType });
+    _mediaRec.ondataavailable = function(e) { if (e.data.size > 0) _audioChunks.push(e.data); };
+    _mediaRec.onstop = async function() {
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      var blob = new Blob(_audioChunks, { type: mimeType });
+      await _uploadAndSendAudio(blob);
+    };
+    _mediaRec.start();
+    _isRecording = true;
+    var bar = document.querySelector('.chat-input-bar');
+    if (bar) bar.classList.add('recording');
+  } catch (e) {
+    alert('Microphone non accessible. Vérifiez les permissions du navigateur.');
+  }
 }
 
 function stopVoice() {
-  if (!_isRecording) return;
-  _isRecording = false; clearTimeout(_recordTimer);
+  if (!_mediaRec || !_isRecording) return;
+  _isRecording = false;
+  _mediaRec.stop();
   var bar = document.querySelector('.chat-input-bar');
   if (bar) bar.classList.remove('recording');
-  alert('Enregistrement vocal disponible depuis l\'app mobile.');
+}
+
+async function _uploadAndSendAudio(blob) {
+  if (currentChatId === null) return;
+  try {
+    var form = new FormData();
+    form.append('file', blob, 'vocal_' + Date.now() + '.webm');
+    var upRes = await fetch(API_BASE + '/api/upload', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: form
+    });
+    if (!upRes.ok) { alert('Erreur upload vocal'); return; }
+    var upData = await upRes.json();
+    var url = upData.url;
+    await apiFetch('/api/deliveries/' + currentChatId + '/message', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'audio', content: url })
+    });
+    var chat = ACTIVE_CHATS.find(function(c) { return c.id === currentChatId; });
+    if (chat) {
+      chat.messages.push({ type: 'audio', from: 'driver', text: url, waves: genWaves(12), duration: '0:00', time: getTime() });
+      chat.lastMsg = '🎤 Vocal';
+      chat.lastTime = getTime();
+      renderChatMessages(currentChatId);
+      renderChatList();
+      setTimeout(scrollChatToBottom, 30);
+    }
+  } catch (e) { alert('Erreur envoi vocal.'); }
 }
 
 // ─── Send / mic toggle ────────────────────────────────────────────────────────

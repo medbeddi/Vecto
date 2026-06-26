@@ -87,6 +87,7 @@ function AudioContent({ url, isDriver }: { url: string | null; isDriver: boolean
   const soundRef = useRef<Audio.Sound | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [duration, setDuration] = useState<number | null>(null);
 
   useEffect(() => {
     return () => { soundRef.current?.unloadAsync(); };
@@ -105,10 +106,15 @@ function AudioContent({ url, isDriver }: { url: string | null; isDriver: boolean
       if (!soundRef.current) {
         const resolvedUrl = await resolveAudioUrl(url);
         if (!resolvedUrl) return;
-        const { sound } = await Audio.Sound.createAsync({ uri: resolvedUrl });
+        const { sound, status } = await Audio.Sound.createAsync({ uri: resolvedUrl });
         soundRef.current = sound;
+        if (status.isLoaded && status.durationMillis) setDuration(status.durationMillis);
         sound.setOnPlaybackStatusUpdate((s) => {
-          if (s.isLoaded && s.didJustFinish) setPlaying(false);
+          if (s.isLoaded && s.didJustFinish) {
+            setPlaying(false);
+            soundRef.current?.unloadAsync();
+            soundRef.current = null;
+          }
         });
       }
       await soundRef.current.playAsync();
@@ -116,6 +122,11 @@ function AudioContent({ url, isDriver }: { url: string | null; isDriver: boolean
     } finally {
       setLoading(false);
     }
+  };
+
+  const fmtDur = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
 
   return (
@@ -141,7 +152,7 @@ function AudioContent({ url, isDriver }: { url: string | null; isDriver: boolean
         ))}
       </View>
       <Text style={[styles.audioDur, isDriver ? styles.audioDurDriver : styles.audioDurClient]}>
-        {playing ? 'En cours' : '0:08'}
+        {playing ? 'En cours' : duration ? fmtDur(duration) : '—:—'}
       </Text>
     </TouchableOpacity>
   );
@@ -159,11 +170,6 @@ function LocationContent({ meta, isDriver }: { meta: Message['meta']; isDriver: 
         <Text style={[styles.locationLabel, isDriver ? styles.textDriver : styles.textClient]}>
           {meta?.label ?? 'Position partagée'}
         </Text>
-        {meta?.lat != null && (
-          <Text style={[styles.locationCoords, isDriver ? styles.timeDriver : styles.timeClient]}>
-            {meta.lat.toFixed(5)}, {meta.lng?.toFixed(5)}
-          </Text>
-        )}
       </View>
     </TouchableOpacity>
   );

@@ -96,8 +96,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       });
       const data = await res.json();
       if (!res.ok) throw new ApiError(data.error ?? 'SEND_FAILED', res.status);
-      // En dev, le backend retourne le code directement pour faciliter les tests
-      if (data.code) {
+      if (__DEV__ && data.code) {
         const { Alert } = await import('react-native');
         Alert.alert('Code OTP (dev)', `Votre code : ${data.code}`);
       }
@@ -167,7 +166,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         else if (err.status === 429) msg = 'Trop de tentatives. Réessayez dans 15 minutes.';
         else msg = `Erreur : ${err.code} (${err.status})`;
       }
-      console.warn('[resetPassword] échec:', err instanceof ApiError ? `${err.code} ${err.status}` : String(err));
+      if (__DEV__) console.warn('[resetPassword] échec:', err instanceof ApiError ? `${err.code} ${err.status}` : String(err));
       set({ error: msg, isLoading: false });
       throw err;
     }

@@ -100,6 +100,7 @@ export default function PasswordScreen({ navigation }: Props) {
             placeholder="4 chiffres"
             placeholderTextColor={TEXT2}
             keyboardType="number-pad"
+            secureTextEntry
             value={password}
             onChangeText={(t) => setPassword(t.replace(/\D/g, '').slice(0, 4))}
             maxLength={4}

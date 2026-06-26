@@ -21,6 +21,10 @@ if (process.env.WA_ENCRYPTION_KEY.length !== 64) {
   throw new Error('WA_ENCRYPTION_KEY doit être exactement 64 caractères hex (32 bytes)');
 }
 
+if (!process.env.WA_APP_SECRET) {
+  console.warn('[env] WA_APP_SECRET manquant — le webhook WhatsApp rejettera toutes les requêtes');
+}
+
 // R2 optionnel — si absent, les médias WhatsApp entrants sont ignorés
 const R2_VARS = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME'];
 const missingR2 = R2_VARS.filter((k) => !process.env[k]);
@@ -35,7 +39,14 @@ export const env = {
   WA_VERIFY_TOKEN: process.env.WA_VERIFY_TOKEN,
   WA_SALT: process.env.WA_SALT,
   WA_ENCRYPTION_KEY: process.env.WA_ENCRYPTION_KEY,
-  WA_APP_SECRET: process.env.WA_APP_SECRET || null,
+  WA_APP_SECRET: process.env.WA_APP_SECRET ?? null,
+  // Nom du template WhatsApp d'authentification pour l'envoi d'OTP
+  // Doit être approuvé dans Meta Business Suite (catégorie Authentication)
+  WA_OTP_TEMPLATE_NAME: process.env.WA_OTP_TEMPLATE_NAME || null,
+
+  // WATI — alternative BSP pour l'envoi d'OTP sans restriction de niveau de confiance
+  WATI_API_URL: process.env.WATI_API_URL || null,   // ex: https://live-server.wati.io
+  WATI_API_KEY: process.env.WATI_API_KEY || null,   // Bearer token WATI
 
   // Base de données
   DATABASE_URL: process.env.DATABASE_URL,
@@ -66,7 +77,7 @@ export const env = {
   // CORS — liste d'origines séparées par des virgules, ex: http://localhost:3000,https://admin.monapp.com
   ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
-    : '*',
+    : [],
 
   // URL publique du serveur (ex: https://vecto-production.up.railway.app)
   // Utilisée pour construire les URLs de médias uploadés. Sans cette variable,
@@ -76,4 +87,11 @@ export const env = {
   // Serveur
   PORT: parseInt(process.env.PORT || '3000', 10),
   NODE_ENV: process.env.NODE_ENV || 'development',
+
+  // B-PAY Bankily — optionnel (paiements automatiques désactivés si absent)
+  BPAY_API_URL: (process.env.BPAY_API_URL || 'https://ebankily-tst.appspot.com').replace(/\/$/, ''),
+  BPAY_USERNAME: process.env.BPAY_USERNAME || '',
+  BPAY_PASSWORD: process.env.BPAY_PASSWORD || '',
+  BPAY_MERCHANT_CODE: process.env.BPAY_MERCHANT_CODE || '',
+  BPAY_ENABLED: !!(process.env.BPAY_USERNAME && process.env.BPAY_PASSWORD),
 };

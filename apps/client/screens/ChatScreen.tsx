@@ -56,7 +56,6 @@ export default function ChatScreen({ route, navigation }: Props) {
   // Chargement initial
   useEffect(() => {
     loadMessages();
-    // Polling léger pour le statut
     pollRef.current = setInterval(async () => {
       try {
         const { delivery } = await getActiveDelivery();
@@ -64,23 +63,33 @@ export default function ChatScreen({ route, navigation }: Props) {
       } catch {}
     }, 5000);
 
-    // Socket.IO pour messages driver en temps réel
     const token = getClientToken();
-    if (token) {
-      const socket = connectClientSocket(token);
-      socket.emit('join_delivery', { deliveryId });
-      socket.on('driver_message', (m: Message) => {
-        setMessages(prev => [...prev, { ...m, senderRole: 'driver' }]);
-        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-      });
-      socket.on('delivery_cancelled', () => {
-        setStatus('cancelled');
-        Alert.alert('Course annulée', 'Cette course a été annulée par le livreur.');
-      });
-    }
+    if (!token) return () => { if (pollRef.current) clearInterval(pollRef.current); };
+
+    const socket = connectClientSocket(token);
+
+    const onConnect = () => socket.emit('join_delivery', { deliveryId });
+    const onDriverMessage = (m: Message) => {
+      setMessages(prev => [...prev, { ...m, senderRole: 'driver' }]);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    };
+    const onCancelled = () => {
+      setStatus('cancelled');
+      Alert.alert('Course annulée', 'Cette course a été annulée par le livreur.');
+    };
+
+    socket.on('connect', onConnect);
+    socket.on('driver_message', onDriverMessage);
+    socket.on('delivery_cancelled', onCancelled);
+
+    // Rejoindre immédiatement si déjà connecté
+    if (socket.connected) socket.emit('join_delivery', { deliveryId });
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      socket.off('connect', onConnect);
+      socket.off('driver_message', onDriverMessage);
+      socket.off('delivery_cancelled', onCancelled);
     };
   }, [deliveryId]);
 

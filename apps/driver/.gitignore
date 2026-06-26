@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# EAS build config (contains Apple ID, team ID, service account paths)
+eas.json
+
 # typescript
 *.tsbuildinfo
 
