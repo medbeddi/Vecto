@@ -3,10 +3,11 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
-import { emitNewOrder, emitCCMessageToDriver, emitDriverReplyToCC, emitConversationClaimed, emitConversationUnclaimed } from '../services/socket.js';
+import { emitNewOrder, emitCCMessageToDriver, emitDriverReplyToCC, emitConversationClaimed, emitConversationUnclaimed, emitDeliveryCancelled } from '../services/socket.js';
 import { createDelivery, launchDelivery } from '../services/delivery.js';
 import { hashWaId, encryptWaId, decryptWaId } from '../services/pii-filter.js';
 import { sendText, sendAudio, sendImage, sendLocation } from '../services/messaging.js';
+import { sendStatusMessageToClient } from '../services/relay.js';
 
 const router = Router();
 
@@ -89,18 +90,34 @@ router.get('/admin/orders/active', requireAdmin, async (req, res) => {
   }
 });
 
-// ── Annuler une commande ──────────────────────────────────────────────────────
-router.patch('/admin/orders/:id/cancel', requireAdmin, async (req, res) => {
+// ── Annuler une commande (admin/CC) ──────────────────────────────────────────
+router.patch('/admin/orders/:id/cancel', requireCallCenter, async (req, res) => {
   try {
-    const delivery = await db('deliveries').where({ id: req.params.id }).first('id', 'status');
+    const delivery = await db('deliveries')
+      .where({ id: req.params.id })
+      .first('id', 'status', 'driver_id', 'client_id');
     if (!delivery) return res.status(404).json({ error: 'NOT_FOUND' });
-    if (!['pending', 'assigned'].includes(delivery.status)) {
+    if (!['admin_queue', 'pending', 'assigned', 'in_progress'].includes(delivery.status)) {
       return res.status(409).json({ error: 'CANNOT_CANCEL' });
     }
+
     await db('deliveries').where({ id: req.params.id }).update({
       status: 'cancelled',
       archived_at: db.fn.now(),
+      driver_id: null,
     });
+
+    // Libérer le livreur s'il y en avait un
+    if (delivery.driver_id) {
+      await db('drivers').where({ id: delivery.driver_id }).update({ status: 'available' });
+    }
+
+    // Notifier le driver via socket (ferme le chat côté app)
+    emitDeliveryCancelled(req.params.id);
+
+    // Informer le client via WhatsApp
+    sendStatusMessageToClient(req.params.id, 'Votre commande a été annulée ❌').catch(() => {});
+
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
