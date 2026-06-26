@@ -518,17 +518,6 @@ function CoursesTab() {
         </View>
       </View>
 
-      {/* Bandeau hors-ligne */}
-      {!dispo && (
-        <View style={styles.offlineBanner}>
-          <Text style={styles.offlineBannerIcon}>🔕</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.offlineBannerTitle}>Vous êtes hors ligne</Text>
-            <Text style={styles.offlineBannerSub}>Vous ne recevrez pas de nouvelles courses tant que vous n'êtes pas disponible.</Text>
-          </View>
-        </View>
-      )}
-
       {/* Modal nouvelle commande */}
       <Modal visible={!!incomingOrder} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -649,6 +638,14 @@ function CoursesTab() {
         ListEmptyComponent={
           loadingDeliveries ? (
             <ActivityIndicator color={PRIMARY} style={{ marginTop: 60 }} />
+          ) : !dispo ? (
+            <View style={styles.offlineEmpty}>
+              <Text style={styles.offlineEmptyIcon}>🔕</Text>
+              <Text style={styles.offlineEmptyTitle}>Vous êtes hors ligne</Text>
+              <Text style={styles.offlineEmptyHint}>
+                Activez votre disponibilité pour recevoir de nouvelles courses.
+              </Text>
+            </View>
           ) : (
             <View style={styles.empty}>
               <Icon name="scooter" size={56} color={TEXT2} strokeWidth={1.5} />
@@ -1750,57 +1747,133 @@ type Provider = typeof PROVIDERS[number]['id'];
 const BANKILY_MERCHANT_CODE = '021065'; // Code marchand Bankily VECTO — à mettre à jour
 
 function BankilyPayModal({ visible, onClose, onSuccess }: {
-  visible: boolean; onClose: () => void; onSuccess: () => void;
+  visible: boolean; onClose: () => void; onSuccess: (newBalance?: number) => void;
 }) {
+  const [step, setStep] = useState<1 | 2>(1);
   const [amount, setAmount] = useState('');
   const [phone, setPhone] = useState('');
-  const [bpayCode, setBpayCode] = useState('');
+  const [passcode, setPasscode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const reset = () => { setAmount(''); setPhone(''); setBpayCode(''); };
+  const reset = () => { setStep(1); setAmount(''); setPhone(''); setPasscode(''); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleNext = () => {
+    if (!parseInt(amount) || parseInt(amount) < 100) {
+      Alert.alert('Erreur', 'Montant minimum : 100 MRU');
+      return;
+    }
+    setStep(2);
+  };
 
   const handleRecharge = async () => {
-    if (!parseInt(amount) || parseInt(amount) < 100) { Alert.alert('Erreur', 'Montant minimum : 100 MRU'); return; }
     if (!phone.trim()) { Alert.alert('Erreur', 'Numéro Bankily requis.'); return; }
-    if (!bpayCode || bpayCode.length !== 4) { Alert.alert('Erreur', 'Code B-Pay à 4 chiffres requis.'); return; }
+    if (!passcode || passcode.length !== 4) { Alert.alert('Erreur', 'Passcode à 4 chiffres requis.'); return; }
     setSubmitting(true);
     try {
-      const res = await api<{ message: string }>('/api/wallet/recharge', {
+      const res = await api<{ success?: boolean; transactionId?: string; balance?: number; error?: string; message?: string }>('/api/wallet/recharge', {
         method: 'POST',
-        body: { amount: parseInt(amount), provider: 'bankily', bpayCode, phoneNumber: phone.trim() },
+        body: { amount: parseInt(amount), provider: 'bankily', phoneNumber: phone.trim(), passcode },
       });
-      Alert.alert('Demande envoyée', res.message);
-      reset();
-      onSuccess();
-    } catch {
-      Alert.alert('Erreur', "Impossible d'envoyer la demande.");
+      if (res.success) {
+        Alert.alert('Rechargement effectué !', `Nouveau solde : ${res.balance?.toFixed(0)} MRU`);
+        reset();
+        onSuccess(res.balance);
+      } else if (res.error === 'PAYMENT_PENDING') {
+        Alert.alert('Vérification en cours', res.message || 'Votre paiement est en cours de vérification. Contactez le support si le montant est débité.');
+        reset();
+        onSuccess();
+      } else {
+        Alert.alert('Paiement refusé', res.message || 'Passcode ou téléphone invalide.');
+        setPasscode('');
+      }
+    } catch (err: any) {
+      const code = err?.body?.error ?? err?.error;
+      if (code === 'PAYMENT_FAILED') {
+        Alert.alert('Paiement refusé', 'Passcode ou numéro invalide.');
+      } else {
+        Alert.alert('Erreur', 'Impossible de traiter le paiement.');
+      }
+      setPasscode('');
     } finally {
-      setBpayCode('');
       setSubmitting(false);
     }
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.modalBox}>
-          <Text style={styles.modalTitle}>Recharge B-Pay : {BANKILY_MERCHANT_CODE}</Text>
-          <TextInput style={styles.modalInput} placeholder="Montant en Ouguiya Nouvelle"
-            placeholderTextColor={TEXT2} keyboardType="numeric" value={amount} onChangeText={setAmount} />
-          <View style={styles.modalDivider} />
-          <TextInput style={styles.modalInput} placeholder="Bankily"
-            placeholderTextColor={TEXT2} keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
-          <View style={styles.modalDivider} />
-          <TextInput style={styles.modalInput} placeholder="Passcode"
-            placeholderTextColor={TEXT2} keyboardType="numeric" maxLength={4} secureTextEntry value={bpayCode} onChangeText={setBpayCode} />
-          <View style={styles.modalBtns}>
-            <TouchableOpacity onPress={() => { reset(); onClose(); }}>
-              <Text style={styles.modalBtnCancel}>ANNULER</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleRecharge} disabled={submitting}>
-              {submitting ? <ActivityIndicator color={BRAND} size="small" /> : <Text style={styles.modalBtnOk}>RECHARGER</Text>}
-            </TouchableOpacity>
-          </View>
+          {step === 1 ? (
+            <>
+              <Text style={styles.modalTitle}>Recharge Bankily B-Pay</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Montant en Ouguiya Nouvelle"
+                placeholderTextColor={TEXT2}
+                keyboardType="numeric"
+                value={amount}
+                onChangeText={setAmount}
+              />
+              <View style={{ height: 14 }} />
+              {/* Instructions */}
+              <View style={styles.sedadCodeBox}>
+                <Text style={styles.sedadCodeLabel}>Code commerçant B-PAY</Text>
+                <Text style={styles.sedadCodeValue}>{BANKILY_MERCHANT_CODE}</Text>
+              </View>
+              <Text style={[styles.bpayStepDesc, { color: TEXT2, fontSize: 13, marginBottom: 4 }]}>
+                1. Ouvrez <Text style={{ fontWeight: '700', color: TEXT }}>Bankily</Text> → B-Pay
+              </Text>
+              <Text style={[styles.bpayStepDesc, { color: TEXT2, fontSize: 13, marginBottom: 4 }]}>
+                2. Entrez le code ci-dessus + le montant
+              </Text>
+              <Text style={[styles.bpayStepDesc, { color: TEXT2, fontSize: 13, marginBottom: 0 }]}>
+                3. Confirmez avec votre PIN → notez le <Text style={{ fontWeight: '700', color: TEXT }}>passcode</Text>
+              </Text>
+              <View style={styles.modalBtns}>
+                <TouchableOpacity onPress={handleClose}>
+                  <Text style={styles.modalBtnCancel}>ANNULER</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleNext}>
+                  <Text style={styles.modalBtnOk}>SUIVANT →</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.modalTitle}>Confirmer le paiement</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Numéro de téléphone Bankily"
+                placeholderTextColor={TEXT2}
+                keyboardType="phone-pad"
+                value={phone}
+                onChangeText={setPhone}
+              />
+              <View style={styles.modalDivider} />
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Passcode reçu (4 chiffres)"
+                placeholderTextColor={TEXT2}
+                keyboardType="numeric"
+                maxLength={4}
+                secureTextEntry
+                value={passcode}
+                onChangeText={setPasscode}
+              />
+              <View style={styles.modalBtns}>
+                <TouchableOpacity onPress={() => { setPasscode(''); setStep(1); }}>
+                  <Text style={styles.modalBtnCancel}>← RETOUR</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleRecharge} disabled={submitting}>
+                  {submitting
+                    ? <ActivityIndicator color={BRAND} size="small" />
+                    : <Text style={styles.modalBtnOk}>RECHARGER</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -2108,7 +2181,11 @@ function WalletView({ onBack }: { onBack: () => void }) {
       <BankilyPayModal
         visible={activeModal === 'bankily'}
         onClose={() => setActiveModal(null)}
-        onSuccess={() => { setActiveModal(null); refreshWallet(); }}
+        onSuccess={(newBalance) => {
+          setActiveModal(null);
+          if (newBalance !== undefined) setBalance(newBalance);
+          else refreshWallet();
+        }}
       />
       <SedadInitModal
         visible={activeModal === 'sedad'}
@@ -2469,16 +2546,11 @@ const styles = StyleSheet.create({
   dispoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   dispoLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '500' },
 
-  // Bandeau hors-ligne
-  offlineBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: '#2C2C2E',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)',
-  },
-  offlineBannerIcon: { fontSize: 20, marginTop: 1 },
-  offlineBannerTitle: { color: '#fff', fontSize: 14, fontWeight: '700', marginBottom: 2 },
-  offlineBannerSub: { color: 'rgba(255,255,255,0.5)', fontSize: 12, lineHeight: 17 },
+  // État vide hors-ligne
+  offlineEmpty: { alignItems: 'center', marginTop: 80, gap: 10, paddingHorizontal: 32 },
+  offlineEmptyIcon: { fontSize: 52 },
+  offlineEmptyTitle: { color: TEXT, fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  offlineEmptyHint: { color: TEXT2, fontSize: 13, textAlign: 'center', lineHeight: 19 },
 
   // Section header
   sectionHeader: {
