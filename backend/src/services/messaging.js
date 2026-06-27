@@ -43,11 +43,11 @@ function mimeFromUrl(url) {
   return MIME_MAP[ext] ?? 'audio/mp4';
 }
 
-// Convertit un buffer WebM Opus en OGG Opus via ffmpeg.
-// WhatsApp affiche les fichiers OGG Opus comme vocal PTT (format bas), pas comme audio.
-async function webmToOgg(buffer) {
+// Convertit n'importe quel buffer audio en OGG Opus via ffmpeg.
+// ffmpeg auto-détecte le format d'entrée (WebM, M4A, etc.)
+async function toOggOpus(buffer, inputExt) {
   const id      = randomBytes(8).toString('hex');
-  const inFile  = join(tmpdir(), `wa_${id}.webm`);
+  const inFile  = join(tmpdir(), `wa_${id}.${inputExt}`);
   const outFile = join(tmpdir(), `wa_${id}.ogg`);
   try {
     await writeFile(inFile, buffer);
@@ -58,7 +58,10 @@ async function webmToOgg(buffer) {
       outFile,
     ]);
     const result = await readFile(outFile);
-    console.info('[messaging] WebM→OGG OK (%d → %d octets)', buffer.byteLength, result.byteLength);
+    // Vérifier les magic bytes OGG (OggS = 4f676753)
+    const magic = result.slice(0, 4).toString('hex');
+    if (magic !== '4f676753') throw new Error(`OGG invalide (magic=${magic})`);
+    console.info('[messaging] %s→OGG OK (%d → %d octets)', inputExt.toUpperCase(), buffer.byteLength, result.byteLength);
     return result;
   } finally {
     await Promise.all([unlink(inFile).catch(() => {}), unlink(outFile).catch(() => {})]);
@@ -74,13 +77,21 @@ async function uploadAudioToWhatsApp(url, mimeHint) {
 
   let mime = mimeHint || dlRes.headers['content-type'] || mimeFromUrl(url);
 
-  // WebM Opus → OGG Opus : nécessaire pour que WhatsApp affiche en vocal PTT (pas fichier audio)
+  // Convertir WebM ou M4A en OGG Opus pour PTT WhatsApp
   if (mime === 'audio/webm') {
     try {
-      buffer = await webmToOgg(buffer);
+      buffer = await toOggOpus(buffer, 'webm');
       mime = 'audio/ogg';
     } catch (convErr) {
-      console.error('[messaging] conversion WebM→OGG échouée, envoi WebM brut:', convErr.message);
+      console.error('[messaging] WebM→OGG échouée:', convErr.message);
+    }
+  } else if (mime === 'audio/mp4') {
+    try {
+      buffer = await toOggOpus(buffer, 'm4a');
+      mime = 'audio/ogg';
+    } catch (convErr) {
+      console.warn('[messaging] M4A→OGG échouée → envoi M4A direct (audio normal, pas PTT):', convErr.message);
+      // garde mime = 'audio/mp4' → arrive comme audio normal mais arrive quand même
     }
   }
 

@@ -66,9 +66,9 @@ async function handleUpload(req, res) {
   let filePath = req.file.path;
   let mimetype = req.file.mimetype;
 
-  // Convert all non-ogg audio to ogg/opus for WhatsApp PTT voice notes
-  // (covers webm from browser, m4a/mp4 from iOS/Android Expo recording)
-  if (mimetype.startsWith('audio/') && !mimetype.includes('ogg')) {
+  // Convertir uniquement WebM en OGG (remuxage simple, fonctionne toujours)
+  // M4A (audio/mp4) est converti en OGG dans messaging.js avec fallback intégré
+  if (mimetype.startsWith('audio/') && !mimetype.includes('ogg') && mimetype !== 'audio/mp4') {
     try {
       const oggPath = await convertToOgg(filePath);
       try { unlinkSync(filePath); } catch {}
