@@ -131,7 +131,7 @@ export async function sendAudio(waId, urlOrKey) {
       messaging_product: 'whatsapp',
       to: waId,
       type: 'audio',
-      audio: { id: mediaId },
+      audio: { id: mediaId, voice: true },
     });
   } catch (uploadErr) {
     const detail = uploadErr.response?.data ?? uploadErr.message;
