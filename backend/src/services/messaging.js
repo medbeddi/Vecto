@@ -178,7 +178,7 @@ export async function sendAudio(waId, urlOrKey) {
       messaging_product: 'whatsapp',
       to: waId,
       type: 'audio',
-      audio: { id: mediaId },
+      audio: { id: mediaId, voice: true },
     });
     console.info('[messaging] audio PTT envoyé OK, wamid=%s', result?.messages?.[0]?.id);
     return result;
