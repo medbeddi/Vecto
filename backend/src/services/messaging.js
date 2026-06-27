@@ -127,12 +127,14 @@ export async function sendAudio(waId, urlOrKey) {
   // Try media upload first → OGG Opus → vocal PTT sur WhatsApp (format bas)
   try {
     const mediaId = await uploadAudioToWhatsApp(url, mimeHint);
-    return post({
+    const result = await post({
       messaging_product: 'whatsapp',
       to: waId,
       type: 'audio',
-      audio: { id: mediaId, voice: true },
+      audio: { id: mediaId },
     });
+    console.info('[messaging] audio PTT envoyé OK, wamid=%s', result?.messages?.[0]?.id);
+    return result;
   } catch (uploadErr) {
     const detail = uploadErr.response?.data ?? uploadErr.message;
     console.error('[messaging] media upload failed → fallback link. raison:', JSON.stringify(detail));
