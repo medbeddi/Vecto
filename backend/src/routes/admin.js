@@ -425,7 +425,7 @@ router.patch('/admin/clients/:id/alias', requireCallCenter, async (req, res) => 
 });
 
 // ── Supprimer un client ───────────────────────────────────────────────────────
-router.delete('/admin/clients/:id', requireAdmin, async (req, res) => {
+router.delete('/admin/clients/:id', requireCallCenter, async (req, res) => {
   try {
     const active = await db('deliveries')
       .where({ client_id: req.params.id })
