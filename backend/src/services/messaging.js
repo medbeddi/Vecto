@@ -53,31 +53,22 @@ async function toOggOpus(buffer, inputExt) {
   try {
     await writeFile(inFile, buffer);
 
-    if (inputExt === 'm4a') {
-      // Passe 1 : M4A → WAV PCM 48kHz mono (décodage pur, pas de resampling à la volée)
-      await execFileAsync(ffmpegPath, [
-        '-y', '-i', inFile,
-        '-ar', '48000', '-ac', '1',
-        '-f', 'wav', wavFile,
-      ]);
-      // Passe 2 : WAV → OGG Opus (encodage depuis PCM propre, identique au chemin WebM)
-      await execFileAsync(ffmpegPath, [
-        '-y', '-i', wavFile,
-        '-map', '0:a:0',
-        '-c:a', 'libopus',
-        '-b:a', '32k', '-vbr', 'on', '-compression_level', '10',
-        outFile,
-      ]);
-    } else {
-      // WebM et autres : conversion directe (Opus→Opus remux ou re-encode)
-      await execFileAsync(ffmpegPath, [
-        '-y', '-i', inFile,
-        '-c:a', 'libopus',
-        '-ar', '48000', '-ac', '1',
-        '-b:a', '32k', '-vbr', 'on', '-compression_level', '10',
-        outFile,
-      ]);
-    }
+    // Passe 1 : tout format → WAV PCM 48kHz mono (décodage pur depuis AAC, Opus, MP3…)
+    // Le chemin WAV intermédiaire garantit des frames Opus propres quel que soit le codec d'entrée.
+    // Un re-encode direct WebM→OGG produit des pre-skip/granule incorrects rejetés par iOS WhatsApp.
+    await execFileAsync(ffmpegPath, [
+      '-y', '-i', inFile,
+      '-ar', '48000', '-ac', '1',
+      '-f', 'wav', wavFile,
+    ]);
+    // Passe 2 : WAV → OGG Opus (encodage depuis PCM propre, compatible iOS WhatsApp)
+    await execFileAsync(ffmpegPath, [
+      '-y', '-i', wavFile,
+      '-map', '0:a:0',
+      '-c:a', 'libopus',
+      '-b:a', '32k', '-vbr', 'on', '-compression_level', '10',
+      outFile,
+    ]);
 
     const result = await readFile(outFile);
     const magic = result.slice(0, 4).toString('hex');
