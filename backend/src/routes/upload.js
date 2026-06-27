@@ -49,14 +49,14 @@ function convertToOgg(inputPath) {
       '-y', '-i', inputPath,
       '-c:a', 'libopus',
       '-b:a', '32k',
-      '-ac', '1',
-      '-ar', '16000',
-      '-f', 'ogg',
+      '-vbr', 'on',
+      '-compression_level', '10',
       outputPath,
     ]);
-    proc.on('close', (code) => code === 0 ? resolve(outputPath) : reject(new Error(`ffmpeg exit ${code}`)));
+    let ffmpegErr = '';
+    proc.on('close', (code) => code === 0 ? resolve(outputPath) : reject(new Error(`ffmpeg exit ${code}: ${ffmpegErr.slice(-200)}`)));
     proc.on('error', reject);
-    proc.stderr.on('data', () => {});
+    proc.stderr.on('data', (d) => { ffmpegErr += d.toString(); });
   });
 }
 

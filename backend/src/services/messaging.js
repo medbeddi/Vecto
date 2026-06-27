@@ -85,12 +85,14 @@ async function uploadAudioToWhatsApp(url, mimeHint) {
   }
 
   const ext = Object.entries(MIME_MAP).find(([, v]) => v === mime)?.[0] ?? 'm4a';
-  console.info('[messaging] audio prêt: mime=%s taille=%d octets', mime, buffer.byteLength);
+  // WhatsApp exige audio/ogg; codecs=opus pour les vocaux PTT OGG Opus
+  const uploadMime = mime === 'audio/ogg' ? 'audio/ogg; codecs=opus' : mime;
+  console.info('[messaging] audio prêt: mime=%s taille=%d octets', uploadMime, buffer.byteLength);
 
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
-  form.append('type', mime);
-  form.append('file', buffer, { filename: `voice.${ext}`, contentType: mime });
+  form.append('type', uploadMime);
+  form.append('file', buffer, { filename: `voice.${ext}`, contentType: uploadMime });
 
   const { data } = await axios.post(WA_MEDIA_API, form, {
     headers: { Authorization: `Bearer ${env.WA_TOKEN}`, ...form.getHeaders() },
