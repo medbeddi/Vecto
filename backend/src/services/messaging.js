@@ -58,10 +58,15 @@ async function toOggOpus(buffer, inputExt) {
       outFile,
     ]);
     const result = await readFile(outFile);
-    // Vérifier les magic bytes OGG (OggS = 4f676753)
     const magic = result.slice(0, 4).toString('hex');
     if (magic !== '4f676753') throw new Error(`OGG invalide (magic=${magic})`);
-    console.info('[messaging] %s→OGG OK (%d → %d octets)', inputExt.toUpperCase(), buffer.byteLength, result.byteLength);
+    // Vérifier que le codec est bien Opus (OpusHead dans la première page OGG)
+    const opusHeadOffset = result.indexOf(Buffer.from('OpusHead'));
+    console.info('[messaging] %s→OGG: magic=OggS OpusHead=%s taille=%d→%d',
+      inputExt.toUpperCase(),
+      opusHeadOffset >= 0 ? `offset ${opusHeadOffset}` : 'ABSENT (libopus indisponible!)',
+      buffer.byteLength, result.byteLength);
+    if (opusHeadOffset < 0) throw new Error('OpusHead absent — libopus non disponible dans ffmpeg-static');
     return result;
   } finally {
     await Promise.all([unlink(inFile).catch(() => {}), unlink(outFile).catch(() => {})]);
@@ -86,8 +91,12 @@ async function uploadAudioToWhatsApp(url, mimeHint) {
       console.error('[messaging] WebM→OGG échouée:', convErr.message);
     }
   } else if (mime === 'audio/mp4') {
-    // M4A envoyé directement — WhatsApp supporte audio/mp4, arrive comme audio normal
-    console.info('[messaging] M4A → envoi direct audio/mp4 (pas de conversion)');
+    try {
+      buffer = await toOggOpus(buffer, 'm4a');
+      mime = 'audio/ogg';
+    } catch (convErr) {
+      console.warn('[messaging] M4A→OGG échouée → envoi M4A direct:', convErr.message);
+    }
   }
 
   const ext = Object.entries(MIME_MAP).find(([, v]) => v === mime)?.[0] ?? 'm4a';
