@@ -48,34 +48,58 @@ function mimeFromUrl(url) {
 async function toOggOpus(buffer, inputExt) {
   const id      = randomBytes(8).toString('hex');
   const inFile  = join(tmpdir(), `wa_${id}.${inputExt}`);
+  const wavFile = join(tmpdir(), `wa_${id}.wav`);
   const outFile = join(tmpdir(), `wa_${id}.ogg`);
   try {
     await writeFile(inFile, buffer);
-    await execFileAsync(ffmpegPath, [
-      '-y', '-i', inFile,
-      '-c:a', 'libopus',
-      '-ar', '48000',
-      '-ac', '1',
-      '-b:a', '32k',
-      '-vbr', 'on', '-compression_level', '10',
-      outFile,
-    ]);
+
+    if (inputExt === 'm4a') {
+      // Passe 1 : M4A → WAV PCM 48kHz mono (décodage pur, pas de resampling à la volée)
+      await execFileAsync(ffmpegPath, [
+        '-y', '-i', inFile,
+        '-ar', '48000', '-ac', '1',
+        '-f', 'wav', wavFile,
+      ]);
+      // Passe 2 : WAV → OGG Opus (encodage depuis PCM propre, identique au chemin WebM)
+      await execFileAsync(ffmpegPath, [
+        '-y', '-i', wavFile,
+        '-map', '0:a:0',
+        '-c:a', 'libopus',
+        '-b:a', '32k', '-vbr', 'on', '-compression_level', '10',
+        outFile,
+      ]);
+    } else {
+      // WebM et autres : conversion directe (Opus→Opus remux ou re-encode)
+      await execFileAsync(ffmpegPath, [
+        '-y', '-i', inFile,
+        '-c:a', 'libopus',
+        '-ar', '48000', '-ac', '1',
+        '-b:a', '32k', '-vbr', 'on', '-compression_level', '10',
+        outFile,
+      ]);
+    }
+
     const result = await readFile(outFile);
     const magic = result.slice(0, 4).toString('hex');
     if (magic !== '4f676753') throw new Error(`OGG invalide (magic=${magic})`);
-    // Vérifier que le codec est bien Opus (OpusHead dans la première page OGG)
     const opusHeadOffset = result.indexOf(Buffer.from('OpusHead'));
-    if (opusHeadOffset < 0) throw new Error('OpusHead absent — libopus non disponible dans ffmpeg-static');
+    if (opusHeadOffset < 0) throw new Error('OpusHead absent');
     const h = result.slice(opusHeadOffset);
-    const version   = h[8];
-    const channels  = h[9];
-    const preskip   = h.readUInt16LE(10);
+    const version    = h[8];
+    const channels   = h[9];
+    const preskip    = h.readUInt16LE(10);
     const sampleRate = h.readUInt32LE(12);
-    console.info('[messaging] %s→OGG OK: version=%d ch=%d sampleRate=%d preskip=%d taille=%d→%d',
-      inputExt.toUpperCase(), version, channels, sampleRate, preskip, buffer.byteLength, result.byteLength);
+    const hasOpusTags = result.indexOf(Buffer.from('OpusTags')) >= 0;
+    console.info('[messaging] %s→OGG OK: version=%d ch=%d sampleRate=%d preskip=%d tags=%s taille=%d→%d',
+      inputExt.toUpperCase(), version, channels, sampleRate, preskip,
+      hasOpusTags, buffer.byteLength, result.byteLength);
     return result;
   } finally {
-    await Promise.all([unlink(inFile).catch(() => {}), unlink(outFile).catch(() => {})]);
+    await Promise.all([
+      unlink(inFile).catch(() => {}),
+      unlink(wavFile).catch(() => {}),
+      unlink(outFile).catch(() => {}),
+    ]);
   }
 }
 
