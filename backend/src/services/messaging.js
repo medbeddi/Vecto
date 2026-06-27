@@ -86,13 +86,8 @@ async function uploadAudioToWhatsApp(url, mimeHint) {
       console.error('[messaging] WebM→OGG échouée:', convErr.message);
     }
   } else if (mime === 'audio/mp4') {
-    try {
-      buffer = await toOggOpus(buffer, 'm4a');
-      mime = 'audio/ogg';
-    } catch (convErr) {
-      console.warn('[messaging] M4A→OGG échouée → envoi M4A direct (audio normal, pas PTT):', convErr.message);
-      // garde mime = 'audio/mp4' → arrive comme audio normal mais arrive quand même
-    }
+    // M4A envoyé directement — WhatsApp supporte audio/mp4, arrive comme audio normal
+    console.info('[messaging] M4A → envoi direct audio/mp4 (pas de conversion)');
   }
 
   const ext = Object.entries(MIME_MAP).find(([, v]) => v === mime)?.[0] ?? 'm4a';
