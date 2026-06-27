@@ -20,7 +20,7 @@ export type Delivery = {
 };
 
 export type MessageType = 'text' | 'audio' | 'image' | 'location';
-export type SenderRole = 'client' | 'driver';
+export type SenderRole = 'client' | 'driver' | 'admin';
 
 export type MessageMeta = {
   lat?: number;

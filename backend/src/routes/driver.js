@@ -20,7 +20,7 @@ import { hashWaId } from '../services/pii-filter.js';
 import { acceptDelivery, updateDeliveryStatus } from '../services/delivery.js';
 import { relayDriverMessage, sendStatusMessageToClient } from '../services/relay.js';
 import { getSignedUploadUrl } from '../services/media.js';
-import { emitDeliveryCancelled, emitDriverReplyToCC, emitDriverAvailability } from '../services/socket.js';
+import { emitDeliveryCancelled, emitDriverReplyToCC, emitDriverAvailability, emitNewOrder } from '../services/socket.js';
 
 const router = Router();
 
@@ -375,19 +375,46 @@ router.post('/deliveries/:id/driver-cancel', requireAuth, async (req, res) => {
     const delivery = await db('deliveries')
       .where({ id: req.params.id, driver_id: req.driver.id })
       .whereIn('status', ['assigned', 'in_progress'])
-      .first('id');
+      .first();
 
     if (!delivery) return res.status(404).json({ error: 'DELIVERY_NOT_FOUND' });
 
+    // Remettre en pending, effacer le livreur, réinitialiser la priorité
     await db('deliveries')
       .where({ id: req.params.id })
-      .update({ status: 'pending', driver_id: null });
+      .update({
+        status: 'pending',
+        driver_id: null,
+        nearest_driver_id: null,
+        last_broadcast_at: db.fn.now(),
+      });
 
     await db('drivers')
       .where({ id: req.driver.id })
       .update({ status: 'available' });
 
-    emitDeliveryCancelled(req.params.id);
+    // Enregistrer le refus pour éviter que le même livreur reçoive le re-broadcast
+    await db('delivery_refusals')
+      .insert({ delivery_id: req.params.id, driver_id: req.driver.id })
+      .onConflict(['delivery_id', 'driver_id'])
+      .ignore();
+
+    // Informer le client via WhatsApp
+    sendStatusMessageToClient(
+      req.params.id,
+      "Votre livreur n'est plus disponible, un autre livreur va prendre en charge votre commande 🔄"
+    ).catch(() => {});
+
+    // Re-broadcast immédiat aux autres livreurs disponibles
+    const client = await db('clients').where({ id: delivery.client_id }).first('alias');
+    const initialMessage = delivery.initial_media_type === 'audio' && delivery.initial_media_url
+      ? { type: 'audio', content: delivery.initial_media_url, meta: null }
+      : { type: 'text', content: delivery.description ?? 'Course disponible', meta: null };
+
+    emitNewOrder(
+      { ...delivery, alias: client?.alias ?? 'Client', nearest_driver_id: null },
+      initialMessage
+    ).catch(() => {});
 
     res.json({ ok: true });
   } catch {
@@ -412,18 +439,25 @@ router.get('/deliveries/:id/messages', requireAuth, async (req, res) => {
   try {
     const delivery = await db('deliveries')
       .where({ id: req.params.id, driver_id: req.driver.id })
-      .first('id');
+      .first('id', 'chat_session_started_at');
 
     if (!delivery) return res.status(404).json({ error: 'DELIVERY_NOT_FOUND' });
 
     const messages = await db('messages')
       .where({ delivery_id: req.params.id })
       .where(function () {
-        this.whereIn('sender_role', ['driver', 'client'])
-          .orWhere(function () {
-            this.where('sender_role', 'admin')
-              .whereRaw("meta->>'for_driver' = 'true'");
+        // Vocal de lancement (admin, for_driver: true) — opérateur @> plus fiable que ->>
+        this.where(function () {
+          this.where('sender_role', 'admin')
+            .whereRaw("meta @> '{\"for_driver\":true}'::jsonb");
+        });
+        // Messages driver/client de la session courante uniquement — jamais avant l'acceptation
+        if (delivery.chat_session_started_at) {
+          this.orWhere(function () {
+            this.whereIn('sender_role', ['driver', 'client'])
+              .where('created_at', '>=', delivery.chat_session_started_at);
           });
+        }
       })
       .orderBy('created_at', 'asc')
       .select(

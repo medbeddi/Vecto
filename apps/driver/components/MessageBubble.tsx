@@ -18,8 +18,21 @@ type Props = { message: Message; onLongPress?: () => void; onPressImage?: (url: 
 
 export function MessageBubble({ message, onLongPress, onPressImage }: Props) {
   const isDriver = message.senderRole === 'driver';
+  const isAdmin = message.senderRole === 'admin';
   const reactions = message.meta?.reactions ?? {};
   const reactionEntries = Object.entries(reactions);
+
+  // Message vocal de lancement (admin) → bulle système centrée
+  if (isAdmin) {
+    return (
+      <View style={styles.systemRow}>
+        <Text style={styles.systemLabel}>🎙 Message vocal de lancement</Text>
+        <View style={styles.systemBubble}>
+          <BubbleContent message={message} isDriver={false} onPressImage={onPressImage} />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.row, isDriver ? styles.rowRight : styles.rowLeft]}>
@@ -241,4 +254,16 @@ const styles = StyleSheet.create({
   locationIcon: { fontSize: 22 },
   locationLabel: { fontSize: 14, fontWeight: '600' },
   locationCoords: { fontSize: 11, marginTop: 2 },
+
+  // Bulle système (message admin de lancement)
+  systemRow: { alignItems: 'center', marginVertical: 10, paddingHorizontal: 20 },
+  systemLabel: { fontSize: 11, color: TEXT2, marginBottom: 6, fontStyle: 'italic' },
+  systemBubble: {
+    backgroundColor: '#FFFBE6',
+    borderRadius: 14,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#FFD966',
+    maxWidth: '90%',
+  },
 });

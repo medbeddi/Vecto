@@ -211,7 +211,7 @@ function CoursesTab() {
   const { driver } = useAuthStore();
   const {
     available, loadingDeliveries, loadAvailable, silentRefreshAvailable, loadActiveCourses,
-    upsertAvailable, removeAvailable, activeCourses, addActiveCourse,
+    upsertAvailable, removeAvailable, clearAvailable, activeCourses, addActiveCourse,
   } = useDeliveriesStore();
 
   const [accepting, setAccepting] = useState<string | null>(null);
@@ -239,6 +239,8 @@ function CoursesTab() {
         method: 'PATCH',
         body: { isAvailable: value },
       });
+      if (value) loadAvailable();
+      else clearAvailable();
     } catch {
       setDispo(!value); // rollback si erreur
       Alert.alert('Erreur', 'Impossible de changer la disponibilité.');
@@ -624,7 +626,9 @@ function CoursesTab() {
                     <View style={styles.activeCourseHeader}>
                       <View style={styles.activeCourseLeft}>
                         <View style={styles.activeDot} />
-                        <Text style={styles.activeCourseAlias}>{d.clientAlias}</Text>
+                        <Text style={styles.activeCourseAlias} numberOfLines={1}>
+                          {d.dropoffAddress ?? d.clientAlias}
+                        </Text>
                       </View>
                       <Text style={styles.activeCourseArrow}>→ Ouvrir</Text>
                     </View>
@@ -727,12 +731,12 @@ function ChatsTab() {
               >
                 <View style={styles.chatAvatarWrap}>
                   <View style={styles.chatAvatar}>
-                    <Text style={styles.chatAvatarText}>{(d.clientAlias ?? '?')[0].toUpperCase()}</Text>
+                    <Text style={styles.chatAvatarText}>C</Text>
                   </View>
                   <View style={styles.onlineDot} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={styles.chatAlias}>{d.clientAlias}</Text>
+                  <Text style={styles.chatAlias}>Client</Text>
                   <Text style={styles.chatLastMsg}>{icon}  {label}</Text>
                 </View>
                 <Text style={styles.chatTime}>{timeStr}</Text>
@@ -1401,7 +1405,7 @@ function HistoriqueTab() {
                   <Text style={{ color: '#fff', fontSize: 16 }}>🛵</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.histCourseLabel}>{c.clientAlias ?? 'Course'}</Text>
+                  <Text style={styles.histCourseLabel}>Client</Text>
                   <Text style={styles.histCourseDate}>{date}</Text>
                   {c.price != null && (
                     <Text style={{ fontSize: 13, color: '#1a7a35', fontWeight: '600', marginTop: 2 }}>
@@ -1744,7 +1748,7 @@ const PROVIDERS = [
 ] as const;
 type Provider = typeof PROVIDERS[number]['id'];
 
-const BANKILY_MERCHANT_CODE = '021065'; // Code marchand Bankily VECTO — à mettre à jour
+const BANKILY_MERCHANT_CODE = '026754';
 
 function BankilyPayModal({ visible, onClose, onSuccess }: {
   visible: boolean; onClose: () => void; onSuccess: (newBalance?: number) => void;

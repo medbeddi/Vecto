@@ -15,6 +15,7 @@ type DeliveriesState = {
   loadActiveCourses: () => Promise<void>;
   upsertAvailable: (d: Delivery) => void;
   removeAvailable: (id: string) => void;
+  clearAvailable: () => void;
 
   addActiveCourse: (d: Delivery) => void;
   removeActiveCourse: (id: string) => void;
@@ -76,6 +77,8 @@ export const useDeliveriesStore = create<DeliveriesState>((set) => ({
 
   removeAvailable: (id) =>
     set((s) => ({ available: s.available.filter((d) => d.id !== id) })),
+
+  clearAvailable: () => set({ available: [] }),
 
   addActiveCourse: (d) =>
     set((s) => {

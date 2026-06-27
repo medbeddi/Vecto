@@ -49,6 +49,7 @@ export default function ChatScreen() {
   const { activeDelivery, messages, loadingMessages, loadMessages, appendMessage, updateMessageReactions, setActiveDelivery, updateActiveStatus, removeActiveCourse, setPendingCancellation } =
     useDeliveriesStore();
 
+  const selfCancelledRef = useRef(false);
   const [text, setText] = useState('');
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [recordingPaused, setRecordingPaused] = useState(false);
@@ -85,7 +86,7 @@ export default function ChatScreen() {
       listRef.current?.scrollToEnd({ animated: true });
     };
     const onCancelled = ({ deliveryId }: { deliveryId: string }) => {
-      if (deliveryId === initDelivery.id) {
+      if (deliveryId === initDelivery.id && !selfCancelledRef.current) {
         updateActiveStatus('cancelled');
         Alert.alert('Course annulée', 'Cette course a été annulée.');
       }
@@ -412,6 +413,7 @@ export default function ChatScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              selfCancelledRef.current = true;
               await api(`/api/deliveries/${delivery.id}/driver-cancel`, { method: 'POST' });
               removeActiveCourse(delivery.id);
               setPendingCancellation({
@@ -440,10 +442,10 @@ export default function ChatScreen() {
           <Icon name="chevron-left" size={22} color="#fff" strokeWidth={2} />
         </TouchableOpacity>
         <View style={styles.headerAvatar}>
-          <Text style={styles.headerAvatarText}>{(delivery.clientAlias ?? '?')[0].toUpperCase()}</Text>
+          <Text style={styles.headerAvatarText}>C</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerName}>{delivery.clientAlias}</Text>
+          <Text style={styles.headerName}>Client</Text>
           <Text style={styles.headerStatus}>{STATUS_LABELS[delivery.status ?? 'assigned']}</Text>
         </View>
         <TouchableOpacity

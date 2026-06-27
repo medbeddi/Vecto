@@ -130,6 +130,7 @@ export async function acceptDelivery(deliveryId, driverId) {
         status: 'assigned',
         driver_id: driverId,
         assigned_at: trx.fn.now(),
+        chat_session_started_at: trx.fn.now(),
       })
       .returning('*');
 
