@@ -1203,6 +1203,30 @@ function cancelCCCourse() {
   showModal('modal-confirm');
 }
 
+function cancelCCCourseById(event, deliveryId) {
+  event.stopPropagation();
+  document.getElementById('confirm-title').textContent   = 'Annuler cette course ?';
+  document.getElementById('confirm-message').textContent = 'La course sera marquée annulée. Cette action est irréversible.';
+  document.getElementById('confirm-btn').onclick = async function () {
+    closeModal('modal-confirm');
+    try {
+      const r = await fetch(API + '/api/admin/orders/' + deliveryId + '/cancel', {
+        method: 'PATCH',
+        headers: authHeaders(),
+      });
+      if (!r.ok) {
+        var err = await r.json().catch(() => ({}));
+        alert('Erreur : ' + (err.error || r.status));
+        return;
+      }
+      refreshCurrentInboxTab();
+    } catch (e) {
+      alert('Erreur réseau : ' + e.message);
+    }
+  };
+  showModal('modal-confirm');
+}
+
 /* ================================================================
    LIVREURS
 ================================================================ */
@@ -2360,6 +2384,7 @@ function renderInboxList(items) {
       + '<div class="cc-inbox-alias">' + displayName + claimedBadge + '</div>'
       + '<div class="cc-inbox-preview">' + escHtml(preview.slice(0, 60)) + '</div>'
       + '<div class="cc-inbox-time">' + time + '</div>'
+      + '<button class="cc-inbox-cancel-btn" onclick="cancelCCCourseById(event,\'' + item.id + '\')" title="Annuler la course">✕ Annuler</button>'
       + '</div>';
   }).join('');
 }
