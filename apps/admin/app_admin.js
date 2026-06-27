@@ -1600,7 +1600,10 @@ function renderClients(data) {
       + '<td>' + phone + '</td>'
       + '<td style="font-weight:600">' + c.commandes + '</td>'
       + '<td>' + fmtDate(c.derniere) + '</td>'
-      + '<td><button class="btn-table" onclick="voirClientDetail(' + i + ')">Voir</button></td>'
+      + '<td>'
+      +   '<button class="btn-table" onclick="voirClientDetail(' + i + ')">Voir</button>'
+      +   ' <button class="btn-table red" onclick="deleteClient(' + i + ')">Supprimer</button>'
+      + '</td>'
       + '</tr>';
   });
   tbody.innerHTML = html;
@@ -1643,6 +1646,36 @@ function filterClients() {
   renderClients(_clients.filter(function (c) {
     return c.alias.toLowerCase().includes(q) || (c.phone && c.phone.includes(q));
   }));
+}
+
+function deleteClient(i) {
+  var c = _clients[i];
+  if (!c) return;
+  document.getElementById('confirm-title').textContent   = 'Supprimer ce client ?';
+  document.getElementById('confirm-message').textContent = 'Le compte "' + c.alias + '" et tout son historique de commandes seront supprimés définitivement.';
+  document.getElementById('confirm-btn').onclick = async function () {
+    closeModal('modal-confirm');
+    try {
+      const r = await fetch(API + '/api/admin/clients/' + c.id, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      });
+      if (!r.ok) {
+        var err = await r.json().catch(() => ({}));
+        if (err.error === 'CLIENT_HAS_ACTIVE_DELIVERY') {
+          alert('Impossible : ce client a une livraison en cours.');
+        } else {
+          alert('Erreur : ' + (err.error || r.status));
+        }
+        return;
+      }
+      _clients.splice(i, 1);
+      renderClients(_clients);
+    } catch (e) {
+      alert('Erreur réseau : ' + e.message);
+    }
+  };
+  showModal('modal-confirm');
 }
 
 var _clientDetailIndex = -1;

@@ -424,6 +424,30 @@ router.patch('/admin/clients/:id/alias', requireCallCenter, async (req, res) => 
   }
 });
 
+// ── Supprimer un client ───────────────────────────────────────────────────────
+router.delete('/admin/clients/:id', requireAdmin, async (req, res) => {
+  try {
+    const active = await db('deliveries')
+      .where({ client_id: req.params.id })
+      .whereIn('status', ['admin_queue', 'pending', 'assigned', 'in_progress'])
+      .first('id');
+    if (active) return res.status(409).json({ error: 'CLIENT_HAS_ACTIVE_DELIVERY' });
+
+    const deliveryIds = await db('deliveries').where({ client_id: req.params.id }).pluck('id');
+    if (deliveryIds.length) {
+      await db('messages').whereIn('delivery_id', deliveryIds).delete();
+      await db('deliveries').where({ client_id: req.params.id }).delete();
+    }
+
+    const deleted = await db('clients').where({ id: req.params.id }).delete();
+    if (!deleted) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'SERVER_ERROR' });
+  }
+});
+
 // ── Transactions wallet ───────────────────────────────────────────────────────
 router.get('/admin/transactions', requireAdmin, async (req, res) => {
   try {
