@@ -27,7 +27,7 @@ const META_TIMEOUT = 20_000; // 20s max par appel Meta
 export async function downloadFromMeta(mediaId) {
   // Étape 1 : obtenir l'URL de téléchargement
   const { data: meta } = await axios.get(
-    `https://graph.facebook.com/v19.0/${mediaId}`,
+    `https://graph.facebook.com/v22.0/${mediaId}`,
     { headers: { Authorization: `Bearer ${env.WA_TOKEN}` }, timeout: META_TIMEOUT }
   );
 

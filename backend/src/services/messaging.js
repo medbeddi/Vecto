@@ -3,8 +3,8 @@ import FormData from 'form-data';
 import { env } from '../config/env.js';
 import { getSignedMediaUrl } from './media.js';
 
-const WA_API       = `https://graph.facebook.com/v19.0/${env.WA_PHONE_ID}/messages`;
-const WA_MEDIA_API = `https://graph.facebook.com/v19.0/${env.WA_PHONE_ID}/media`;
+const WA_API       = `https://graph.facebook.com/v22.0/${env.WA_PHONE_ID}/messages`;
+const WA_MEDIA_API = `https://graph.facebook.com/v22.0/${env.WA_PHONE_ID}/media`;
 
 async function post(payload) {
   try {
@@ -89,7 +89,7 @@ export async function sendAudio(waId, urlOrKey) {
       messaging_product: 'whatsapp',
       to: waId,
       type: 'audio',
-      audio: { id: mediaId, voice: true },
+      audio: { id: mediaId },
     });
   } catch (uploadErr) {
     const detail = uploadErr.response?.data ?? uploadErr.message;
