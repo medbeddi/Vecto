@@ -568,14 +568,15 @@ function _driverMsgBubble(m) {
           + '<span class="cc-audio-icon" id="ico_' + uid + '">▶</span>'
           + '</button>'
           + '<div class="cc-audio-body">'
-          + '<div class="cc-audio-wave">'
-          + [2,3,4,2,4,1,3,2,4,3,1,4,2,3,1,4,3,2,4,1,3,2,4,3].map(function(h){ return '<span class="cc-audio-bar h' + h + '"></span>'; }).join('')
+          + '<div class="cc-audio-wave" id="wav_' + uid + '" onclick="seekAudioMsg(\'' + uid + '\',event)">'
+          + [1,1,2,3,3,4,2,4,3,2,3,4,4,3,2,4,3,2,4,3,3,4,2,4,3,2,4,3,2,3,4,3,2,4,3,2,3,2,1,1].map(function(h){ return '<span class="cc-audio-bar h' + h + '"></span>'; }).join('')
           + '</div>'
           + '<span class="cc-audio-dur" id="dur_' + uid + '">0:00</span>'
           + '</div></div>'
           + '<audio id="' + uid + '" ' + audioAttrD + ' style="display:none"'
           + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0,el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"'
-          + ' onended="(function(){var ic=document.getElementById(\'ico_' + uid + '\');if(ic)ic.textContent=\'▶\';var w=document.getElementById(\'wrp_' + uid + '\');if(w)w.classList.remove(\'playing\')}).call(this)"></audio>';
+          + ' ontimeupdate="(function(){if(this.duration)updateAudioProgress(\'' + uid + '\',this.currentTime/this.duration)}).call(this)"'
+          + ' onended="(function(){var ic=document.getElementById(\'ico_' + uid + '\');if(ic)ic.textContent=\'▶\';var w=document.getElementById(\'wrp_' + uid + '\');if(w)w.classList.remove(\'playing\');updateAudioProgress(\'' + uid + '\',0)}).call(this)"></audio>';
   } else if (type === 'image') {
     inner = '<img src="' + escHtml(m.content) + '" class="cc-msg-img" onerror="_imgErr(this)" onclick="openImgModal(this.src)" style="cursor:pointer;max-width:200px;border-radius:8px" />';
   } else if (type === 'location') {
@@ -661,6 +662,27 @@ async function toggleAudioMsg(uid) {
     var wrap2 = document.getElementById('wrp_' + uid);
     if (wrap2) wrap2.classList.remove('playing');
   }
+}
+
+function updateAudioProgress(uid, ratio) {
+  var wave = document.getElementById('wav_' + uid);
+  if (!wave) return;
+  var bars = wave.querySelectorAll('.cc-audio-bar');
+  var played = Math.round(ratio * bars.length);
+  for (var i = 0; i < bars.length; i++) {
+    if (i < played) bars[i].classList.add('played');
+    else bars[i].classList.remove('played');
+  }
+}
+
+function seekAudioMsg(uid, e) {
+  var wave = document.getElementById('wav_' + uid);
+  var audio = document.getElementById(uid);
+  if (!wave || !audio || !audio.duration) return;
+  var rect = wave.getBoundingClientRect();
+  var ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  audio.currentTime = ratio * audio.duration;
+  updateAudioProgress(uid, ratio);
 }
 
 function renderDriverChatMessages(messages) {
@@ -2589,14 +2611,15 @@ function _buildMsgBody(m) {
            + '<span class="cc-audio-icon" id="ico_' + uid + '">▶</span>'
            + '</button>'
            + '<div class="cc-audio-body">'
-           + '<div class="cc-audio-wave">'
-           + [2,3,4,2,4,1,3,2,4,3,1,4,2,3,1,4,3,2,4,1,3,2,4,3].map(function(h){ return '<span class="cc-audio-bar h' + h + '"></span>'; }).join('')
+           + '<div class="cc-audio-wave" id="wav_' + uid + '" onclick="seekAudioMsg(\'' + uid + '\',event)">'
+           + [1,1,2,3,3,4,2,4,3,2,3,4,4,3,2,4,3,2,4,3,3,4,2,4,3,2,4,3,2,3,4,3,2,4,3,2,3,2,1,1].map(function(h){ return '<span class="cc-audio-bar h' + h + '"></span>'; }).join('')
            + '</div>'
            + '<span class="cc-audio-dur" id="dur_' + uid + '">0:00</span>'
            + '</div></div>'
            + '<audio id="' + uid + '" ' + audioAttr + ' style="display:none"'
            + ' onloadedmetadata="(function(){var s=Math.round(this.duration)||0;var el=document.getElementById(\'dur_' + uid + '\');if(el&&s>0)el.textContent=Math.floor(s/60)+\':\'+String(s%60).padStart(2,\'0\')}).call(this)"'
-           + ' onended="(function(){var ic=document.getElementById(\'ico_' + uid + '\');if(ic)ic.textContent=\'▶\';var w=document.getElementById(\'wrp_' + uid + '\');if(w)w.classList.remove(\'playing\')}).call(this)"></audio>';
+           + ' ontimeupdate="(function(){if(this.duration)updateAudioProgress(\'' + uid + '\',this.currentTime/this.duration)}).call(this)"'
+           + ' onended="(function(){var ic=document.getElementById(\'ico_' + uid + '\');if(ic)ic.textContent=\'▶\';var w=document.getElementById(\'wrp_' + uid + '\');if(w)w.classList.remove(\'playing\');updateAudioProgress(\'' + uid + '\',0)}).call(this)"></audio>';
       if (side === 'client') {
         body += '<button class="cc-forward-btn" onclick="forwardAudioToDrivers(\'' + escHtml(fwdContent) + '\')" title="Utiliser ce vocal comme message de course">'
           + '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg>'
