@@ -65,6 +65,15 @@ async function processPayload(body) {
         continue;
       }
 
+      // Log statuts de livraison WhatsApp (sent/delivered/read/failed)
+      if (Array.isArray(value.statuses)) {
+        for (const s of value.statuses) {
+          console.info('[webhook] statut message wamid=%s status=%s recipient=%s errors=%s',
+            s.id, s.status, s.recipient_id,
+            s.errors ? JSON.stringify(s.errors) : 'aucun');
+        }
+      }
+
       const messages = value.messages;
       if (!Array.isArray(messages)) continue;
 
