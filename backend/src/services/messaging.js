@@ -22,20 +22,33 @@ async function post(payload) {
   }
 }
 
+const MIME_MAP = {
+  m4a: 'audio/mp4', mp4: 'audio/mp4', aac: 'audio/aac',
+  mp3: 'audio/mpeg', mpeg: 'audio/mpeg',
+  ogg: 'audio/ogg', oga: 'audio/ogg',
+  amr: 'audio/amr', webm: 'audio/ogg',
+};
+
+function mimeFromUrl(url) {
+  const ext = (url?.split('?')[0].split('.').pop() ?? '').toLowerCase();
+  return MIME_MAP[ext] ?? 'audio/mp4';
+}
+
 // Upload audio to WhatsApp media endpoint and return media_id.
 // Using media_id (instead of link) makes the audio display as a PTT voice note.
-async function uploadAudioToWhatsApp(url) {
+async function uploadAudioToWhatsApp(url, mimeHint) {
   console.info('[messaging] téléchargement audio depuis:', url.slice(0, 120));
   const dlRes = await axios.get(url, { responseType: 'arraybuffer' });
-  const contentType = dlRes.headers['content-type'] || '';
-  console.info('[messaging] audio téléchargé: Content-Type=%s taille=%d octets', contentType, dlRes.data.byteLength);
-
   const buffer = Buffer.from(dlRes.data);
+
+  const mime = mimeHint || dlRes.headers['content-type'] || mimeFromUrl(url);
+  const ext  = Object.entries(MIME_MAP).find(([, v]) => v === mime)?.[0] ?? 'm4a';
+  console.info('[messaging] audio téléchargé: mime=%s taille=%d octets', mime, buffer.byteLength);
 
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
-  form.append('type', 'audio/ogg; codecs=opus');
-  form.append('file', buffer, { filename: 'voice.ogg', contentType: 'audio/ogg; codecs=opus' });
+  form.append('type', mime);
+  form.append('file', buffer, { filename: `voice.${ext}`, contentType: mime });
 
   const { data } = await axios.post(WA_MEDIA_API, form, {
     headers: { Authorization: `Bearer ${env.WA_TOKEN}`, ...form.getHeaders() },
@@ -56,13 +69,14 @@ export async function sendText(waId, text) {
 }
 
 export async function sendAudio(waId, urlOrKey) {
+  // Détecter le MIME depuis l'extension avant résolution (la clé R2 a l'extension)
+  const mimeHint = mimeFromUrl(urlOrKey);
+
   // Résoudre en URL signée 7 jours (fonctionne bucket public ET privé)
   let url = urlOrKey;
   if (!urlOrKey?.startsWith('http')) {
-    // C'est une clé R2
     url = await getSignedMediaUrl(urlOrKey, 604800);
   } else if (env.R2_PUBLIC_URL && urlOrKey.startsWith(env.R2_PUBLIC_URL + '/')) {
-    // C'est une URL publique R2 → extraire la clé → URL signée fiable
     const key = urlOrKey.slice(env.R2_PUBLIC_URL.length + 1);
     try { url = await getSignedMediaUrl(key, 604800); } catch {}
   }
@@ -70,7 +84,7 @@ export async function sendAudio(waId, urlOrKey) {
 
   // Try media upload first (shows as PTT voice note in WhatsApp)
   try {
-    const mediaId = await uploadAudioToWhatsApp(url);
+    const mediaId = await uploadAudioToWhatsApp(url, mimeHint);
     return post({
       messaging_product: 'whatsapp',
       to: waId,
