@@ -48,6 +48,8 @@ function convertToOgg(inputPath) {
     const proc = spawn(ffmpegPath, [
       '-y', '-i', inputPath,
       '-c:a', 'libopus',
+      '-ar', '48000',
+      '-ac', '1',
       '-b:a', '32k',
       '-vbr', 'on',
       '-compression_level', '10',

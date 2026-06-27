@@ -2417,12 +2417,15 @@ function CourseProgressBar({ status }: { status?: string }) {
 
   return (
     <View style={cpbStyles.row}>
-      {COURSE_STEPS.map((label, i) => (
-        <View key={i} style={cpbStyles.stepWrap}>
-          {i > 0 && (
-            <View style={[cpbStyles.line, i <= doneIdx && cpbStyles.lineFilled]} />
-          )}
-          <View style={cpbStyles.stepItem}>
+      {COURSE_STEPS.flatMap((label, i) => {
+        const items = [];
+        if (i > 0) {
+          items.push(
+            <View key={`line-${i}`} style={[cpbStyles.line, i <= doneIdx && cpbStyles.lineFilled]} />
+          );
+        }
+        items.push(
+          <View key={`step-${i}`} style={cpbStyles.stepItem}>
             <View style={[
               cpbStyles.dot,
               i < doneIdx ? cpbStyles.dotDone
@@ -2433,23 +2436,23 @@ function CourseProgressBar({ status }: { status?: string }) {
               {label}
             </Text>
           </View>
-        </View>
-      ))}
+        );
+        return items;
+      })}
     </View>
   );
 }
 
 const cpbStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
-  stepWrap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  line: { flex: 1, height: 2, backgroundColor: '#2a2a2a' },
+  row: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 10, paddingHorizontal: 4 },
+  line: { flex: 1, height: 2, backgroundColor: '#2a2a2a', marginTop: 5 },
   lineFilled: { backgroundColor: '#4caf50' },
   stepItem: { alignItems: 'center' },
-  dot: { width: 10, height: 10, borderRadius: 5 },
+  dot: { width: 12, height: 12, borderRadius: 6 },
   dotDone: { backgroundColor: '#4caf50' },
   dotCurrent: { backgroundColor: PRIMARY, borderWidth: 2, borderColor: PRIMARY },
   dotPending: { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#444' },
-  label: { fontSize: 8, marginTop: 3, textAlign: 'center', width: 48 },
+  label: { fontSize: 9, marginTop: 4, textAlign: 'center', width: 56 },
   labelDone: { color: '#4caf50', fontWeight: '600' },
   labelPending: { color: '#444' },
 });

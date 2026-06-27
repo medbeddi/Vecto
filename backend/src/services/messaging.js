@@ -53,7 +53,10 @@ async function toOggOpus(buffer, inputExt) {
     await writeFile(inFile, buffer);
     await execFileAsync(ffmpegPath, [
       '-y', '-i', inFile,
-      '-c:a', 'libopus', '-b:a', '32k',
+      '-c:a', 'libopus',
+      '-ar', '48000',
+      '-ac', '1',
+      '-b:a', '32k',
       '-vbr', 'on', '-compression_level', '10',
       outFile,
     ]);
@@ -62,11 +65,14 @@ async function toOggOpus(buffer, inputExt) {
     if (magic !== '4f676753') throw new Error(`OGG invalide (magic=${magic})`);
     // Vérifier que le codec est bien Opus (OpusHead dans la première page OGG)
     const opusHeadOffset = result.indexOf(Buffer.from('OpusHead'));
-    console.info('[messaging] %s→OGG: magic=OggS OpusHead=%s taille=%d→%d',
-      inputExt.toUpperCase(),
-      opusHeadOffset >= 0 ? `offset ${opusHeadOffset}` : 'ABSENT (libopus indisponible!)',
-      buffer.byteLength, result.byteLength);
     if (opusHeadOffset < 0) throw new Error('OpusHead absent — libopus non disponible dans ffmpeg-static');
+    const h = result.slice(opusHeadOffset);
+    const version   = h[8];
+    const channels  = h[9];
+    const preskip   = h.readUInt16LE(10);
+    const sampleRate = h.readUInt32LE(12);
+    console.info('[messaging] %s→OGG OK: version=%d ch=%d sampleRate=%d preskip=%d taille=%d→%d',
+      inputExt.toUpperCase(), version, channels, sampleRate, preskip, buffer.byteLength, result.byteLength);
     return result;
   } finally {
     await Promise.all([unlink(inFile).catch(() => {}), unlink(outFile).catch(() => {})]);
