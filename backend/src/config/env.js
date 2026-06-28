@@ -94,4 +94,11 @@ export const env = {
   BPAY_PASSWORD: process.env.BPAY_PASSWORD || '',
   BPAY_MERCHANT_CODE: process.env.BPAY_MERCHANT_CODE || '',
   BPAY_ENABLED: !!(process.env.BPAY_USERNAME && process.env.BPAY_PASSWORD),
+
+  // Twilio — optionnel (appels vocaux + OTP SMS désactivés si absent)
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || null,
+  TWILIO_AUTH_TOKEN:  process.env.TWILIO_AUTH_TOKEN  || null,
+  TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || null, // ex: +12015551234
+  TWILIO_VERIFY_SID:  process.env.TWILIO_VERIFY_SID  || null,  // ex: VAxxxxxxxxxxxxxxxx
+  CC_PHONE: process.env.CC_PHONE || null, // numéro du call center ex: +21699000000
 };

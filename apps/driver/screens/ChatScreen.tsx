@@ -471,14 +471,15 @@ export default function ChatScreen() {
               const filled = i < stepIdx;
               const current = i === stepIdx;
               return (
-                <View key={i} style={styles.stepWrap}>
-                  {i > 0 && <View style={[styles.stepLine, (filled || current) && styles.stepLineDone]} />}
-                  <View style={styles.stepItem}>
+                <View key={i} style={styles.stepCol}>
+                  <View style={styles.stepLineRow}>
+                    <View style={[styles.stepHalfLine, i === 0 && styles.stepLineHidden, (filled || current) && styles.stepLineDone]} />
                     <View style={[styles.stepDot, filled ? styles.stepDotDone : current ? styles.stepDotCurrent : styles.stepDotPending]} />
-                    <Text style={[styles.stepLabel, filled ? styles.stepLabelDone : current ? styles.stepLabelCurrent : styles.stepLabelPending]}>
-                      {label}
-                    </Text>
+                    <View style={[styles.stepHalfLine, i === 2 && styles.stepLineHidden, filled && styles.stepLineDone]} />
                   </View>
+                  <Text style={[styles.stepLabel, filled ? styles.stepLabelDone : current ? styles.stepLabelCurrent : styles.stepLabelPending]}>
+                    {label}
+                  </Text>
                 </View>
               );
             })}
@@ -841,11 +842,12 @@ const styles = StyleSheet.create({
 
   // Progress bar
   progressWrap: { backgroundColor: BG, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1e1e1e' },
-  stepsRow: { flexDirection: 'row', alignItems: 'center' },
-  stepWrap: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  stepLine: { flex: 1, height: 2, backgroundColor: '#2a2a2a' },
+  stepsRow: { flexDirection: 'row' },
+  stepCol: { flex: 1, alignItems: 'center' },
+  stepLineRow: { flexDirection: 'row', alignItems: 'center', width: '100%' },
+  stepHalfLine: { flex: 1, height: 2, backgroundColor: '#2a2a2a' },
+  stepLineHidden: { backgroundColor: 'transparent' },
   stepLineDone: { backgroundColor: PRIMARY },
-  stepItem: { alignItems: 'center' },
   stepDot: { width: 12, height: 12, borderRadius: 6 },
   stepDotDone: { backgroundColor: PRIMARY },
   stepDotCurrent: { backgroundColor: PRIMARY, borderWidth: 2, borderColor: PRIMARY },

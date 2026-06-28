@@ -5,7 +5,8 @@ import bcrypt from 'bcrypt';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { hashWaId } from '../services/pii-filter.js';
-import { otpLimiter, loginLimiter } from '../middleware/rate-limit.js';
+import { otpLimiter } from '../middleware/rate-limit.js';
+import { sendOtpViaTwilio, checkOtpViaTwilio, twilioVerifyEnabled } from '../services/twilio.js';
 
 const router = Router();
 
@@ -13,53 +14,35 @@ function generateCode() {
   return randomInt(1000, 10000).toString();
 }
 
+// ── Envoi OTP via WATI (WhatsApp template) ───────────────────────────────────
 async function sendOtpViaWati(phone, code) {
   const to = phone.replace(/^\+/, '');
-  const res = await fetch(
-    `${env.WATI_API_URL}/api/v1/sendTemplateMessages`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.WATI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        template_name: 'otp',
-        broadcast_name: `otp_${Date.now()}`,
-        receivers: [
-          {
-            whatsappNumber: to,
-            customParams: [{ name: '1', value: code }],
-          },
-        ],
-      }),
-    }
-  );
+  const res = await fetch(`${env.WATI_API_URL}/api/v1/sendTemplateMessages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.WATI_API_KEY}` },
+    body: JSON.stringify({
+      template_name: 'otp',
+      broadcast_name: `otp_${Date.now()}`,
+      receivers: [{ whatsappNumber: to, customParams: [{ name: '1', value: code }] }],
+    }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     console.error('[OTP] WATI échec:', err?.message ?? res.status);
   }
 }
 
+// ── Envoi OTP via WhatsApp Cloud API (fallback) ───────────────────────────────
 async function sendOtpWhatsApp(phone, phoneHash, code) {
-  // Log en dev pour tester sans WhatsApp
   if (env.NODE_ENV !== 'production') {
     console.info(`[OTP] code pour hash=${phoneHash.slice(0, 8)}... : ${code}`);
     return;
   }
-
-  // WATI en priorité — pas de restriction de niveau de confiance
   if (env.WATI_API_URL && env.WATI_API_KEY) {
     return sendOtpViaWati(phone, code);
   }
 
-  // Numéro en format E.164 sans le +
   const to = phone.replace(/\D/g, '');
-
-  // Les messages OTP sont business-initiated → obligation d'utiliser un template approuvé.
-  // Un message texte libre ne fonctionnerait que si le driver a écrit en premier (fenêtre 24h).
-  // Si un template approuvé est configuré, l'utiliser (préféré pour les nouveaux drivers)
-  // Sinon fallback en texte libre (fonctionne uniquement si le driver a déjà écrit au numéro)
   const body = env.WA_OTP_TEMPLATE_NAME
     ? {
         messaging_product: 'whatsapp',
@@ -81,22 +64,37 @@ async function sendOtpWhatsApp(phone, phoneHash, code) {
         text: { body: `🛵 *Vecto* — Votre code de vérification est : *${code}*\n\nValable 10 minutes. Ne le partagez jamais.` },
       };
 
-  const res = await fetch(
-    `https://graph.facebook.com/v19.0/${env.WA_PHONE_ID}/messages`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${env.WA_TOKEN}`,
-      },
-      body: JSON.stringify(body),
-    }
-  );
-
+  const res = await fetch(`https://graph.facebook.com/v19.0/${env.WA_PHONE_ID}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.WA_TOKEN}` },
+    body: JSON.stringify(body),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     console.error('[OTP] échec envoi WhatsApp:', err?.error?.message ?? res.status);
   }
+}
+
+// ── Vérifier le code OTP (Twilio ou DB) ───────────────────────────────────────
+async function verifyCode(phoneRaw, phoneHash, code) {
+  if (twilioVerifyEnabled()) {
+    try {
+      const approved = await checkOtpViaTwilio(phoneRaw, code);
+      if (!approved) return false;
+      return true;
+    } catch (err) {
+      console.error('[OTP] Twilio check failed, fallback DB:', err.message);
+    }
+  }
+  // DB fallback
+  const otp = await db('otps')
+    .where({ phone_hash: phoneHash, code, used: false })
+    .where('expires_at', '>', new Date())
+    .orderBy('created_at', 'desc')
+    .first();
+  if (!otp) return false;
+  await db('otps').where({ id: otp.id }).update({ used: true });
+  return true;
 }
 
 // ── Envoyer OTP ───────────────────────────────────────────────────────────────
@@ -107,21 +105,31 @@ router.post('/otp/send', otpLimiter, async (req, res) => {
       return res.status(400).json({ error: 'INVALID_PHONE' });
     }
 
-    const phoneHash = hashWaId(phone.trim());
+    const phoneRaw = phone.trim();
+
+    // Twilio Verify en priorité : gère code + SMS côté Twilio, aucun stockage en DB
+    if (twilioVerifyEnabled()) {
+      try {
+        await sendOtpViaTwilio(phoneRaw);
+        return res.json({ sent: true, channel: 'sms' });
+      } catch (err) {
+        console.error('[OTP] Twilio Verify failed, fallback WhatsApp:', err.message);
+      }
+    }
+
+    // Fallback : code maison stocké en DB, envoyé via WhatsApp
+    const phoneHash = hashWaId(phoneRaw);
     const code = generateCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Invalider les anciens codes
     await db('otps').where({ phone_hash: phoneHash, used: false }).update({ used: true });
-
     await db('otps').insert({ phone_hash: phoneHash, code, expires_at: expiresAt });
 
-    // WhatsApp non-bloquant : si l'envoi échoue, le code est quand même en DB
-    sendOtpWhatsApp(phone.trim(), phoneHash, code).catch((err) => {
+    sendOtpWhatsApp(phoneRaw, phoneHash, code).catch((err) => {
       console.error('[OTP] WhatsApp failed (non-blocking):', err.message);
     });
 
-    res.json({ sent: true });
+    res.json({ sent: true, channel: 'whatsapp' });
   } catch (e) {
     console.error('[OTP] send error:', e.message);
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -134,25 +142,18 @@ router.post('/otp/verify/client', otpLimiter, async (req, res) => {
     const { phone, code } = req.body;
     if (!phone || !code) return res.status(400).json({ error: 'MISSING_FIELDS' });
 
-    const phoneHash = hashWaId(phone.trim());
+    const phoneRaw = phone.trim();
+    const phoneHash = hashWaId(phoneRaw);
 
-    const otp = await db('otps')
-      .where({ phone_hash: phoneHash, code, used: false })
-      .where('expires_at', '>', new Date())
-      .orderBy('created_at', 'desc')
-      .first();
-
-    if (!otp) return res.status(401).json({ error: 'INVALID_OR_EXPIRED_CODE' });
-
-    // Marquer comme utilisé
-    await db('otps').where({ id: otp.id }).update({ used: true });
+    const valid = await verifyCode(phoneRaw, phoneHash, code);
+    if (!valid) return res.status(401).json({ error: 'INVALID_OR_EXPIRED_CODE' });
 
     // Upsert client
     let client = await db('clients').where({ wa_id_hash: phoneHash }).first();
     if (!client) {
       const alias = `Client #${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
       const { encryptWaId } = await import('../services/pii-filter.js');
-      const waEnc = encryptWaId(phone.trim());
+      const waEnc = encryptWaId(phoneRaw);
       [client] = await db('clients')
         .insert({ wa_id_hash: phoneHash, wa_id_enc: waEnc, alias })
         .returning('*');
@@ -166,7 +167,7 @@ router.post('/otp/verify/client', otpLimiter, async (req, res) => {
 
     res.json({ token, client: { id: client.id, alias: client.alias } });
   } catch (e) {
-    console.error(e);
+    console.error('[OTP] verify/client error:', e.message);
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
 });
@@ -177,33 +178,26 @@ router.post('/otp/verify/driver', otpLimiter, async (req, res) => {
     const { phone, code, name, password } = req.body;
     if (!phone || !code) return res.status(400).json({ error: 'MISSING_FIELDS' });
 
-    const phoneHash = hashWaId(phone.trim());
+    const phoneRaw = phone.trim();
+    const phoneHash = hashWaId(phoneRaw);
 
-    const otp = await db('otps')
-      .where({ phone_hash: phoneHash, code, used: false })
-      .where('expires_at', '>', new Date())
-      .orderBy('created_at', 'desc')
-      .first();
-
-    if (!otp) return res.status(401).json({ error: 'INVALID_OR_EXPIRED_CODE' });
-
-    await db('otps').where({ id: otp.id }).update({ used: true });
+    const valid = await verifyCode(phoneRaw, phoneHash, code);
+    if (!valid) return res.status(401).json({ error: 'INVALID_OR_EXPIRED_CODE' });
 
     // Compte existant — connexion directe après OTP
     let driver = await db('drivers').where({ phone_hash: phoneHash }).first();
     if (driver?.suspended) return res.status(403).json({ error: 'ACCOUNT_SUSPENDED' });
     if (driver && !driver.phone) {
-      await db('drivers').where({ id: driver.id }).update({ phone: phone.trim() });
-      driver.phone = phone.trim();
+      await db('drivers').where({ id: driver.id }).update({ phone: phoneRaw });
+      driver.phone = phoneRaw;
     }
     if (!driver) {
-      // Nouveau driver — nom + mot de passe requis
       if (!name || name.trim().length < 2) return res.status(400).json({ error: 'NAME_REQUIRED' });
       if (!password || !/^\d{4}$/.test(password)) return res.status(400).json({ error: 'PASSWORD_DIGITS_ONLY' });
 
       const passwordHash = await bcrypt.hash(password, 12);
       [driver] = await db('drivers')
-        .insert({ name: name.trim(), phone: phone.trim(), phone_hash: phoneHash, password_hash: passwordHash, status: 'available' })
+        .insert({ name: name.trim(), phone: phoneRaw, phone_hash: phoneHash, password_hash: passwordHash, status: 'available' })
         .returning(['id', 'name', 'status']);
     }
 
@@ -212,7 +206,8 @@ router.post('/otp/verify/driver', otpLimiter, async (req, res) => {
     const refreshToken = jwt.sign(payload, env.JWT_REFRESH_SECRET, { expiresIn: env.JWT_REFRESH_EXPIRES });
 
     res.json({ accessToken, refreshToken, driver: { id: driver.id, name: driver.name } });
-  } catch {
+  } catch (err) {
+    console.error('[OTP] verify/driver error:', err.message);
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
 });
@@ -228,20 +223,14 @@ router.post('/auth/reset-password', otpLimiter, async (req, res) => {
       return res.status(400).json({ error: 'PASSWORD_DIGITS_ONLY' });
     }
 
-    const phoneHash = hashWaId(phone.trim());
+    const phoneRaw = phone.trim();
+    const phoneHash = hashWaId(phoneRaw);
 
-    const otp = await db('otps')
-      .where({ phone_hash: phoneHash, code, used: false })
-      .where('expires_at', '>', new Date())
-      .orderBy('created_at', 'desc')
-      .first();
-
-    if (!otp) {
+    const valid = await verifyCode(phoneRaw, phoneHash, code);
+    if (!valid) {
       console.warn('[reset-password] OTP invalide ou expiré pour hash:', phoneHash.slice(0, 8));
       return res.status(401).json({ error: 'INVALID_OR_EXPIRED_CODE' });
     }
-
-    await db('otps').where({ id: otp.id }).update({ used: true });
 
     const driver = await db('drivers').where({ phone_hash: phoneHash }).first();
     if (!driver) {

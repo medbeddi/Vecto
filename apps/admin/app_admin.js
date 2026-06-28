@@ -1366,7 +1366,7 @@ async function addLivreur() {
     renderLivreurs();
     closeModal('modal-add-livreur');
     document.getElementById('add-livreur-name').value  = '';
-    document.getElementById('add-livreur-phone').value = '';
+    document.getElementById('add-livreur-phone').value = '+222';
     document.getElementById('add-livreur-pass').value  = '';
   } catch {
     errEl.textContent = 'Erreur réseau. Réessayez.'; errEl.style.display = 'block';
@@ -1857,7 +1857,8 @@ var _ncIsRecording   = false;
 function debounceNCSearch() {
   clearTimeout(_ncSearchDebounce);
   var phone = (document.getElementById('nc-phone')?.value || '').trim();
-  if (!phone || phone.length < 4) {
+  var digits = phone.replace(/\D/g, '');
+  if (!phone || digits.length < 8) {
     document.getElementById('nc-client-banner').style.display = 'none';
     _ncFoundClient = null;
     return;

@@ -993,15 +993,22 @@ function AdminChatTab() {
     } finally { setSending(false); }
   };
 
-  const callCC = () => {
-    if (!ccPhone) { Alert.alert('Indisponible', 'Le numéro du Call Center n\'est pas configuré.'); return; }
-    // Enregistrer l'appel dans le chat
-    api<{ message: CCMessage }>('/api/drivers/cc-chat', {
-      method: 'POST', body: { content: 'Appel vers le centre d\'appels', type: 'call' },
-    }).then(({ message }) => {
-      setMessages((prev) => [...prev, message]);
-    }).catch(() => {});
-    Linking.openURL(`tel:${ccPhone}`);
+  const callCC = async () => {
+    // Tentative via Twilio (rappel automatique sur le téléphone du livreur)
+    try {
+      await api('/api/calls/driver-to-cc', { method: 'POST', body: {} });
+      Alert.alert('Appel en cours', 'Twilio va vous rappeler dans quelques secondes pour vous connecter au Call Center.');
+      api<{ message: CCMessage }>('/api/drivers/cc-chat', {
+        method: 'POST', body: { content: 'Appel vers le centre d\'appels', type: 'call' },
+      }).then(({ message }) => setMessages((prev) => [...prev, message])).catch(() => {});
+    } catch {
+      // Fallback : ouvrir le composeur téléphonique si Twilio non configuré
+      if (!ccPhone) { Alert.alert('Indisponible', 'Le numéro du Call Center n\'est pas configuré.'); return; }
+      api<{ message: CCMessage }>('/api/drivers/cc-chat', {
+        method: 'POST', body: { content: 'Appel vers le centre d\'appels', type: 'call' },
+      }).then(({ message }) => setMessages((prev) => [...prev, message])).catch(() => {});
+      Linking.openURL(`tel:${ccPhone}`);
+    }
   };
 
   return (
@@ -1753,24 +1760,26 @@ const BANKILY_MERCHANT_CODE = '026754';
 function BankilyPayModal({ visible, onClose, onSuccess }: {
   visible: boolean; onClose: () => void; onSuccess: (newBalance?: number) => void;
 }) {
-  const [step, setStep] = useState<1 | 2>(1);
   const [amount, setAmount] = useState('');
   const [phone, setPhone] = useState('');
   const [passcode, setPasscode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const reset = () => { setStep(1); setAmount(''); setPhone(''); setPasscode(''); };
+  const [copied, setCopied] = useState(false);
+  const reset = () => { setAmount(''); setPhone(''); setPasscode(''); };
   const handleClose = () => { reset(); onClose(); };
 
-  const handleNext = () => {
+  const copyCode = async () => {
+    try { await Clipboard.setStringAsync(BANKILY_MERCHANT_CODE); } catch {}
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRecharge = async () => {
     if (!parseInt(amount) || parseInt(amount) < 100) {
       Alert.alert('Erreur', 'Montant minimum : 100 MRU');
       return;
     }
-    setStep(2);
-  };
-
-  const handleRecharge = async () => {
     if (!phone.trim()) { Alert.alert('Erreur', 'Numéro Bankily requis.'); return; }
     if (!passcode || passcode.length !== 4) { Alert.alert('Erreur', 'Passcode à 4 chiffres requis.'); return; }
     setSubmitting(true);
@@ -1808,76 +1817,51 @@ function BankilyPayModal({ visible, onClose, onSuccess }: {
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={styles.modalBox}>
-          {step === 1 ? (
-            <>
-              <Text style={styles.modalTitle}>Recharge Bankily B-Pay</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Montant en Ouguiya Nouvelle"
-                placeholderTextColor={TEXT2}
-                keyboardType="numeric"
-                value={amount}
-                onChangeText={setAmount}
-              />
-              <View style={{ height: 14 }} />
-              {/* Instructions */}
-              <View style={styles.sedadCodeBox}>
-                <Text style={styles.sedadCodeLabel}>Code commerçant B-PAY</Text>
-                <Text style={styles.sedadCodeValue}>{BANKILY_MERCHANT_CODE}</Text>
-              </View>
-              <Text style={[styles.bpayStepDesc, { color: TEXT2, fontSize: 13, marginBottom: 4 }]}>
-                1. Ouvrez <Text style={{ fontWeight: '700', color: TEXT }}>Bankily</Text> → B-Pay
-              </Text>
-              <Text style={[styles.bpayStepDesc, { color: TEXT2, fontSize: 13, marginBottom: 4 }]}>
-                2. Entrez le code ci-dessus + le montant
-              </Text>
-              <Text style={[styles.bpayStepDesc, { color: TEXT2, fontSize: 13, marginBottom: 0 }]}>
-                3. Confirmez avec votre PIN → notez le <Text style={{ fontWeight: '700', color: TEXT }}>passcode</Text>
-              </Text>
-              <View style={styles.modalBtns}>
-                <TouchableOpacity onPress={handleClose}>
-                  <Text style={styles.modalBtnCancel}>ANNULER</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleNext}>
-                  <Text style={styles.modalBtnOk}>SUIVANT →</Text>
-                </TouchableOpacity>
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={styles.modalTitle}>Confirmer le paiement</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Numéro de téléphone Bankily"
-                placeholderTextColor={TEXT2}
-                keyboardType="phone-pad"
-                value={phone}
-                onChangeText={setPhone}
-              />
-              <View style={styles.modalDivider} />
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Passcode reçu (4 chiffres)"
-                placeholderTextColor={TEXT2}
-                keyboardType="numeric"
-                maxLength={4}
-                secureTextEntry
-                value={passcode}
-                onChangeText={setPasscode}
-              />
-              <View style={styles.modalBtns}>
-                <TouchableOpacity onPress={() => { setPasscode(''); setStep(1); }}>
-                  <Text style={styles.modalBtnCancel}>← RETOUR</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleRecharge} disabled={submitting}>
-                  {submitting
-                    ? <ActivityIndicator color={BRAND} size="small" />
-                    : <Text style={styles.modalBtnOk}>RECHARGER</Text>
-                  }
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+            <Text style={[styles.modalTitle, { marginBottom: 0, flex: 1 }]}>Recharge BPAY : {BANKILY_MERCHANT_CODE}</Text>
+            <TouchableOpacity onPress={copyCode} style={{ padding: 4 }}>
+              <Icon name={copied ? 'check' : 'copy'} size={18} color={copied ? '#4caf50' : BRAND} strokeWidth={2.5} />
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={styles.modalInput}
+            placeholder="Montant en Ouguiya Nouvelle"
+            placeholderTextColor={TEXT2}
+            keyboardType="numeric"
+            value={amount}
+            onChangeText={setAmount}
+          />
+          <View style={styles.modalDivider} />
+          <TextInput
+            style={styles.modalInput}
+            placeholder="Bankily"
+            placeholderTextColor={TEXT2}
+            keyboardType="phone-pad"
+            value={phone}
+            onChangeText={setPhone}
+          />
+          <View style={styles.modalDivider} />
+          <TextInput
+            style={styles.modalInput}
+            placeholder="Passcode"
+            placeholderTextColor={TEXT2}
+            keyboardType="numeric"
+            maxLength={4}
+            secureTextEntry
+            value={passcode}
+            onChangeText={setPasscode}
+          />
+          <View style={styles.modalBtns}>
+            <TouchableOpacity onPress={handleClose}>
+              <Text style={styles.modalBtnCancel}>ANNULER</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleRecharge} disabled={submitting}>
+              {submitting
+                ? <ActivityIndicator color={BRAND} size="small" />
+                : <Text style={styles.modalBtnOk}>RECHARGER</Text>
+              }
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -2414,47 +2398,45 @@ const COURSE_STEPS = ['Acceptée', 'En livraison', 'Terminée'] as const;
 
 function CourseProgressBar({ status }: { status?: string }) {
   const doneIdx = status === 'in_progress' ? 1 : status === 'done' ? 2 : 0;
+  const last = COURSE_STEPS.length - 1;
 
   return (
     <View style={cpbStyles.row}>
-      {COURSE_STEPS.flatMap((label, i) => {
-        const items = [];
-        if (i > 0) {
-          items.push(
-            <View key={`line-${i}`} style={[cpbStyles.line, i <= doneIdx && cpbStyles.lineFilled]} />
-          );
-        }
-        items.push(
-          <View key={`step-${i}`} style={cpbStyles.stepItem}>
+      {COURSE_STEPS.map((label, i) => (
+        <View key={i} style={cpbStyles.stepCol}>
+          <View style={cpbStyles.lineRow}>
+            <View style={[cpbStyles.halfLine, i === 0 && cpbStyles.lineHidden, i <= doneIdx && cpbStyles.lineFilled]} />
             <View style={[
               cpbStyles.dot,
               i < doneIdx ? cpbStyles.dotDone
                 : i === doneIdx ? cpbStyles.dotCurrent
                 : cpbStyles.dotPending,
             ]} />
-            <Text style={[cpbStyles.label, i <= doneIdx ? cpbStyles.labelDone : cpbStyles.labelPending]}>
-              {label}
-            </Text>
+            <View style={[cpbStyles.halfLine, i === last && cpbStyles.lineHidden, i < doneIdx && cpbStyles.lineFilled]} />
           </View>
-        );
-        return items;
-      })}
+          <Text style={[cpbStyles.label, i <= doneIdx ? cpbStyles.labelDone : cpbStyles.labelPending]}>
+            {label}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
 
 const cpbStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 10, paddingHorizontal: 4 },
-  line: { flex: 1, height: 2, backgroundColor: '#2a2a2a', marginTop: 5 },
-  lineFilled: { backgroundColor: '#4caf50' },
-  stepItem: { alignItems: 'center' },
-  dot: { width: 12, height: 12, borderRadius: 6 },
-  dotDone: { backgroundColor: '#4caf50' },
-  dotCurrent: { backgroundColor: PRIMARY, borderWidth: 2, borderColor: PRIMARY },
-  dotPending: { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#444' },
-  label: { fontSize: 9, marginTop: 4, textAlign: 'center', width: 56 },
-  labelDone: { color: '#4caf50', fontWeight: '600' },
-  labelPending: { color: '#444' },
+  row:      { flexDirection: 'row', marginTop: 10 },
+  stepCol:  { flex: 1, alignItems: 'center' },
+  lineRow:  { flexDirection: 'row', alignItems: 'center', width: '100%' },
+  halfLine: { flex: 1, height: 2, backgroundColor: '#2a2a2a' },
+  lineHidden:  { backgroundColor: 'transparent' },
+  lineFilled:  { backgroundColor: '#4caf50' },
+  dot:         { width: 12, height: 12, borderRadius: 6 },
+  dotDone:     { backgroundColor: '#4caf50' },
+  dotCurrent:  { backgroundColor: PRIMARY, borderWidth: 2, borderColor: PRIMARY },
+  dotPending:  { backgroundColor: '#2a2a2a', borderWidth: 1, borderColor: '#444' },
+  label:       { fontSize: 9, marginTop: 4, textAlign: 'center' },
+  labelDone:   { color: '#4caf50', fontWeight: '600' },
+  labelPending:{ color: '#444' },
 });
 
 // ─── Bottom Tab Bar ──────────────────────────────────────────────────────────

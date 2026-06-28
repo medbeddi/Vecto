@@ -9,8 +9,10 @@ import { initFCM } from './services/fcm.js';
 import { startRebroadcastJob } from './jobs/rebroadcast.js';
 import { apiLimiter, webhookLimiter } from './middleware/rate-limit.js';
 import whatsappWebhook from './webhooks/whatsapp.js';
+import twilioVoiceWebhook from './webhooks/twilio-voice.js';
 import driverRouter from './routes/driver.js';
 import otpRouter from './routes/otp.js';
+import callsRouter from './routes/calls.js';
 import walletRouter from './routes/wallet.js';
 import simRouter from './routes/sim.js';
 import uploadRouter from './routes/upload.js';
@@ -66,11 +68,15 @@ startRebroadcastJob();
 // ─── Webhooks Meta ────────────────────────────────────────────────────────────
 app.use('/webhook/whatsapp', webhookLimiter, whatsappWebhook);
 
+// ─── Webhooks Twilio Voice ────────────────────────────────────────────────────
+app.use('/webhooks/twilio', express.urlencoded({ extended: false }), twilioVoiceWebhook);
+
 // ─── API REST Flutter ─────────────────────────────────────────────────────────
 // Désactive le cache navigateur + rate limit une seule fois pour toutes les routes API
 app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use('/api', apiLimiter);
 app.use('/api', otpRouter);
+app.use('/api', callsRouter);
 app.use('/api', driverRouter);
 app.use('/api', walletRouter);
 app.use('/api', uploadRouter);
