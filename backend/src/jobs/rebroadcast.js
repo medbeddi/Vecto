@@ -31,7 +31,8 @@ async function tick() {
         meta:    null,
       };
 
-      emitNewOrder(row, initialMessage).catch((e) =>
+      // useProximity:false → broadcast à tous sans filtre distance (priorité déjà expirée)
+      emitNewOrder(row, initialMessage, { useProximity: false }).catch((e) =>
         console.error('[rebroadcast] emit failed:', e.message)
       );
 

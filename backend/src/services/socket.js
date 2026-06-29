@@ -3,7 +3,10 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { relayDriverMessage } from './relay.js';
 import db from '../config/db.js';
-import { notifyAvailableDrivers, notifyAssignedDriver } from './fcm.js';
+import { notifyAvailableDrivers, notifyAssignedDriver, notifyDriverList } from './fcm.js';
+
+const NEARBY_KM       = 5;       // rayon prioritaire (km)
+const NEARBY_DELAY_MS = 60_000;  // 1 minute avant de notifier les drivers lointains
 
 let io = null;
 const DRIVERS_ROOM = 'room:drivers';
@@ -109,7 +112,9 @@ export function getIO() {
 }
 
 // ── Nouvel ordre → broadcast livreurs disponibles + admins ───────────────────
-export async function emitNewOrder(delivery, initialMessage) {
+// useProximity=true  → notifie d'abord les drivers dans NEARBY_KM, puis tous après 1 min
+// useProximity=false → broadcast immédiat à tous (rebroadcast job)
+export async function emitNewOrder(delivery, initialMessage, { useProximity = true } = {}) {
   if (!io) return;
   const payload = {
     deliveryId:      delivery.id,
@@ -127,66 +132,86 @@ export async function emitNewOrder(delivery, initialMessage) {
     },
   };
 
-  // Si un livreur prioritaire est défini, envoyer uniquement à lui d'abord
-  if (delivery.nearest_driver_id) {
-    io.to(`driver:${delivery.nearest_driver_id}`).emit('new_order', payload);
-    io.to(ADMINS_ROOM).emit('new_order', payload);
-
-    // FCM push si le livreur prioritaire a l'app fermée
-    notifyAssignedDriver(delivery.nearest_driver_id, {
-      title: '🛵 Nouvelle course',
-      body: 'Un client cherche un livreur',
-      data: { type: 'new_order', deliveryId: String(delivery.id), clientAlias: delivery.alias ?? '' },
-    }).catch(() => {});
-
-    // Après 30s, si la course est toujours pending → re-broadcast à tous les autres
-    setTimeout(async () => {
-      try {
-        const current = await db('deliveries').where({ id: delivery.id }).first('status', 'nearest_driver_id');
-        if (!current || current.status !== 'pending') return;
-
-        // Effacer la priorité en DB : le polling des drivers verra la course immédiatement
-        await db('deliveries')
-          .where({ id: delivery.id, status: 'pending' })
-          .update({ nearest_driver_id: null, priority_expires_at: null, last_broadcast_at: db.fn.now() });
-
-        const refusedDriverIds = await db('delivery_refusals')
-          .where('delivery_id', delivery.id)
-          .pluck('driver_id');
-
-        const remainingDrivers = await db('drivers')
-          .where({ is_available: true, suspended: false })
-          .where('id', '!=', delivery.nearest_driver_id)
-          .whereNotIn('id', refusedDriverIds.length ? refusedDriverIds : [null])
-          .select('id');
-
-        for (const { id } of remainingDrivers) {
-          io.to(`driver:${id}`).emit('new_order', { ...payload, broadcastAt: new Date().toISOString() });
-        }
-
-        // FCM push pour les livreurs restants si app fermée
-        notifyAvailableDrivers(delivery, refusedDriverIds, delivery.nearest_driver_id).catch(() => {});
-      } catch {}
-    }, 30_000);
-
-    return;
-  }
-
-  // Pas de livreur proche connu → broadcast à tous les disponibles
   const refusedDriverIds = await db('delivery_refusals')
     .where('delivery_id', delivery.id)
     .pluck('driver_id');
+  const excludeIds = refusedDriverIds.length ? refusedDriverIds : [null];
 
+  // ── Diffusion par proximité ──────────────────────────────────────────────────
+  if (useProximity && delivery.pickup_lat != null && delivery.pickup_lng != null) {
+    const nearbyDrivers = await db('drivers')
+      .where({ is_available: true, suspended: false })
+      .whereNotNull('last_lat').whereNotNull('last_lng')
+      .whereNotIn('id', excludeIds)
+      .whereRaw(
+        `(6371 * acos(LEAST(1, GREATEST(-1,
+          cos(radians(?)) * cos(radians(last_lat)) *
+          cos(radians(last_lng) - radians(?)) +
+          sin(radians(?)) * sin(radians(last_lat))
+        )))) <= ?`,
+        [delivery.pickup_lat, delivery.pickup_lng, delivery.pickup_lat, NEARBY_KM]
+      )
+      .select('id');
+
+    if (nearbyDrivers.length > 0) {
+      const nearbyIds = nearbyDrivers.map(d => d.id);
+
+      // Socket → drivers proches
+      for (const { id } of nearbyDrivers) {
+        io.to(`driver:${id}`).emit('new_order', payload);
+      }
+      io.to(ADMINS_ROOM).emit('new_order', payload);
+
+      // FCM → drivers proches (app fermée)
+      notifyDriverList(nearbyIds, delivery).catch(() => {});
+
+      // Après 1 min → broadcast aux drivers lointains si toujours pending
+      setTimeout(async () => {
+        try {
+          const current = await db('deliveries').where({ id: delivery.id }).first('status');
+          if (!current || current.status !== 'pending') return;
+
+          // Rafraîchir last_broadcast_at pour que le polling l'inclue
+          await db('deliveries')
+            .where({ id: delivery.id, status: 'pending' })
+            .update({ last_broadcast_at: db.fn.now() });
+
+          const freshRefused = await db('delivery_refusals')
+            .where('delivery_id', delivery.id)
+            .pluck('driver_id');
+
+          const allExclude = [...nearbyIds, ...(freshRefused.length ? freshRefused : [null])];
+
+          const farDrivers = await db('drivers')
+            .where({ is_available: true, suspended: false })
+            .whereNotIn('id', allExclude)
+            .select('id');
+
+          const updatedPayload = { ...payload, broadcastAt: new Date().toISOString() };
+          for (const { id } of farDrivers) {
+            io.to(`driver:${id}`).emit('new_order', updatedPayload);
+          }
+
+          // FCM → drivers lointains (app fermée)
+          const fcmExclude = [...nearbyIds, ...freshRefused];
+          notifyAvailableDrivers(delivery, fcmExclude.length ? fcmExclude : []).catch(() => {});
+        } catch {}
+      }, NEARBY_DELAY_MS);
+
+      return;
+    }
+  }
+
+  // ── Broadcast global (pas de coordonnées, aucun driver proche, ou rebroadcast) ──
   const availableDrivers = await db('drivers')
     .where({ is_available: true, suspended: false })
-    .whereNotIn('id', refusedDriverIds.length ? refusedDriverIds : [null])
+    .whereNotIn('id', excludeIds)
     .select('id');
   for (const { id } of availableDrivers) {
     io.to(`driver:${id}`).emit('new_order', payload);
   }
   io.to(ADMINS_ROOM).emit('new_order', payload);
 
-  // FCM push pour les livreurs disponibles si app fermée
   notifyAvailableDrivers(delivery, refusedDriverIds).catch(() => {});
 }
 

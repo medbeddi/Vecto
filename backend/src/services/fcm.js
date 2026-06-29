@@ -74,6 +74,40 @@ export async function notifyAvailableDrivers(delivery, excludeDriverIds = [], ex
   }
 }
 
+// Notifie une liste précise de livreurs (par IDs) — pour la diffusion de proximité
+export async function notifyDriverList(driverIds, delivery) {
+  if (!messaging || !driverIds.length) return;
+
+  const tokens = await db('drivers')
+    .whereIn('id', driverIds)
+    .whereNotNull('fcm_token')
+    .pluck('fcm_token');
+
+  if (!tokens.length) return;
+
+  const result = await messaging.sendEachForMulticast({
+    tokens,
+    notification: { title: '🛵 Nouvelle course', body: 'Un client cherche un livreur' },
+    data: {
+      type: 'new_order',
+      deliveryId: String(delivery.id),
+      clientAlias: String(delivery.alias ?? ''),
+    },
+    android: { priority: 'high', notification: { channelId: 'new-order' } },
+    apns: { payload: { aps: { sound: 'ringtone.wav', badge: 1 } } },
+  });
+
+  const staleTokens = [];
+  result.responses.forEach((resp, i) => {
+    if (!resp.success && resp.error?.code === 'messaging/registration-token-not-registered') {
+      staleTokens.push(tokens[i]);
+    }
+  });
+  if (staleTokens.length > 0) {
+    await db('drivers').whereIn('fcm_token', staleTokens).update({ fcm_token: null });
+  }
+}
+
 // Notifie le livreur assigné (backup si pas connecté en Socket.IO)
 export async function notifyAssignedDriver(driverId, { title, body, data = {} }) {
   if (!messaging) return;
