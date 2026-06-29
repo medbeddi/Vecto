@@ -568,6 +568,17 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
 
     const [delivery] = await db('deliveries').insert(deliveryData).returning('*');
 
+    // Insérer le vocal CC en tant que message visible par le livreur dans le chat
+    if (audioUrl) {
+      await db('messages').insert({
+        delivery_id: delivery.id,
+        sender_role: 'admin',
+        type: 'audio',
+        content: audioUrl,
+        meta: JSON.stringify({ for_driver: true }),
+      });
+    }
+
     emitNewOrder({ ...delivery, alias: clientAlias }, audioUrl
       ? { type: 'audio', content: audioUrl, meta: null }
       : { type: 'text', content: deliveryData.description, meta: null }

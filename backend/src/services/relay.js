@@ -47,14 +47,27 @@ export async function relayDriverMessage(deliveryId, driverId, { type, content, 
   return { delivery, message };
 }
 
-// Envoie un message texte automatique au client WhatsApp (changement statut)
+// Envoie un message texte automatique au client WhatsApp ET le sauvegarde en DB (visible dans le chat livreur)
 export async function sendStatusMessageToClient(deliveryId, text) {
   const delivery = await db('deliveries').where({ id: deliveryId }).first('client_id');
   if (!delivery) return;
   const client = await db('clients').where({ id: delivery.client_id }).first('wa_id_enc');
   if (!client) return;
+
+  // Sauvegarder le message système en DB → visible dans le chat du livreur
+  await db('messages').insert({
+    delivery_id: deliveryId,
+    sender_role: 'admin',
+    type: 'text',
+    content: text,
+    meta: JSON.stringify({ for_driver: true, system: true }),
+  });
+
+  // Relay WhatsApp uniquement pour les vrais clients (pas les pseudo-ids admin_call_*)
   const waId = decryptWaId(client.wa_id_enc);
-  await sendText(waId, text);
+  if (!waId.startsWith('admin_call_')) {
+    await sendText(waId, text);
+  }
 }
 
 async function dispatch(waId, type, content, meta) {
