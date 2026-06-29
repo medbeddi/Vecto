@@ -663,7 +663,7 @@
           <div class="cc-launch-section">
             <div class="cc-launch-section-title">Client (optionnel)</div>
             <div style="display:flex;gap:8px;align-items:center">
-              <input type="tel" id="nc-phone" placeholder="+222 XX XX XX XX" inputmode="tel"
+              <input type="text" id="nc-phone" placeholder="Téléphone ou nom du client…" inputmode="text"
                 style="flex:1;padding:9px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);font-size:13px;color:var(--text-1);font-family:inherit"
                 oninput="debounceNCSearch()"
                 onkeydown="if(event.key==='Enter')searchNCClient()" />
@@ -672,7 +672,9 @@
                 Rechercher
               </button>
             </div>
-            <!-- Résultat recherche -->
+            <!-- Dropdown résultats multiples (recherche par nom) -->
+            <div id="nc-client-dropdown" style="display:none;margin-top:4px;border-radius:8px;border:1px solid var(--border);background:var(--card);overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.12)"></div>
+            <!-- Résultat unique / client sélectionné -->
             <div id="nc-client-banner" onclick="selectNCClientBanner(event)" style="display:none;margin-top:10px;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);align-items:center;gap:10px;cursor:pointer;transition:border-color .15s,background .15s" title="Cliquer pour sélectionner">
               <div id="nc-client-dot" style="width:8px;height:8px;border-radius:50%;background:#34C759;flex-shrink:0"></div>
               <div style="flex:1;min-width:0">
@@ -681,6 +683,12 @@
               </div>
               <span id="nc-client-check" style="display:none;color:#34C759;font-size:16px;flex-shrink:0">✓</span>
               <button onclick="clearNCClient()" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:16px;padding:0 4px;line-height:1" title="Effacer">✕</button>
+            </div>
+            <!-- Champ nom éditable (apparaît après sélection) -->
+            <div id="nc-name-wrap" style="display:none;margin-top:8px">
+              <div style="font-size:11px;color:var(--text-3);margin-bottom:4px;font-weight:500">NOM DU CLIENT</div>
+              <input type="text" id="nc-client-name" placeholder="Nom affiché…"
+                style="width:100%;box-sizing:border-box;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--card);font-size:13px;color:var(--text-1);font-family:inherit" />
             </div>
           </div>
 

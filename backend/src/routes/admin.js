@@ -477,20 +477,39 @@ function normalizePhone(raw) {
   return (raw || '').replace(/[\s\-().+]/g, '');
 }
 
-// ── Call Center : recherche client par numéro de téléphone ───────────────────
+// ── Call Center : recherche client par téléphone ou nom ───────────────────────
 router.get('/admin/clients/search', requireCallCenter, async (req, res) => {
   try {
-    const { phone } = req.query;
-    if (!phone?.trim()) return res.status(400).json({ error: 'PHONE_REQUIRED' });
-    const hash = hashWaId(normalizePhone(phone));
-    const client = await db('clients').where({ wa_id_hash: hash }).first('id', 'alias', 'wa_id_enc');
-    if (!client) return res.json({ found: false });
-    let decryptedPhone = null;
-    try {
-      const raw = decryptWaId(client.wa_id_enc);
-      decryptedPhone = raw.startsWith('admin_call_') ? null : raw;
-    } catch {}
-    res.json({ found: true, client: { id: client.id, alias: client.alias, phone: decryptedPhone } });
+    const q = (req.query.q || req.query.phone || '').trim();
+    if (!q) return res.status(400).json({ error: 'QUERY_REQUIRED' });
+
+    // Détecter si c'est un numéro de téléphone (contient chiffres/+/-/espaces, au moins 6 chiffres)
+    const isPhone = /^[\d\s\+\-\(\)]{6,}$/.test(q);
+
+    if (isPhone) {
+      const hash = hashWaId(normalizePhone(q));
+      const client = await db('clients').where({ wa_id_hash: hash }).first('id', 'alias', 'wa_id_enc');
+      if (!client) return res.json({ found: false, clients: [] });
+      let decryptedPhone = null;
+      try {
+        const raw = decryptWaId(client.wa_id_enc);
+        decryptedPhone = raw.startsWith('admin_call_') ? null : raw;
+      } catch {}
+      return res.json({ found: true, clients: [{ id: client.id, alias: client.alias, phone: decryptedPhone }] });
+    }
+
+    // Recherche par nom (alias ILIKE)
+    const rows = await db('clients')
+      .whereILike('alias', `%${q}%`)
+      .orderBy('alias')
+      .limit(8)
+      .select('id', 'alias', 'wa_id_enc');
+    const clients = rows.map(c => {
+      let phone = null;
+      try { const raw = decryptWaId(c.wa_id_enc); phone = raw.startsWith('admin_call_') ? null : raw; } catch {}
+      return { id: c.id, alias: c.alias, phone };
+    });
+    res.json({ found: clients.length > 0, clients });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
@@ -499,30 +518,46 @@ router.get('/admin/clients/search', requireCallCenter, async (req, res) => {
 // ── Call Center : créer une course depuis un appel téléphonique ───────────────
 router.post('/admin/call-course', requireCallCenter, async (req, res) => {
   try {
-    const { phone, pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description, audioUrl } = req.body;
+    const { phone, clientId: existingClientId, clientName, pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, price, description, audioUrl } = req.body;
     if (!pickupAddress?.trim() || !dropoffAddress?.trim()) {
       return res.status(400).json({ error: 'ADDRESSES_REQUIRED' });
     }
 
     let clientId, clientAlias;
 
-    if (phone?.trim()) {
+    if (existingClientId) {
+      // Client existant sélectionné depuis la recherche
+      const existing = await db('clients').where({ id: existingClientId }).first('id', 'alias');
+      if (existing) {
+        clientId    = existing.id;
+        clientAlias = clientName?.trim() || existing.alias;
+        if (clientName?.trim() && clientName.trim() !== existing.alias) {
+          await db('clients').where({ id: clientId }).update({ alias: clientAlias });
+        }
+      }
+    }
+
+    if (!clientId && phone?.trim()) {
       const normalized = normalizePhone(phone);
       const hash = hashWaId(normalized);
       const existing = await db('clients').where({ wa_id_hash: hash }).first('id', 'alias');
       if (existing) {
         clientId    = existing.id;
-        clientAlias = existing.alias;
+        clientAlias = clientName?.trim() || existing.alias;
+        if (clientName?.trim() && clientName.trim() !== existing.alias) {
+          await db('clients').where({ id: clientId }).update({ alias: clientAlias });
+        }
       } else {
-        // Nouveau client lié au numéro → WhatsApp relay + connexion app future possible
-        clientAlias = `Client #${Math.random().toString(36).toUpperCase().slice(-5)}`;
+        clientAlias = clientName?.trim() || `Client #${Math.random().toString(36).toUpperCase().slice(-5)}`;
         const [newClient] = await db('clients')
           .insert({ wa_id_hash: hash, wa_id_enc: encryptWaId(normalized), alias: clientAlias })
           .returning('*');
         clientId = newClient.id;
       }
-    } else {
-      clientAlias = `Appel #${Date.now().toString(36).toUpperCase().slice(-5)}`;
+    }
+
+    if (!clientId) {
+      clientAlias = clientName?.trim() || `Appel #${Date.now().toString(36).toUpperCase().slice(-5)}`;
       const ts = `admin_call_${Date.now()}_${Math.random()}`;
       const [newClient] = await db('clients')
         .insert({ wa_id_hash: hashWaId(ts), wa_id_enc: encryptWaId(ts), alias: clientAlias })

@@ -1851,10 +1851,11 @@ var _ncIsRecording   = false;
 
 function debounceNCSearch() {
   clearTimeout(_ncSearchDebounce);
-  var phone = (document.getElementById('nc-phone')?.value || '').trim();
-  var digits = phone.replace(/\D/g, '');
-  if (!phone || digits.length < 8) {
+  var q = (document.getElementById('nc-phone')?.value || '').trim();
+  if (!q || q === '+222') {
     document.getElementById('nc-client-banner').style.display = 'none';
+    document.getElementById('nc-client-dropdown').style.display = 'none';
+    document.getElementById('nc-name-wrap').style.display = 'none';
     _ncFoundClient = null;
     return;
   }
@@ -1862,36 +1863,82 @@ function debounceNCSearch() {
 }
 
 async function searchNCClient() {
-  var phone = (document.getElementById('nc-phone')?.value || '').trim();
-  if (!phone) return;
+  var q = (document.getElementById('nc-phone')?.value || '').trim();
+  if (!q) return;
   _ncClientSelected = false;
-  var banner  = document.getElementById('nc-client-banner');
-  var aliasEl = document.getElementById('nc-client-alias');
-  var subEl   = document.getElementById('nc-client-sub');
-  var dotEl   = document.getElementById('nc-client-dot');
-  var checkEl = document.getElementById('nc-client-check');
-  if (banner)  { banner.style.display = 'none'; banner.style.borderColor = ''; banner.style.background = ''; }
-  if (checkEl) checkEl.style.display = 'none';
+  var banner   = document.getElementById('nc-client-banner');
+  var dropdown = document.getElementById('nc-client-dropdown');
+  var aliasEl  = document.getElementById('nc-client-alias');
+  var subEl    = document.getElementById('nc-client-sub');
+  var dotEl    = document.getElementById('nc-client-dot');
+  var checkEl  = document.getElementById('nc-client-check');
+  var nameWrap = document.getElementById('nc-name-wrap');
+  if (banner)   { banner.style.display = 'none'; banner.style.borderColor = ''; banner.style.background = ''; }
+  if (checkEl)  checkEl.style.display = 'none';
+  if (dropdown) dropdown.style.display = 'none';
+  if (nameWrap) nameWrap.style.display = 'none';
   try {
-    var res = await fetch(API + '/api/admin/clients/search?phone=' + encodeURIComponent(phone), { headers: authHeaders() });
+    var res  = await fetch(API + '/api/admin/clients/search?q=' + encodeURIComponent(q), { headers: authHeaders() });
     var data = await res.json();
-    if (data.found) {
-      _ncFoundClient = data.client;
-      if (aliasEl) aliasEl.textContent = data.client.alias;
-      if (subEl)   subEl.textContent   = 'Client existant · ' + (data.client.phone || phone);
+    var clients = data.clients || [];
+
+    if (clients.length > 1) {
+      // Plusieurs résultats → dropdown
+      dropdown.innerHTML = clients.map(function(c, i) {
+        return '<div onclick="selectNCClientFromDropdown(' + i + ')" style="padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background=\'var(--hover)\'" onmouseout="this.style.background=\'\'">'
+          + '<div style="font-weight:600;font-size:13px;color:var(--text-1)">' + escHtml(c.alias) + '</div>'
+          + '<div style="font-size:11px;color:var(--text-3);margin-top:1px">' + escHtml(c.phone || 'Pas de téléphone') + '</div>'
+          + '</div>';
+      }).join('');
+      window._ncDropdownClients = clients;
+      dropdown.style.display = 'block';
+    } else if (clients.length === 1) {
+      _ncFoundClient = clients[0];
+      if (aliasEl) aliasEl.textContent = clients[0].alias;
+      if (subEl)   subEl.textContent   = 'Client existant · ' + (clients[0].phone || q);
       if (dotEl)   dotEl.style.background = '#34C759';
+      if (banner)  banner.style.display = 'flex';
+      _showNCNameField(clients[0].alias);
     } else {
       _ncFoundClient = null;
       if (aliasEl) aliasEl.textContent = 'Nouveau client';
-      if (subEl)   subEl.textContent   = 'Sera créé avec ce numéro : ' + phone;
+      if (subEl)   subEl.textContent   = 'Sera créé avec ce numéro/nom : ' + q;
       if (dotEl)   dotEl.style.background = '#FF9500';
+      if (banner)  banner.style.display = 'flex';
+      _showNCNameField('');
     }
-    if (banner) banner.style.display = 'flex';
   } catch {
     if (aliasEl) aliasEl.textContent = 'Erreur réseau';
     if (subEl)   subEl.textContent   = '';
     if (banner)  banner.style.display = 'flex';
   }
+}
+
+function selectNCClientFromDropdown(idx) {
+  var c = (window._ncDropdownClients || [])[idx];
+  if (!c) return;
+  _ncFoundClient = c;
+  document.getElementById('nc-client-dropdown').style.display = 'none';
+  var aliasEl = document.getElementById('nc-client-alias');
+  var subEl   = document.getElementById('nc-client-sub');
+  var dotEl   = document.getElementById('nc-client-dot');
+  var banner  = document.getElementById('nc-client-banner');
+  if (aliasEl) aliasEl.textContent = c.alias;
+  if (subEl)   subEl.textContent   = 'Client existant · ' + (c.phone || '');
+  if (dotEl)   dotEl.style.background = '#34C759';
+  if (banner)  { banner.style.display = 'flex'; banner.style.borderColor = '#34C759'; banner.style.background = 'rgba(52,199,89,.06)'; }
+  document.getElementById('nc-client-check').style.display = 'inline';
+  _ncClientSelected = true;
+  document.getElementById('nc-phone').disabled = true;
+  _showNCNameField(c.alias);
+}
+
+function _showNCNameField(defaultName) {
+  var wrap  = document.getElementById('nc-name-wrap');
+  var input = document.getElementById('nc-client-name');
+  if (!wrap || !input) return;
+  input.value = defaultName || '';
+  wrap.style.display = 'block';
 }
 
 var _ncClientSelected = false;
@@ -1905,17 +1952,22 @@ function selectNCClientBanner(event) {
   if (banner)  { banner.style.borderColor = '#34C759'; banner.style.background = 'rgba(52,199,89,.06)'; }
   if (checkEl) checkEl.style.display = 'inline';
   if (phoneEl) phoneEl.disabled = true;
+  _showNCNameField(_ncFoundClient ? _ncFoundClient.alias : '');
 }
 
 function clearNCClient() {
   _ncFoundClient = null;
   _ncClientSelected = false;
   var phoneEl = document.getElementById('nc-phone');
-  if (phoneEl) { phoneEl.value = '+222'; phoneEl.disabled = false; }
-  var banner  = document.getElementById('nc-client-banner');
-  var checkEl = document.getElementById('nc-client-check');
-  if (banner)  { banner.style.display = 'none'; banner.style.borderColor = ''; banner.style.background = ''; }
-  if (checkEl) checkEl.style.display = 'none';
+  if (phoneEl) { phoneEl.value = ''; phoneEl.disabled = false; }
+  var banner   = document.getElementById('nc-client-banner');
+  var checkEl  = document.getElementById('nc-client-check');
+  var dropdown = document.getElementById('nc-client-dropdown');
+  var nameWrap = document.getElementById('nc-name-wrap');
+  if (banner)   { banner.style.display = 'none'; banner.style.borderColor = ''; banner.style.background = ''; }
+  if (checkEl)  checkEl.style.display = 'none';
+  if (dropdown) dropdown.style.display = 'none';
+  if (nameWrap) nameWrap.style.display = 'none';
 }
 
 function debounceNCMap() {
@@ -2130,11 +2182,14 @@ function initNCPlaces() {
 }
 
 async function createCallCourse() {
-  var phone    = (document.getElementById('nc-phone')?.value  || '').trim();
-  var pickup   = (document.getElementById('nc-pickup')?.value  || '').trim();
-  var dropoff  = (document.getElementById('nc-dropoff')?.value || '').trim();
-  var priceRaw = (document.getElementById('nc-price')?.value   || '').trim();
-  var statusEl = document.getElementById('nc-status');
+  var phone      = (document.getElementById('nc-phone')?.value       || '').trim();
+  var clientName = (document.getElementById('nc-client-name')?.value || '').trim();
+  var pickup     = (document.getElementById('nc-pickup')?.value      || '').trim();
+  var dropoff    = (document.getElementById('nc-dropoff')?.value     || '').trim();
+  var priceRaw   = (document.getElementById('nc-price')?.value       || '').trim();
+  var statusEl   = document.getElementById('nc-status');
+  // Si téléphone est le même que la saisie initiale de recherche par nom, ne pas l'envoyer comme phone
+  var isPhone = /^[\d\s\+\-\(\)]{6,}$/.test(phone);
 
   if (!pickup || !dropoff) {
     if (statusEl) { statusEl.textContent = 'Veuillez renseigner les adresses de départ et d\'arrivée.'; statusEl.style.color = '#FF3B30'; }
@@ -2153,7 +2208,9 @@ async function createCallCourse() {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({
-        phone:            phone || undefined,
+        phone:            (isPhone && phone) ? phone : undefined,
+        clientId:         _ncFoundClient ? _ncFoundClient.id : undefined,
+        clientName:       clientName || undefined,
         pickupAddress:    pickup,
         dropoffAddress:   dropoff,
         price:            price,
@@ -2178,8 +2235,8 @@ async function createCallCourse() {
     ['nc-pickup','nc-dropoff','nc-price'].forEach(function(id) {
       var el = document.getElementById(id); if (el) el.value = '';
     });
-    var phoneEl = document.getElementById('nc-phone'); if (phoneEl) phoneEl.value = '+222';
-    _ncPickupCoords = null; _ncDropoffCoords = null; _ncFoundClient = null;
+    var phoneEl = document.getElementById('nc-phone'); if (phoneEl) { phoneEl.value = ''; phoneEl.disabled = false; }
+    _ncPickupCoords = null; _ncDropoffCoords = null; _ncFoundClient = null; _ncClientSelected = false;
     clearNCAudio();
     if (_ncIsRecording) stopNCRecording();
     if (_ncPickupMarker  && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncPickupMarker);  _ncPickupMarker  = null; }
@@ -2187,7 +2244,9 @@ async function createCallCourse() {
     if (_ncOsrmPolyline  && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncOsrmPolyline);  _ncOsrmPolyline  = null; }
     if (_ncDirectionsRenderer) { _ncDirectionsRenderer.setMap(null); _ncDirectionsRenderer = null; }
     if (_ncGoogleOsrmPoly) { _ncGoogleOsrmPoly.setMap(null); _ncGoogleOsrmPoly = null; }
-    var banner = document.getElementById('nc-client-banner'); if (banner) banner.style.display = 'none';
+    var banner   = document.getElementById('nc-client-banner');   if (banner)   banner.style.display   = 'none';
+    var dropdown = document.getElementById('nc-client-dropdown'); if (dropdown) dropdown.style.display = 'none';
+    var nameWrap = document.getElementById('nc-name-wrap');       if (nameWrap) nameWrap.style.display  = 'none';
   } catch {
     if (statusEl) { statusEl.textContent = 'Erreur réseau.'; statusEl.style.color = '#FF3B30'; }
   }
