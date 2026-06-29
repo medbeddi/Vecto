@@ -57,32 +57,6 @@ export async function launchDelivery(deliveryId, { pickupAddress, dropoffAddress
     updateData.initial_media_url  = forwardedAudioUrl;
   }
 
-  // Trouver le livreur disponible le plus proche du point de prise en charge
-  if (pickupLat != null && pickupLng != null) {
-    const nearest = await db('drivers')
-      .where({ is_available: true, suspended: false })
-      .whereNotNull('last_lat')
-      .whereNotNull('last_lng')
-      .select(
-        'id',
-        db.raw(`
-          (6371 * acos(
-            cos(radians(?)) * cos(radians(last_lat)) *
-            cos(radians(last_lng) - radians(?)) +
-            sin(radians(?)) * sin(radians(last_lat))
-          )) AS distance_km
-        `, [pickupLat, pickupLng, pickupLat])
-      )
-      .orderBy('distance_km', 'asc')
-      .first();
-
-    if (nearest) {
-      updateData.nearest_driver_id = nearest.id;
-      // Fenêtre prioritaire : 1 minute
-      updateData.priority_expires_at = db.raw("NOW() + INTERVAL '1 minute'");
-    }
-  }
-
   const [updated] = await db('deliveries')
     .where({ id: deliveryId })
     .update(updateData)

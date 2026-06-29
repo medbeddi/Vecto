@@ -546,26 +546,6 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
       last_broadcast_at: db.fn.now(),
     };
 
-    // Livreur le plus proche du point de départ
-    if (pickupLat != null && pickupLng != null) {
-      const nearest = await db('drivers')
-        .where({ is_available: true, suspended: false })
-        .whereNotNull('last_lat').whereNotNull('last_lng')
-        .select('id', db.raw(`
-          (6371 * acos(
-            cos(radians(?)) * cos(radians(last_lat)) *
-            cos(radians(last_lng) - radians(?)) +
-            sin(radians(?)) * sin(radians(last_lat))
-          )) AS distance_km
-        `, [pickupLat, pickupLng, pickupLat]))
-        .orderBy('distance_km', 'asc')
-        .first();
-      if (nearest) {
-        deliveryData.nearest_driver_id  = nearest.id;
-        deliveryData.priority_expires_at = db.raw("NOW() + INTERVAL '1 minute'");
-      }
-    }
-
     const [delivery] = await db('deliveries').insert(deliveryData).returning('*');
 
     // Insérer le vocal CC en tant que message visible par le livreur dans le chat
