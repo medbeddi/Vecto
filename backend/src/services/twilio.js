@@ -36,6 +36,13 @@ export async function checkOtpViaTwilio(phone, code) {
   return check.status === 'approved';
 }
 
+// ── SMS ───────────────────────────────────────────────────────────────────────
+
+export async function sendSms(to, body) {
+  const phone = to.startsWith('+') ? to : '+' + to;
+  return getClient().messages.create({ to: phone, from: env.TWILIO_PHONE_NUMBER, body });
+}
+
 // ── Appels vocaux — conférence bridgée ────────────────────────────────────────
 // Twilio appelle les deux partis séparément et les met dans la même conférence.
 

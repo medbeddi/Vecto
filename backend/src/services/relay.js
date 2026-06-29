@@ -1,6 +1,7 @@
 import db from '../config/db.js';
 import { decryptWaId } from './pii-filter.js';
 import { sendText, sendAudio, sendImage, sendLocation } from './messaging.js';
+import { sendSms, twilioEnabled } from './twilio.js';
 import { emitDriverMessage } from './socket.js';
 
 // Point d'entrée unique pour le relay driver → client WhatsApp.
@@ -38,28 +39,66 @@ export async function relayDriverMessage(deliveryId, driverId, { type, content, 
 
   emitDriverMessage(deliveryId, message);
 
-  // Relay WhatsApp en best-effort (ne bloque pas la réponse driver)
+  // Relay WhatsApp en best-effort — skip les pseudo-clients sans vrai numéro
   const waId = decryptWaId(client.wa_id_enc);
-  dispatch(waId, type, content, meta).catch((err) =>
-    console.error('[relay] WhatsApp échoué deliveryId=%s err=%s', deliveryId, err.message)
-  );
+  if (!waId.startsWith('admin_call_')) {
+    dispatch(waId, type, content, meta).catch(async (err) => {
+      console.error('[relay] WhatsApp échoué deliveryId=%s err=%s', deliveryId, err.message);
+      // Fallback SMS Twilio pour les clients hors fenêtre 24h WhatsApp
+      await _smsFallback(waId, type, content).catch((e) =>
+        console.error('[relay] SMS fallback échoué:', e.message)
+      );
+    });
+  }
 
   return { delivery, message };
 }
 
-// Envoie un message texte automatique au client WhatsApp (statut de la course)
-// Ne s'affiche pas dans le chat du driver — uniquement côté client (WhatsApp)
+// Envoie un message texte automatique au client (statut de la course).
+// Sauvegardé en DB pour être visible dans le chat livreur.
 export async function sendStatusMessageToClient(deliveryId, text) {
   const delivery = await db('deliveries').where({ id: deliveryId }).first('client_id');
   if (!delivery) return;
   const client = await db('clients').where({ id: delivery.client_id }).first('wa_id_enc');
   if (!client) return;
 
-  // Ignorer silencieusement les pseudo-clients sans vrai numéro WhatsApp
+  // Sauvegarder le message système en DB → visible dans le chat du livreur
+  await db('messages').insert({
+    delivery_id: deliveryId,
+    sender_role: 'admin',
+    type: 'text',
+    content: text,
+    meta: JSON.stringify({ for_driver: true, system: true }),
+  });
+
+  // Ignorer les pseudo-clients sans vrai numéro WhatsApp
   const waId = decryptWaId(client.wa_id_enc);
   if (waId.startsWith('admin_call_')) return;
 
-  await sendText(waId, text);
+  try {
+    await sendText(waId, text);
+  } catch (err) {
+    console.error('[relay] sendStatus WhatsApp échoué deliveryId=%s err=%s', deliveryId, err.message);
+    // Fallback SMS pour les nouveaux clients hors fenêtre 24h
+    await _smsFallback(waId, 'text', text).catch((e) =>
+      console.error('[relay] SMS fallback status échoué:', e.message)
+    );
+  }
+}
+
+// Texte de substitution pour les types non-texte relayés via SMS
+async function _smsFallback(waId, type, content) {
+  if (!twilioEnabled()) return;
+  let text;
+  switch (type) {
+    case 'text':     text = content; break;
+    case 'audio':    text = '🎤 Votre livreur vous a envoyé un message vocal. Ouvrez l\'app Vecto pour l\'écouter.'; break;
+    case 'location': text = '📍 Votre livreur a partagé sa localisation. Ouvrez l\'app Vecto pour la voir.'; break;
+    case 'image':    text = '📷 Votre livreur vous a envoyé une photo. Ouvrez l\'app Vecto pour la voir.'; break;
+    default: return;
+  }
+  await sendSms(waId, text);
+  console.info('[relay] SMS fallback envoyé (type=%s) waId=...%s', type, waId.slice(-4));
 }
 
 async function dispatch(waId, type, content, meta) {
