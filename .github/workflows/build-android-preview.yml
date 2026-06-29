@@ -1,0 +1,53 @@
+name: Build Android Preview APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/driver/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/driver/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/driver
+        run: npm install
+
+      - name: Expo Prebuild (génère le dossier android/)
+        working-directory: apps/driver
+        run: npx expo prebuild --platform android --clean --no-install
+        env:
+          EXPO_PUBLIC_API_URL: https://vecto-production.up.railway.app
+
+      - name: Build APK (debug)
+        working-directory: apps/driver/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx4g'
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: vecto-livreur-${{ github.sha }}
+          path: apps/driver/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
