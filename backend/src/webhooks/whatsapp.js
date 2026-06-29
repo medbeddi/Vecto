@@ -6,7 +6,8 @@ import db from '../config/db.js';
 import { hashWaId, encryptWaId, sanitizeText } from '../services/pii-filter.js';
 import { downloadFromMeta, uploadToR2WithRetry, extFromMime, saveToLocalDisk } from '../services/media.js';
 import { getActiveDelivery, createAdminQueueDelivery } from '../services/delivery.js';
-import { emitClientMessage, emitIncomingCall, emitIncomingText, emitNewOrder, emitMessageReaction } from '../services/socket.js';
+import { emitClientMessage, emitIncomingCall, emitIncomingText, emitNewOrder, emitMessageReaction, notifyAssignment } from '../services/socket.js';
+import { assignToAvailableAgent } from '../services/autoAssignment.js';
 import { notifyAssignedDriver } from '../services/fcm.js';
 import { sendText } from '../services/messaging.js';
 import { transcribeAndAnalyze, containsOffensiveWords } from '../services/transcription.js';
@@ -216,6 +217,9 @@ async function processMessage(msg) {
       .returning('*');
 
     emitIncomingText(delivery, message, client.alias);
+    assignToAvailableAgent(delivery.id).then((result) => {
+      if (result) notifyAssignment(result).catch(() => {});
+    }).catch(() => {});
     return;
   }
 
@@ -241,6 +245,9 @@ async function processMessage(msg) {
 
     console.info(`[webhook] message texte sauvegardé id=${message.id} → emitIncomingText`);
     emitIncomingText(delivery, message, client.alias);
+    assignToAvailableAgent(delivery.id).then((result) => {
+      if (result) notifyAssignment(result).catch(() => {});
+    }).catch(() => {});
     return;
   }
 
@@ -287,6 +294,9 @@ async function processMessage(msg) {
 
     if (delivery.status === 'admin_queue') {
       emitIncomingText(delivery, message, client.alias);
+      assignToAvailableAgent(delivery.id).then((result) => {
+        if (result) notifyAssignment(result).catch(() => {});
+      }).catch(() => {});
     } else if (delivery.status === 'pending') {
       emitNewOrder({ ...delivery, alias: client.alias }, message);
     }

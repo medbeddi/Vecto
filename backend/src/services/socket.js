@@ -4,9 +4,11 @@ import { env } from '../config/env.js';
 import { relayDriverMessage } from './relay.js';
 import db from '../config/db.js';
 import { notifyAvailableDrivers, notifyAssignedDriver, notifyDriverList } from './fcm.js';
+import { decryptWaId } from './pii-filter.js';
+import { processQueue, releaseAndReassign } from './autoAssignment.js';
 
-const NEARBY_KM       = 5;       // rayon prioritaire (km)
-const NEARBY_DELAY_MS = 60_000;  // 1 minute avant de notifier les drivers lointains
+const NEARBY_KM       = 5;
+const NEARBY_DELAY_MS = 60_000;
 
 let io = null;
 const DRIVERS_ROOM = 'room:drivers';
@@ -38,10 +40,16 @@ export function initSocket(httpServer) {
   });
 
   io.on('connection', (socket) => {
-    // ── Admin ────────────────────────────────────────────────────────────────
+    // ── Admin / Call-center agent ─────────────────────────────────────────────
     if (socket.data.admin) {
+      const adminId = socket.data.admin.id;
       socket.join(ADMINS_ROOM);
-      // Envoyer les positions actuelles de tous les livreurs dès la connexion
+      socket.join(`admin:${adminId}`); // Personal room for assignment notifications
+
+      // Mark agent online in DB
+      db('admins').where({ id: adminId }).update({ status: 'online' }).catch(() => {});
+
+      // Push current driver locations to this newly connected agent
       db('drivers')
         .whereNotNull('last_lat')
         .whereNotNull('last_lng')
@@ -54,7 +62,41 @@ export function initSocket(httpServer) {
             isAvailable: r.is_available,
           })));
         }).catch(() => {});
-      socket.on('disconnect', () => {});
+
+      // Drain any unassigned queue — this agent can absorb waiting conversations
+      processQueue(notifyAssignment).catch(() => {});
+
+      // Agent toggles their own availability (online ↔ break)
+      socket.on('set_agent_status', async ({ status }) => {
+        if (!['online', 'break'].includes(status)) return;
+        try {
+          await db('admins').where({ id: adminId }).update({ status });
+          io.to(ADMINS_ROOM).emit('agent_status_changed', { adminId, status });
+          if (status === 'online') {
+            processQueue(notifyAssignment).catch(() => {});
+          }
+        } catch {}
+      });
+
+      socket.on('disconnect', async () => {
+        try {
+          await db('admins').where({ id: adminId }).update({ status: 'offline' });
+          io.to(ADMINS_ROOM).emit('agent_status_changed', { adminId, status: 'offline' });
+
+          // Release and immediately try to redistribute to remaining online agents
+          const releasedIds = await releaseAndReassign(adminId, notifyAssignment);
+
+          // Any conversation that still has no agent goes back into the visible queue
+          for (const id of releasedIds) {
+            const still = await db('deliveries')
+              .where({ id, status: 'admin_queue' })
+              .whereNull('claimed_by')
+              .first('id');
+            if (still) io.to(ADMINS_ROOM).emit('conversation_unclaimed', { deliveryId: id });
+          }
+        } catch {}
+      });
+
       return;
     }
 
@@ -87,7 +129,6 @@ export function initSocket(httpServer) {
       }
     });
 
-    // Mise à jour GPS du livreur → stocker en DB + diffuser aux admins
     socket.on('driver_location', async ({ lat, lng }) => {
       if (!driverId || typeof lat !== 'number' || typeof lng !== 'number') return;
       try {
@@ -111,9 +152,45 @@ export function getIO() {
   return io;
 }
 
+/**
+ * Notify the assigned agent of their new conversation, and remove it from
+ * all other agents' queue views via the existing conversation_claimed event.
+ * Exported so webhooks and routes can call it directly after an assignment.
+ */
+export async function notifyAssignment({ agentId, agentName, delivery }) {
+  if (!io) return;
+
+  const client = await db('clients')
+    .where({ id: delivery.client_id })
+    .first('alias', 'wa_id_enc');
+
+  const lastMessage = await db('messages')
+    .where({ delivery_id: delivery.id })
+    .orderBy('created_at', 'desc')
+    .first('id', 'type', 'content', 'meta', 'created_at');
+
+  let clientPhone = null;
+  try { clientPhone = decryptWaId(client.wa_id_enc); } catch {}
+
+  const payload = {
+    deliveryId:  delivery.id,
+    clientAlias: client?.alias,
+    clientPhone,
+    createdAt:   delivery.created_at,
+    claimedBy:   agentId,
+    lastMessage: lastMessage
+      ? { type: lastMessage.type, content: lastMessage.content, meta: lastMessage.meta, createdAt: lastMessage.created_at }
+      : null,
+  };
+
+  // Push conversation directly into the agent's personal inbox
+  io.to(`admin:${agentId}`).emit('conversation_assigned', payload);
+
+  // Signal all agents to remove it from their shared queue view
+  io.to(ADMINS_ROOM).emit('conversation_claimed', { deliveryId: delivery.id, claimedBy: agentId });
+}
+
 // ── Nouvel ordre → broadcast livreurs disponibles + admins ───────────────────
-// useProximity=true  → notifie d'abord les drivers dans NEARBY_KM, puis tous après 1 min
-// useProximity=false → broadcast immédiat à tous (rebroadcast job)
 export async function emitNewOrder(delivery, initialMessage, { useProximity = true } = {}) {
   if (!io) return;
   const payload = {
@@ -137,7 +214,6 @@ export async function emitNewOrder(delivery, initialMessage, { useProximity = tr
     .pluck('driver_id');
   const excludeIds = refusedDriverIds.length ? refusedDriverIds : [null];
 
-  // ── Diffusion par proximité ──────────────────────────────────────────────────
   if (useProximity && delivery.pickup_lat != null && delivery.pickup_lng != null) {
     const nearbyDrivers = await db('drivers')
       .where({ is_available: true, suspended: false })
@@ -156,22 +232,18 @@ export async function emitNewOrder(delivery, initialMessage, { useProximity = tr
     if (nearbyDrivers.length > 0) {
       const nearbyIds = nearbyDrivers.map(d => d.id);
 
-      // Socket → drivers proches
       for (const { id } of nearbyDrivers) {
         io.to(`driver:${id}`).emit('new_order', payload);
       }
       io.to(ADMINS_ROOM).emit('new_order', payload);
 
-      // FCM → drivers proches (app fermée)
       notifyDriverList(nearbyIds, delivery).catch(() => {});
 
-      // Après 1 min → broadcast aux drivers lointains si toujours pending
       setTimeout(async () => {
         try {
           const current = await db('deliveries').where({ id: delivery.id }).first('status');
           if (!current || current.status !== 'pending') return;
 
-          // Rafraîchir last_broadcast_at pour que le polling l'inclue
           await db('deliveries')
             .where({ id: delivery.id, status: 'pending' })
             .update({ last_broadcast_at: db.fn.now() });
@@ -192,7 +264,6 @@ export async function emitNewOrder(delivery, initialMessage, { useProximity = tr
             io.to(`driver:${id}`).emit('new_order', updatedPayload);
           }
 
-          // FCM → drivers lointains (app fermée)
           const fcmExclude = [...nearbyIds, ...freshRefused];
           notifyAvailableDrivers(delivery, fcmExclude.length ? fcmExclude : []).catch(() => {});
         } catch {}
@@ -202,7 +273,6 @@ export async function emitNewOrder(delivery, initialMessage, { useProximity = tr
     }
   }
 
-  // ── Broadcast global (pas de coordonnées, aucun driver proche, ou rebroadcast) ──
   const availableDrivers = await db('drivers')
     .where({ is_available: true, suspended: false })
     .whereNotIn('id', excludeIds)
@@ -215,22 +285,17 @@ export async function emitNewOrder(delivery, initialMessage, { useProximity = tr
   notifyAvailableDrivers(delivery, refusedDriverIds).catch(() => {});
 }
 
-// ── Ordre pris → retirer de la file + notifier client ────────────────────────
 export function emitOrderTaken(deliveryId) {
   if (!io) return;
   io.to(DRIVERS_ROOM).emit('order_taken', { deliveryId });
   io.to(ADMINS_ROOM).emit('order_taken', { deliveryId });
 }
 
-// ── Course acceptée → notifier le client ─────────────────────────────────────
 export function emitOrderAssigned(deliveryId) {
   if (!io) return;
   io.to(`course_${deliveryId}`).emit('order_assigned', { deliveryId });
 }
 
-// ── Message client → livreur (socket) ────────────────────────────────────────
-// Émet sur la room du chat ET directement sur la room du livreur (si driverId fourni)
-// pour garantir la réception même si le livreur n'a pas encore rejoint le chat.
 export function emitClientMessage(deliveryId, message, driverId) {
   if (!io) return;
   const payload = {
@@ -243,12 +308,10 @@ export function emitClientMessage(deliveryId, message, driverId) {
   };
   io.to(`course_${deliveryId}`).emit('client_message', payload);
   if (driverId) {
-    // Double-envoi sécurisé : le store driver déduplique par message.id
     io.to(`driver:${driverId}`).emit('client_message', payload);
   }
 }
 
-// ── Message driver → client (socket) ─────────────────────────────────────────
 export function emitDriverMessage(deliveryId, message) {
   if (!io) return;
   io.to(`course_${deliveryId}`).emit('driver_message', {
@@ -261,19 +324,16 @@ export function emitDriverMessage(deliveryId, message) {
   });
 }
 
-// ── Annulation livraison ──────────────────────────────────────────────────────
 export function emitDeliveryCancelled(deliveryId) {
   if (!io) return;
   io.to(`course_${deliveryId}`).emit('delivery_cancelled', { deliveryId });
 }
 
-// ── Appel entrant → admin ─────────────────────────────────────────────────────
 export function emitIncomingCall(callInfo) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('incoming_call', callInfo);
 }
 
-// ── Message texte WA → admin call center ─────────────────────────────────────
 export function emitIncomingText(delivery, message, clientAlias) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('incoming_text', {
@@ -293,46 +353,44 @@ export async function emitNewDelivery(delivery) {
   await emitNewOrder(delivery, { type: 'text', content: delivery.description, meta: null });
 }
 
-// ── CC → Livreur (message direct) ────────────────────────────────────────────
 export function emitCCMessageToDriver(driverId, message) {
   if (!io) return;
   io.to(`driver:${driverId}`).emit('cc_message', message);
 }
 
-// ── Livreur → CC (réponse) ────────────────────────────────────────────────────
 export function emitDriverReplyToCC(driverId, driverName, message) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('driver_reply_to_cc', { driverId, driverName, message });
 }
 
-// ── Disponibilité livreur → admins ───────────────────────────────────────────
 export function emitDriverAvailability(driverId, driverName, isAvailable) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('driver_availability', { driverId, name: driverName, isAvailable });
 }
 
-// ── Conversation CC claimée par un agent → retirer des autres inboxes ─────────
 export function emitConversationClaimed(deliveryId, adminId) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('conversation_claimed', { deliveryId, claimedBy: adminId });
 }
 
-// ── Conversation CC libérée → peut réapparaître dans les inboxes ──────────────
 export function emitConversationUnclaimed(deliveryId) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('conversation_unclaimed', { deliveryId });
 }
 
-// ── Tous les livreurs disponibles ont refusé une course → notif admin ─────────
 export function emitAllDriversRefused(deliveryId) {
   if (!io) return;
   io.to(ADMINS_ROOM).emit('all_drivers_refused', { deliveryId });
 }
 
-// ── Réaction WhatsApp attachée à un message → mettre à jour le DOM admin ──────
 export function emitMessageReaction(deliveryId, messageId, reactions) {
   if (!io) return;
   const payload = { deliveryId, messageId, reactions };
   io.to(ADMINS_ROOM).emit('message_reaction', payload);
   io.to(`course_${deliveryId}`).emit('message_reaction', payload);
+}
+
+export function emitAdminUpdate(type, data) {
+  if (!io) return;
+  io.to(ADMINS_ROOM).emit('admin_update', { type, ...data });
 }
