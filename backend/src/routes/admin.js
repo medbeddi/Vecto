@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
-import { emitNewOrder, emitCCMessageToDriver, emitDriverReplyToCC, emitConversationClaimed, emitConversationUnclaimed, emitDeliveryCancelled, emitAdminUpdate } from '../services/socket.js';
+import { emitNewOrder, emitCCMessageToDriver, emitDriverReplyToCC, emitConversationClaimed, emitConversationUnclaimed, emitDeliveryCancelled } from '../services/socket.js';
 import { createDelivery, launchDelivery } from '../services/delivery.js';
 import { hashWaId, encryptWaId, decryptWaId } from '../services/pii-filter.js';
 import { sendText, sendAudio, sendImage, sendLocation } from '../services/messaging.js';
@@ -245,9 +245,7 @@ router.post('/admin/drivers', requireAdmin, async (req, res) => {
     const [driver] = await db('drivers')
       .insert({ name: name.trim(), phone: phone.trim(), phone_hash: phoneHash, password_hash: passwordHash, status: 'offline' })
       .returning(['id', 'name', 'phone', 'status', 'created_at as createdAt']);
-    const out = { ...driver, courses: 0, balance: 0 };
-    emitAdminUpdate('driver_created', { driver: out });
-    res.status(201).json({ driver: out });
+    res.status(201).json({ driver: { ...driver, courses: 0, balance: 0 } });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
@@ -294,7 +292,6 @@ router.put('/admin/drivers/:id', requireAdmin, async (req, res) => {
     const { name } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'NAME_REQUIRED' });
     await db('drivers').where({ id: req.params.id }).update({ name: name.trim() });
-    emitAdminUpdate('driver_updated', { id: req.params.id, name: name.trim() });
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -341,7 +338,6 @@ router.patch('/admin/drivers/:id/documents', requireAdmin, async (req, res) => {
 router.post('/admin/drivers/:id/suspend', requireAdmin, async (req, res) => {
   try {
     await db('drivers').where({ id: req.params.id }).update({ suspended: true, status: 'offline' });
-    emitAdminUpdate('driver_updated', { id: req.params.id, suspended: true, status: 'suspended' });
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -351,7 +347,6 @@ router.post('/admin/drivers/:id/suspend', requireAdmin, async (req, res) => {
 router.post('/admin/drivers/:id/reactivate', requireAdmin, async (req, res) => {
   try {
     await db('drivers').where({ id: req.params.id }).update({ suspended: false });
-    emitAdminUpdate('driver_updated', { id: req.params.id, suspended: false, status: 'offline' });
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -423,7 +418,6 @@ router.patch('/admin/clients/:id/alias', requireCallCenter, async (req, res) => 
       .update({ alias: alias.trim() })
       .returning('id', 'alias');
     if (!client) return res.status(404).json({ error: 'NOT_FOUND' });
-    emitAdminUpdate('client_updated', { id: client.id, alias: client.alias });
     res.json({ client });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -448,7 +442,6 @@ router.delete('/admin/clients/:id', requireCallCenter, async (req, res) => {
     const deleted = await db('clients').where({ id: req.params.id }).delete();
     if (!deleted) return res.status(404).json({ error: 'NOT_FOUND' });
 
-    emitAdminUpdate('client_deleted', { id: req.params.id });
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -612,25 +605,10 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
   }
 });
 
-// ── Agent : statut de disponibilité (online / break) ─────────────────────────
-router.post('/admin/status', requireCallCenter, async (req, res) => {
-  try {
-    const { status } = req.body;
-    if (!['online', 'break'].includes(status)) {
-      return res.status(400).json({ error: 'INVALID_STATUS' });
-    }
-    await db('admins').where({ id: req.admin.id }).update({ status });
-    res.json({ ok: true, status });
-  } catch {
-    res.status(500).json({ error: 'SERVER_ERROR' });
-  }
-});
-
-// ── Call Center : conversations assignées à cet agent ────────────────────────
-// call_center → propres conversations uniquement ; admin → toutes (superviseur)
+// ── Call Center : liste des conversations en attente (admin_queue) ────────────
 router.get('/admin/inbox', requireCallCenter, async (req, res) => {
   try {
-    const query = db('deliveries')
+    const rows = await db('deliveries')
       .join('clients', 'deliveries.client_id', 'clients.id')
       .where('deliveries.status', 'admin_queue')
       .whereNull('deliveries.archived_at')
@@ -642,13 +620,6 @@ router.get('/admin/inbox', requireCallCenter, async (req, res) => {
         'clients.alias as clientAlias',
         'clients.wa_id_enc as waIdEnc'
       );
-
-    // Regular agents only see their own conversations; supervisors see all
-    if (req.admin.role === 'call_center') {
-      query.where('deliveries.claimed_by', req.admin.id);
-    }
-
-    const rows = await query;
 
     const result = await Promise.all(rows.map(async (row) => {
       const last = await db('messages')
@@ -1092,9 +1063,7 @@ router.post('/admin/users', requireAdmin, async (req, res) => {
         created_by: req.admin.id,
       })
       .returning(['id', 'name', 'email', 'role', 'created_at']);
-    const out = { ...user, createdAt: user.created_at, createdByName: req.admin.name };
-    emitAdminUpdate('users_changed', {});
-    res.json({ user: out });
+    res.json({ user: { ...user, createdAt: user.created_at, createdByName: req.admin.name } });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
   }
@@ -1120,7 +1089,6 @@ router.delete('/admin/users/:id', requireAdmin, async (req, res) => {
     }
     const deleted = await db('admins').where({ id: req.params.id }).delete();
     if (!deleted) return res.status(404).json({ error: 'NOT_FOUND' });
-    emitAdminUpdate('users_changed', {});
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -1283,7 +1251,6 @@ router.put('/admin/settings/tarif', requireAdmin, async (req, res) => {
       .insert(rows)
       .onConflict('key').merge(['value', 'updated_at']);
 
-    emitAdminUpdate('config_updated', { key: 'tarif', base_km, base_prix, prix_par_km });
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });
@@ -1310,7 +1277,6 @@ router.put('/admin/settings/creneau', requireAdmin, async (req, res) => {
     await db('app_settings')
       .insert({ key: 'creneau_duree_min', value: String(duree_min), updated_at: new Date() })
       .onConflict('key').merge(['value', 'updated_at']);
-    emitAdminUpdate('config_updated', { key: 'creneau', duree_min });
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'SERVER_ERROR' });

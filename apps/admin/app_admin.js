@@ -263,8 +263,9 @@ function initSocket() {
   });
 
 
-  // Nouveau message texte WA → call center (l'attribution auto met à jour l'inbox via conversation_assigned)
+  // Nouveau message texte WA → call center
   _socket.on('incoming_text', function (data) {
+    if (_inboxSubTab === 'pending') loadInbox();
     // Si la conversation est déjà ouverte, ajouter le message en temps réel
     if (_inboxSelectedId === data.deliveryId && data.message) {
       var container = document.getElementById('cc-messages');
@@ -344,36 +345,9 @@ function initSocket() {
     }
   });
 
-  // Attribution automatique → ajouter la conversation dans notre inbox personnel
-  _socket.on('conversation_assigned', function (data) {
-    if (data.claimedBy !== _myAdminId) return; // pas pour nous
-    _inboxItems[data.deliveryId] = {
-      id:          data.deliveryId,
-      clientAlias: data.clientAlias,
-      clientPhone: data.clientPhone,
-      createdAt:   data.createdAt,
-      claimedBy:   data.claimedBy,
-      lastMessage: data.lastMessage,
-    };
-    if (_inboxSubTab === 'pending') renderInboxList(Object.values(_inboxItems));
-    // Notification navigateur discrète
-    _sendBrowserNotif(
-      '📋 Nouvelle conversation',
-      (data.clientAlias || 'Client') + ' vous a été assigné',
-      'assign-' + data.deliveryId
-    );
-  });
-
-  // Une conversation libérée (agent déconnecté, pas de successeur) → recharger
+  // Une conversation a été libérée → recharger l'inbox
   _socket.on('conversation_unclaimed', function () {
     if (_inboxSubTab === 'pending') loadInbox();
-  });
-
-  // Changement de statut d'un agent (optionnel : peut afficher une liste superviseur)
-  _socket.on('agent_status_changed', function (data) {
-    if (data.adminId === _myAdminId) {
-      _applyAgentStatusUI(data.status);
-    }
   });
 
   // Tous les livreurs disponibles ont refusé une course
@@ -387,26 +361,6 @@ function initSocket() {
     if (_inboxItems[data.deliveryId]) {
       _inboxItems[data.deliveryId]._allRefused = true;
       if (_inboxSubTab === 'pending') renderInboxList(Object.values(_inboxItems));
-    }
-  });
-
-  // Sync en temps réel entre admins connectés
-  _socket.on('admin_update', function (data) {
-    switch (data.type) {
-      case 'driver_created':
-      case 'driver_updated':
-        loadLivreurs();
-        break;
-      case 'client_updated':
-      case 'client_deleted':
-        loadClients();
-        break;
-      case 'users_changed':
-        loadUsers();
-        break;
-      case 'config_updated':
-        if (_currentPage === 'p-config') loadConfigPage();
-        break;
     }
   });
 }
@@ -2503,35 +2457,6 @@ function refreshCurrentInboxTab() {
   else loadInbox();
 }
 
-// ── Statut agent (disponible / pause) ────────────────────────────────────────
-var _agentStatus = 'online';
-
-function toggleAgentStatus() {
-  var next = _agentStatus === 'online' ? 'break' : 'online';
-  if (_socket) _socket.emit('set_agent_status', { status: next });
-  _agentStatus = next;
-  _applyAgentStatusUI(next);
-}
-
-function _applyAgentStatusUI(status) {
-  _agentStatus = status;
-  var dot   = document.getElementById('agent-status-dot');
-  var label = document.getElementById('agent-status-label');
-  var btn   = document.getElementById('agent-status-btn');
-  if (!dot || !label || !btn) return;
-  if (status === 'online') {
-    dot.style.background = '#34C759';
-    label.textContent = 'Disponible';
-    btn.classList.remove('agent-status-break');
-    btn.classList.add('agent-status-online');
-  } else {
-    dot.style.background = '#FF9500';
-    label.textContent = 'En pause';
-    btn.classList.remove('agent-status-online');
-    btn.classList.add('agent-status-break');
-  }
-}
-
 async function loadInbox() {
   try {
     var res = await fetch(API + '/api/admin/inbox', { headers: authHeaders() });
@@ -2624,6 +2549,11 @@ function renderArchivedList(items) {
 async function openConversation(deliveryId) {
   _inboxSelectedId = deliveryId;
   var item = _inboxItems[deliveryId];
+
+  // Claim la conversation (verrouillage)
+  fetch(API + '/api/admin/inbox/' + deliveryId + '/claim', {
+    method: 'POST', headers: authHeaders(),
+  }).catch(function () {});
 
   // Mettre en évidence la ligne
   document.querySelectorAll('.cc-inbox-item').forEach(function (el) { el.classList.remove('active'); });

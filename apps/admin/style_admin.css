@@ -471,9 +471,6 @@ input:focus, textarea:focus { outline: none; }
 }
 .cc-tab.active { color: var(--text-1); border-bottom-color: var(--text-1); }
 .cc-tab:hover:not(.active) { background: var(--bg); }
-.cc-tab.agent-status-online { flex: none; padding: 0 14px; font-size: 13px; color: #34C759; border-bottom-color: transparent; }
-.cc-tab.agent-status-break  { flex: none; padding: 0 14px; font-size: 13px; color: #FF9500; border-bottom-color: transparent; }
-.cc-tab.agent-status-online:hover, .cc-tab.agent-status-break:hover { background: var(--bg); }
 
 .cc-inbox-layout {
   display: grid;
