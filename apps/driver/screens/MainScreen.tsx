@@ -731,12 +731,12 @@ function ChatsTab() {
               >
                 <View style={styles.chatAvatarWrap}>
                   <View style={styles.chatAvatar}>
-                    <Text style={styles.chatAvatarText}>C</Text>
+                    <Text style={styles.chatAvatarText}>{d.clientAlias?.charAt(0).toUpperCase() ?? 'C'}</Text>
                   </View>
                   <View style={styles.onlineDot} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={styles.chatAlias}>Client</Text>
+                  <Text style={styles.chatAlias}>{d.clientAlias}</Text>
                   <Text style={styles.chatLastMsg}>{icon}  {label}</Text>
                 </View>
                 <Text style={styles.chatTime}>{timeStr}</Text>
@@ -1412,7 +1412,7 @@ function HistoriqueTab() {
                   <Text style={{ color: '#fff', fontSize: 16 }}>🛵</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.histCourseLabel}>Client</Text>
+                  <Text style={styles.histCourseLabel}>{c.clientAlias ?? 'Client'}</Text>
                   <Text style={styles.histCourseDate}>{date}</Text>
                   {c.price != null && (
                     <Text style={{ fontSize: 13, color: '#1a7a35', fontWeight: '600', marginTop: 2 }}>
