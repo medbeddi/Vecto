@@ -2013,6 +2013,21 @@ var _ncGoogleMarkP        = null;
 var _ncGoogleMarkD        = null;
 var _ncDirectionsRenderer = null;
 var _ncOsrmPolyline       = null;
+var _ncGoogleOsrmPoly     = null;
+var _mmGoogleOsrmPoly     = null;
+var _fsGoogleOsrmPoly     = null;
+
+function _osrmPolyOnGoogleMap(gmap, fromCoords, toCoords, onPoly) {
+  var url = 'https://router.project-osrm.org/route/v1/driving/'
+    + fromCoords[1] + ',' + fromCoords[0] + ';'
+    + toCoords[1]   + ',' + toCoords[0]
+    + '?overview=full&geometries=geojson';
+  fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+    if (!data.routes || !data.routes[0]) return;
+    var path = data.routes[0].geometry.coordinates.map(function(c) { return { lat: c[1], lng: c[0] }; });
+    onPoly(new google.maps.Polyline({ path: path, map: gmap, strokeColor: '#1976D2', strokeOpacity: 0.85, strokeWeight: 4 }));
+  }).catch(function() {});
+}
 
 function initNCMap() {
   var mapEl = document.getElementById('nc-mini-map');
@@ -2055,12 +2070,14 @@ function refreshNCMapMarkers() {
         });
         _ncDirectionsRenderer.setMap(_ncGoogleMap);
       }
+      if (_ncGoogleOsrmPoly) { _ncGoogleOsrmPoly.setMap(null); _ncGoogleOsrmPoly = null; }
       new google.maps.DirectionsService().route({
         origin: { lat: _ncPickupCoords[0], lng: _ncPickupCoords[1] },
         destination: { lat: _ncDropoffCoords[0], lng: _ncDropoffCoords[1] },
         travelMode: google.maps.TravelMode.DRIVING,
       }, function(result, status) {
-        if (status === 'OK') _ncDirectionsRenderer.setDirections(result);
+        if (status === 'OK') { _ncDirectionsRenderer.setDirections(result); }
+        else { _osrmPolyOnGoogleMap(_ncGoogleMap, _ncPickupCoords, _ncDropoffCoords, function(p) { _ncGoogleOsrmPoly = p; }); }
       });
       var bounds = new google.maps.LatLngBounds();
       bounds.extend({ lat: _ncPickupCoords[0],  lng: _ncPickupCoords[1] });
@@ -2169,6 +2186,7 @@ async function createCallCourse() {
     if (_ncDropoffMarker && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncDropoffMarker); _ncDropoffMarker = null; }
     if (_ncOsrmPolyline  && _ncLeafletMap) { _ncLeafletMap.removeLayer(_ncOsrmPolyline);  _ncOsrmPolyline  = null; }
     if (_ncDirectionsRenderer) { _ncDirectionsRenderer.setMap(null); _ncDirectionsRenderer = null; }
+    if (_ncGoogleOsrmPoly) { _ncGoogleOsrmPoly.setMap(null); _ncGoogleOsrmPoly = null; }
     var banner = document.getElementById('nc-client-banner'); if (banner) banner.style.display = 'none';
   } catch {
     if (statusEl) { statusEl.textContent = 'Erreur réseau.'; statusEl.style.color = '#FF3B30'; }
@@ -2876,6 +2894,7 @@ function openLaunchPanel() {
   _mmPickupCoords = null; _mmDropoffCoords = null;
   if (_mmDirectionsRenderer) { _mmDirectionsRenderer.setMap(null); _mmDirectionsRenderer = null; }
   if (_mmOsrmPolyline && _leafletMiniMap) { _leafletMiniMap.removeLayer(_mmOsrmPolyline); _mmOsrmPolyline = null; }
+  if (_mmGoogleOsrmPoly) { _mmGoogleOsrmPoly.setMap(null); _mmGoogleOsrmPoly = null; }
   document.getElementById('cc-launch-panel').style.display = 'flex';
   document.querySelector('.cc-inbox-layout').classList.add('launch-open');
   // Initialiser/rafraîchir la mini-carte après la fin de la transition CSS (250ms)
@@ -3221,12 +3240,14 @@ function renderMiniMapRoute() {
       });
       _mmDirectionsRenderer.setMap(_googleMiniMap);
     }
+    if (_mmGoogleOsrmPoly) { _mmGoogleOsrmPoly.setMap(null); _mmGoogleOsrmPoly = null; }
     new google.maps.DirectionsService().route({
       origin: { lat: ptA[0], lng: ptA[1] },
       destination: { lat: ptB[0], lng: ptB[1] },
       travelMode: google.maps.TravelMode.DRIVING,
     }, function(result, status) {
-      if (status === 'OK') _mmDirectionsRenderer.setDirections(result);
+      if (status === 'OK') { _mmDirectionsRenderer.setDirections(result); }
+      else { _osrmPolyOnGoogleMap(_googleMiniMap, ptA, ptB, function(p) { _mmGoogleOsrmPoly = p; }); }
     });
   } else if (_leafletMiniMap) {
     var url = 'https://router.project-osrm.org/route/v1/driving/'
@@ -3256,12 +3277,14 @@ function renderModalRoute() {
       });
       _fsDirectionsRenderer.setMap(_googleFullMap);
     }
+    if (_fsGoogleOsrmPoly) { _fsGoogleOsrmPoly.setMap(null); _fsGoogleOsrmPoly = null; }
     new google.maps.DirectionsService().route({
       origin: { lat: ptA[0], lng: ptA[1] },
       destination: { lat: ptB[0], lng: ptB[1] },
       travelMode: google.maps.TravelMode.DRIVING,
     }, function(result, status) {
-      if (status === 'OK') _fsDirectionsRenderer.setDirections(result);
+      if (status === 'OK') { _fsDirectionsRenderer.setDirections(result); }
+      else { _osrmPolyOnGoogleMap(_googleFullMap, ptA, ptB, function(p) { _fsGoogleOsrmPoly = p; }); }
     });
   } else if (_leafletFullMap) {
     var url = 'https://router.project-osrm.org/route/v1/driving/'
@@ -3696,6 +3719,24 @@ var _trackingMap      = null;
 var _trackingMarkers  = {};  // driverId → L.Marker
 var _trackingDrivers  = {};  // driverId → { name, status, lat, lng, lastSeen }
 var _trackingSelected = null;
+var _trackingAnimFrames = {};  // driverId → requestAnimationFrame id
+
+function animateMarkerTo(driverId, fromLat, fromLng, toLat, toLng, duration) {
+  if (_trackingAnimFrames[driverId]) cancelAnimationFrame(_trackingAnimFrames[driverId]);
+  var marker = _trackingMarkers[driverId];
+  if (!marker) return;
+  var start = null;
+  function step(ts) {
+    if (!start) start = ts;
+    var p = Math.min((ts - start) / duration, 1);
+    // ease-in-out quadratic
+    p = p < 0.5 ? 2 * p * p : -1 + (4 - 2 * p) * p;
+    marker.setLatLng([fromLat + (toLat - fromLat) * p, fromLng + (toLng - fromLng) * p]);
+    if (p < 1) { _trackingAnimFrames[driverId] = requestAnimationFrame(step); }
+    else { delete _trackingAnimFrames[driverId]; }
+  }
+  _trackingAnimFrames[driverId] = requestAnimationFrame(step);
+}
 
 function initTrackingMap() {
   if (_trackingMap) return;
@@ -3743,11 +3784,18 @@ function trackingPopupContent(driver) {
 function updateTrackingMarker(driver) {
   if (!_trackingMap) return;
   if (_trackingMarkers[driver.driverId]) {
-    _trackingMarkers[driver.driverId]
-      .setLatLng([driver.lat, driver.lng])
-      .setIcon(trackingIcon(driver))
-      .getPopup()?.setContent(trackingPopupContent(driver));
+    var marker = _trackingMarkers[driver.driverId];
+    if (driver.lat && driver.lng) {
+      var prev = marker.getLatLng();
+      var dist = Math.abs(prev.lat - driver.lat) + Math.abs(prev.lng - driver.lng);
+      if (dist > 0.000001) {
+        animateMarkerTo(driver.driverId, prev.lat, prev.lng, driver.lat, driver.lng, 2000);
+      }
+    }
+    marker.setIcon(trackingIcon(driver));
+    marker.getPopup()?.setContent(trackingPopupContent(driver));
   } else {
+    if (!driver.lat || !driver.lng) return;
     var marker = L.marker([driver.lat, driver.lng], { icon: trackingIcon(driver) })
       .addTo(_trackingMap)
       .bindPopup(trackingPopupContent(driver));

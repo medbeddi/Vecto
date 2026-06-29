@@ -3,8 +3,6 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync, readFileSync, unlinkSync } from 'fs';
-import { spawn } from 'child_process';
-import ffmpegPath from 'ffmpeg-static';
 import jwt from 'jsonwebtoken';
 import { requireAuth } from '../middleware/auth.js';
 import { uploadToR2WithRetry, extFromMime, getSignedMediaUrl } from '../services/media.js';
@@ -41,47 +39,14 @@ const upload = multer({
   },
 });
 
-// Convert any audio format to ogg/opus (required by WhatsApp Cloud API for PTT voice notes)
-function convertToOgg(inputPath) {
-  const outputPath = inputPath.replace(/\.[^.]+$/, '.ogg');
-  return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath, [
-      '-y', '-i', inputPath,
-      '-c:a', 'libopus',
-      '-ar', '48000',
-      '-ac', '1',
-      '-b:a', '32k',
-      '-vbr', 'on',
-      '-compression_level', '10',
-      outputPath,
-    ]);
-    let ffmpegErr = '';
-    proc.on('close', (code) => code === 0 ? resolve(outputPath) : reject(new Error(`ffmpeg exit ${code}: ${ffmpegErr.slice(-200)}`)));
-    proc.on('error', reject);
-    proc.stderr.on('data', (d) => { ffmpegErr += d.toString(); });
-  });
-}
-
 async function handleUpload(req, res) {
   if (!req.file) return res.status(400).json({ error: 'Fichier manquant' });
 
   let filePath = req.file.path;
   let mimetype = req.file.mimetype;
 
-  // Convertir uniquement WebM en OGG (remuxage simple, fonctionne toujours)
-  // M4A (audio/mp4) est converti en OGG dans messaging.js avec fallback intégré
-  if (mimetype.startsWith('audio/') && !mimetype.includes('ogg') && mimetype !== 'audio/mp4') {
-    try {
-      const oggPath = await convertToOgg(filePath);
-      try { unlinkSync(filePath); } catch {}
-      filePath = oggPath;
-      mimetype = 'audio/ogg';
-      console.info('[upload] audio→ogg conversion OK (input was %s)', req.file.mimetype);
-    } catch (err) {
-      console.error('[upload] audio→ogg conversion failed:', err.message);
-      // Continue with original file — will not be PTT but still playable
-    }
-  }
+  // La conversion audio (deux passes WAV intermédiaire) est gérée dans messaging.js.
+  // Stocker le fichier brut pour que messaging.js puisse détecter le vrai format et convertir correctement.
 
   if (env.R2_ENABLED && env.R2_PUBLIC_URL) {
     try {
