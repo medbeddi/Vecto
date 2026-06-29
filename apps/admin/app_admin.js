@@ -114,13 +114,8 @@ function _loadGoogleMaps() {
   if (_googleMapsLoaded) return;
   fetch(API + '/api/admin/config', { headers: authHeaders() })
     .then(function (r) { return r.ok ? r.json() : null; })
-    .then(async function (cfg) {
+    .then(function (cfg) {
       if (!cfg || !cfg.googleMapsKey) return;
-      try {
-        var test = await fetch('https://maps.googleapis.com/maps/api/geocode/json?address=Nouakchott&key=' + cfg.googleMapsKey);
-        var data = await test.json();
-        if (data.status === 'REQUEST_DENIED' || data.status === 'UNKNOWN_ERROR') return;
-      } catch (e) { return; }
       _googleMapsLoaded = true;
       var s = document.createElement('script');
       s.src = 'https://maps.googleapis.com/maps/api/js?key=' + cfg.googleMapsKey + '&libraries=places&language=fr&callback=onGoogleMapsReady';
