@@ -145,6 +145,11 @@ export async function emitNewOrder(delivery, initialMessage) {
         const current = await db('deliveries').where({ id: delivery.id }).first('status', 'nearest_driver_id');
         if (!current || current.status !== 'pending') return;
 
+        // Effacer la priorité en DB : le polling des drivers verra la course immédiatement
+        await db('deliveries')
+          .where({ id: delivery.id, status: 'pending' })
+          .update({ nearest_driver_id: null, priority_expires_at: null, last_broadcast_at: db.fn.now() });
+
         const refusedDriverIds = await db('delivery_refusals')
           .where('delivery_id', delivery.id)
           .pluck('driver_id');
@@ -156,7 +161,7 @@ export async function emitNewOrder(delivery, initialMessage) {
           .select('id');
 
         for (const { id } of remainingDrivers) {
-          io.to(`driver:${id}`).emit('new_order', payload);
+          io.to(`driver:${id}`).emit('new_order', { ...payload, broadcastAt: new Date().toISOString() });
         }
 
         // FCM push pour les livreurs restants si app fermée
