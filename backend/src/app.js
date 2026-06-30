@@ -29,7 +29,7 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "cdn.socket.io", "unpkg.com", "maps.googleapis.com", "maps.gstatic.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "cdn.socket.io", "unpkg.com", "maps.googleapis.com", "maps.gstatic.com", "sdk.twilio.com"],
       scriptSrcAttr: ["'unsafe-inline'"],
       connectSrc: ["'self'", "wss:", "ws:", "https:"],
       styleSrc: ["'self'", "'unsafe-inline'", "fonts.googleapis.com", "unpkg.com"],

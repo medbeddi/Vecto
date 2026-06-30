@@ -371,6 +371,9 @@
             <!-- En-tête -->
             <div class="cc-chat-topbar">
               <div class="cc-chat-client-name" id="cc-chat-client-name">—</div>
+              <button class="btn btn-ghost btn-sm" onclick="callIdentity('delivery_' + _inboxSelectedId, document.getElementById('cc-chat-client-name').textContent)" style="color:#34C759">
+                📞 Appeler
+              </button>
               <button id="cc-cancel-course-btn" class="btn btn-ghost btn-sm" onclick="cancelCCCourse()" style="display:none;color:var(--red);border-color:rgba(255,59,48,.2)">
                 <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:var(--red)"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                 Annuler
@@ -1121,7 +1124,9 @@
 
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://sdk.twilio.com/js/voice/releases/2.12.3/twilio.min.js"></script>
 <!-- Google Maps Places chargé dynamiquement depuis /api/admin/config -->
 <script src="app_admin.js"></script>
+<script src="voice_admin.js"></script>
 </body>
 </html>

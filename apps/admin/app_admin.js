@@ -146,6 +146,7 @@ function showApp() {
   initSocket();
   _requestNotifPermission();
   _loadGoogleMaps();
+  if (typeof initVoiceSDK === 'function') initVoiceSDK();
 
   if (_role === 'call_center') {
     showPage('p-callcenter');
@@ -519,8 +520,8 @@ function selectDriverChat(driverId, driverName, driverPhone) {
 }
 
 function callDriver() {
-  if (!_selectedDriverPhone || !_selectedDriverId) return;
-  // Enregistrer l'appel dans le chat avant d'ouvrir le téléphone
+  if (!_selectedDriverId) return;
+  // Enregistrer l'appel dans le chat
   fetch(API + '/api/admin/driver-chat/' + _selectedDriverId, {
     method: 'POST',
     headers: authHeaders(),
@@ -529,7 +530,7 @@ function callDriver() {
     .then(function(r) { return r.json(); })
     .then(function(d) { if (d.message) appendDriverChatMessage(d.message); })
     .catch(function() {});
-  window.open('tel:' + _selectedDriverPhone, '_self');
+  callIdentity('driver_' + _selectedDriverId, document.getElementById('cc-driver-chat-name').textContent);
 }
 
 function loadDriverChatMessages(driverId) {
@@ -3893,6 +3894,8 @@ function renderTrackingList() {
       + '<div class="tracking-item-name">' + escHtml(d.name) + dispoBadge + '</div>'
       + '<div class="tracking-item-status">' + statusLabel + '</div>'
       + '</div>'
+      + '<button onclick="event.stopPropagation();callIdentity(\'driver_' + d.driverId + '\',\'' + escHtml(d.name).replace(/'/g, "\\'") + '\')" '
+      + 'style="background:#34C759;border:none;color:#fff;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:14px" title="Appeler">📞</button>'
       + '</div>';
   }).join('');
 }

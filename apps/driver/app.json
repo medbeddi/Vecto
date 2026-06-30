@@ -17,8 +17,9 @@
       "bundleIdentifier": "com.medbeddi.vecto.driver",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Pour partager votre position avec le client.",
-        "NSMicrophoneUsageDescription": "Pour envoyer des messages audio.",
-        "NSPhotoLibraryUsageDescription": "Pour envoyer des photos."
+        "NSMicrophoneUsageDescription": "Pour les appels et messages audio.",
+        "NSPhotoLibraryUsageDescription": "Pour envoyer des photos.",
+        "UIBackgroundModes": ["audio", "voip"]
       }
     },
     "android": {

@@ -101,4 +101,9 @@ export const env = {
   TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || null, // ex: +12015551234
   TWILIO_VERIFY_SID:  process.env.TWILIO_VERIFY_SID  || null,  // ex: VAxxxxxxxxxxxxxxxx
   CC_PHONE: process.env.CC_PHONE || null, // numéro du call center ex: +21699000000
+
+  // Twilio Voice SDK — appels in-app (driver/client/CC)
+  TWILIO_TWIML_APP_SID: process.env.TWILIO_TWIML_APP_SID || null,
+  TWILIO_API_KEY_SID: process.env.TWILIO_API_KEY_SID || null,
+  TWILIO_API_KEY_SECRET: process.env.TWILIO_API_KEY_SECRET || null,
 };

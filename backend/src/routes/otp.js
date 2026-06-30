@@ -28,11 +28,11 @@ async function sendOtpViaWati(phone, code) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    console.error('[OTP] WATI échec:', err?.message ?? res.status);
+    throw new Error(`WATI échec: ${err?.message ?? res.status}`);
   }
 }
 
-// ── Envoi OTP via WhatsApp Cloud API (fallback) ───────────────────────────────
+// ── Envoi OTP via WhatsApp Cloud API (fallback historique) ────────────────────
 async function sendOtpWhatsApp(phone, phoneHash, code) {
   if (env.NODE_ENV !== 'production') {
     console.info(`[OTP] code pour hash=${phoneHash.slice(0, 8)}... : ${code}`);
@@ -71,30 +71,54 @@ async function sendOtpWhatsApp(phone, phoneHash, code) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    console.error('[OTP] échec envoi WhatsApp:', err?.error?.message ?? res.status);
+    throw new Error(`WhatsApp échec: ${err?.error?.message ?? res.status}`);
   }
 }
 
-// ── Vérifier le code OTP (Twilio ou DB) ───────────────────────────────────────
-async function verifyCode(phoneRaw, phoneHash, code) {
-  if (twilioVerifyEnabled()) {
-    try {
-      const approved = await checkOtpViaTwilio(phoneRaw, code);
-      if (!approved) return false;
-      return true;
-    } catch (err) {
-      console.error('[OTP] Twilio check failed, fallback DB:', err.message);
+// ── Envoyer l'OTP : WhatsApp en priorité, Twilio SMS/Voice en secours ─────────
+async function sendOtp(phoneRaw, phoneHash) {
+  const code = generateCode();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await db('otps').where({ phone_hash: phoneHash, used: false }).update({ used: true });
+  await db('otps').insert({ phone_hash: phoneHash, code, expires_at: expiresAt });
+
+  try {
+    await sendOtpWhatsApp(phoneRaw, phoneHash, code);
+    return 'whatsapp';
+  } catch (err) {
+    console.error('[OTP] WhatsApp échec:', err.message);
+    if (twilioVerifyEnabled()) {
+      try {
+        await sendOtpViaTwilio(phoneRaw);
+        return 'sms';
+      } catch (err2) {
+        console.error('[OTP] Twilio fallback échec:', err2.message);
+      }
     }
+    throw err;
   }
-  // DB fallback
+}
+
+// ── Vérifier le code OTP : DB (WhatsApp) en priorité, Twilio en secours ───────
+async function verifyCode(phoneRaw, phoneHash, code) {
   const otp = await db('otps')
     .where({ phone_hash: phoneHash, code, used: false })
     .where('expires_at', '>', new Date())
     .orderBy('created_at', 'desc')
     .first();
-  if (!otp) return false;
-  await db('otps').where({ id: otp.id }).update({ used: true });
-  return true;
+  if (otp) {
+    await db('otps').where({ id: otp.id }).update({ used: true });
+    return true;
+  }
+  if (twilioVerifyEnabled()) {
+    try {
+      return await checkOtpViaTwilio(phoneRaw, code);
+    } catch (err) {
+      console.error('[OTP] Twilio check échec:', err.message);
+    }
+  }
+  return false;
 }
 
 // ── Envoyer OTP ───────────────────────────────────────────────────────────────
@@ -106,30 +130,10 @@ router.post('/otp/send', otpLimiter, async (req, res) => {
     }
 
     const phoneRaw = phone.trim();
-
-    // Twilio Verify en priorité : gère code + SMS côté Twilio, aucun stockage en DB
-    if (twilioVerifyEnabled()) {
-      try {
-        await sendOtpViaTwilio(phoneRaw);
-        return res.json({ sent: true, channel: 'sms' });
-      } catch (err) {
-        console.error('[OTP] Twilio Verify failed, fallback WhatsApp:', err.message);
-      }
-    }
-
-    // Fallback : code maison stocké en DB, envoyé via WhatsApp
     const phoneHash = hashWaId(phoneRaw);
-    const code = generateCode();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    await db('otps').where({ phone_hash: phoneHash, used: false }).update({ used: true });
-    await db('otps').insert({ phone_hash: phoneHash, code, expires_at: expiresAt });
-
-    sendOtpWhatsApp(phoneRaw, phoneHash, code).catch((err) => {
-      console.error('[OTP] WhatsApp failed (non-blocking):', err.message);
-    });
-
-    res.json({ sent: true, channel: 'whatsapp' });
+    const channel = await sendOtp(phoneRaw, phoneHash);
+    res.json({ sent: true, channel });
   } catch (e) {
     console.error('[OTP] send error:', e.message);
     res.status(500).json({ error: 'SERVER_ERROR' });

@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import db from '../config/db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { initiateConferenceCall, twilioEnabled } from '../services/twilio.js';
+import { initiateConferenceCall, twilioEnabled, voiceSdkEnabled, generateVoiceAccessToken } from '../services/twilio.js';
 import { decryptWaId } from '../services/pii-filter.js';
 import { emitCCMessageToDriver } from '../services/socket.js';
 
@@ -32,6 +32,33 @@ function requireCallCenter(req, res, next) {
 function notConfigured(res) {
   return res.status(503).json({ error: 'TWILIO_NOT_CONFIGURED' });
 }
+
+// ── Voice SDK : identité Twilio par rôle ──────────────────────────────────────
+// driver_<id> / client_<id> / cc (partagée par tous les agents call center)
+function identityFromJwt(decoded) {
+  if (decoded.role === 'client') return `client_${decoded.id}`;
+  if (decoded.role === 'admin' || decoded.role === 'call_center') return 'cc';
+  return `driver_${decoded.id}`;
+}
+
+// ── Token d'accès Voice SDK (driver, client ou CC) ────────────────────────────
+router.get('/calls/token', (req, res) => {
+  if (!voiceSdkEnabled()) return notConfigured(res);
+
+  const raw = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  if (!raw) return res.status(401).json({ error: 'AUTH_REQUIRED' });
+
+  let decoded;
+  try {
+    decoded = jwt.verify(raw, env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'AUTH_INVALID' });
+  }
+
+  const identity = identityFromJwt(decoded);
+  const token = generateVoiceAccessToken(identity);
+  res.json({ token, identity });
+});
 
 // ── Livreur → CC ──────────────────────────────────────────────────────────────
 router.post('/calls/driver-to-cc', requireAuth, async (req, res) => {

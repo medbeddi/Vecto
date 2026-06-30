@@ -19,6 +19,31 @@ export const twilioEnabled = () =>
 export const twilioVerifyEnabled = () =>
   twilioEnabled() && !!env.TWILIO_VERIFY_SID;
 
+export const voiceSdkEnabled = () =>
+  twilioEnabled() && !!(env.TWILIO_TWIML_APP_SID && env.TWILIO_API_KEY_SID && env.TWILIO_API_KEY_SECRET);
+
+// ── Voice SDK — token d'accès pour appels in-app (driver/client/CC) ──────────
+
+export function generateVoiceAccessToken(identity) {
+  const AccessToken = twilio.jwt.AccessToken;
+  const VoiceGrant = AccessToken.VoiceGrant;
+
+  const token = new AccessToken(
+    env.TWILIO_ACCOUNT_SID,
+    env.TWILIO_API_KEY_SID,
+    env.TWILIO_API_KEY_SECRET,
+    { identity, ttl: 3600 }
+  );
+
+  const voiceGrant = new VoiceGrant({
+    outgoingApplicationSid: env.TWILIO_TWIML_APP_SID,
+    incomingAllow: true,
+  });
+  token.addGrant(voiceGrant);
+
+  return token.toJwt();
+}
+
 // ── OTP via Twilio Verify ─────────────────────────────────────────────────────
 
 export async function sendOtpViaTwilio(phone) {

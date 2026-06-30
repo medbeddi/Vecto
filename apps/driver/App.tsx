@@ -12,18 +12,33 @@ import RegisterScreen from './screens/RegisterScreen';
 import ResetPasswordScreen from './screens/ResetPasswordScreen';
 import MainScreen from './screens/MainScreen';
 import ChatScreen from './screens/ChatScreen';
+import CallScreen from './screens/CallScreen';
+import IncomingCallScreen from './screens/IncomingCallScreen';
 import type { RootStackParamList } from './types';
 import { BG, CARD, TEXT } from './lib/config';
+import { useVoiceStore } from './store/voice.store';
+import { navigationRef } from './lib/navigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   const { driver, isReady, initialize } = useAuthStore();
+  const { init: initVoice, incomingInvite } = useVoiceStore();
   const [splashDone, setSplashDone] = useState(false);
 
   useEffect(() => {
     initialize();
   }, []);
+
+  useEffect(() => {
+    if (driver) initVoice();
+  }, [driver]);
+
+  useEffect(() => {
+    if (incomingInvite && navigationRef.isReady()) {
+      navigationRef.navigate('IncomingCall');
+    }
+  }, [incomingInvite]);
 
   if (!splashDone || !isReady) {
     return (
@@ -35,7 +50,7 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <StatusBar style="dark" />
       <Stack.Navigator
         screenOptions={{
@@ -57,6 +72,16 @@ export default function App() {
               name="Chat"
               component={ChatScreen}
               options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="Call"
+              component={CallScreen}
+              options={{ headerShown: false, gestureEnabled: false }}
+            />
+            <Stack.Screen
+              name="IncomingCall"
+              component={IncomingCallScreen}
+              options={{ headerShown: false, gestureEnabled: false, presentation: 'fullScreenModal' }}
             />
           </>
         ) : (
