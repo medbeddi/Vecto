@@ -148,6 +148,15 @@ export async function sendText(waId, text) {
   });
 }
 
+export async function sendTemplate(waId, templateName, languageCode = 'fr') {
+  return post({
+    messaging_product: 'whatsapp',
+    to: waId,
+    type: 'template',
+    template: { name: templateName, language: { code: languageCode } },
+  });
+}
+
 export async function sendAudio(waId, urlOrKey) {
   // Détecter le MIME depuis l'extension avant résolution (la clé R2 a l'extension)
   const mimeHint = mimeFromUrl(urlOrKey);

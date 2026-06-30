@@ -6,7 +6,7 @@ import db from '../config/db.js';
 import { emitNewOrder, emitCCMessageToDriver, emitDriverReplyToCC, emitConversationClaimed, emitConversationUnclaimed, emitDeliveryCancelled } from '../services/socket.js';
 import { createDelivery, launchDelivery } from '../services/delivery.js';
 import { hashWaId, encryptWaId, decryptWaId } from '../services/pii-filter.js';
-import { sendText, sendAudio, sendImage, sendLocation } from '../services/messaging.js';
+import { sendText, sendAudio, sendImage, sendLocation, sendTemplate } from '../services/messaging.js';
 import { sendStatusMessageToClient } from '../services/relay.js';
 
 const router = Router();
@@ -537,6 +537,8 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
       }
     }
 
+    let newClientWaId = null; // sera défini si nouveau client → pour envoyer le template
+
     if (!clientId && phone?.trim()) {
       const normalized = normalizePhone(phone);
       const hash = hashWaId(normalized);
@@ -553,6 +555,7 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
           .insert({ wa_id_hash: hash, wa_id_enc: encryptWaId(normalized), alias: clientAlias })
           .returning('*');
         clientId = newClient.id;
+        newClientWaId = normalized; // nouveau client → fenêtre WhatsApp à ouvrir
       }
     }
 
@@ -598,6 +601,13 @@ router.post('/admin/call-course', requireCallCenter, async (req, res) => {
       ? { type: 'audio', content: audioUrl, meta: null }
       : { type: 'text', content: deliveryData.description, meta: null }
     ).catch(() => {});
+
+    // Ouvrir la fenêtre WhatsApp 24h pour les nouveaux clients (jamais chatté avec le business)
+    if (newClientWaId) {
+      sendTemplate(newClientWaId, 'vecto_course', 'fr').catch((err) =>
+        console.error('[call-course] template vecto_course échoué waId=...%s err=%s', newClientWaId.slice(-4), err.message)
+      );
+    }
 
     res.json({ delivery: { id: delivery.id, clientAlias } });
   } catch {
