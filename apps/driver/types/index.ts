@@ -59,4 +59,6 @@ export type RootStackParamList = {
   ResetPassword: { phone: string; code: string };
   Main: undefined;
   Chat: { delivery: Delivery };
+  Call: { label: string };
+  IncomingCall: undefined;
 };
