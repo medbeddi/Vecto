@@ -26,7 +26,6 @@ import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import { useAuthStore } from '../store/auth.store';
 import { useDeliveriesStore } from '../store/deliveries.store';
-import { useVoiceStore } from '../store/voice.store';
 import { socketService } from '../lib/socket';
 import { api, uploadFile } from '../lib/api';
 import { DeliveryCard } from '../components/DeliveryCard';
@@ -753,7 +752,6 @@ function ChatsTab() {
 // ─── Onglet Admin — chat direct avec le call center ──────────────────────────
 
 function AdminChatTab() {
-  const navigation = useNavigation<Nav>();
   const [messages, setMessages]   = useState<CCMessage[]>([]);
   const [input,    setInput]      = useState('');
   const [sending,  setSending]    = useState(false);
@@ -996,15 +994,15 @@ function AdminChatTab() {
   };
 
   const callCC = async () => {
-    // Appel in-app via le SDK Twilio Voice
+    // Appel via Twilio REST API : Twilio rappelle le livreur et le CC sur leurs vrais numéros
     try {
-      navigation.navigate('Call', { label: 'Centre d\'appels' });
-      useVoiceStore.getState().makeCall('cc');
+      await api('/api/calls/driver-to-cc', { method: 'POST', body: {} });
+      Alert.alert('Appel en cours', 'Twilio va vous rappeler dans quelques secondes pour vous connecter au Call Center.');
       api<{ message: CCMessage }>('/api/drivers/cc-chat', {
         method: 'POST', body: { content: 'Appel vers le centre d\'appels', type: 'call' },
       }).then(({ message }) => setMessages((prev) => [...prev, message])).catch(() => {});
     } catch {
-      // Fallback : ouvrir le composeur téléphonique si le SDK Voice échoue
+      // Fallback : ouvrir le composeur téléphonique
       if (!ccPhone) { Alert.alert('Indisponible', 'Le numéro du Call Center n\'est pas configuré.'); return; }
       api<{ message: CCMessage }>('/api/drivers/cc-chat', {
         method: 'POST', body: { content: 'Appel vers le centre d\'appels', type: 'call' },

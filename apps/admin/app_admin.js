@@ -22,15 +22,26 @@ function toggleSidebar() {
 // ≤4.5 km → 100 MRU ; sinon +2.5 MRU/tranche de 100 m
 // Arrondi : .5 → arrondi inférieur (102.5→100, 112.5→110, 267.5→265)
 //           autre → arrondi supérieur
+// Majoration nuit : +50 MRU entre 00h00 et 07h00
+function _majorationNuit() {
+  var h = new Date().getHours();
+  return (h >= 0 && h < 7) ? 50 : 0;
+}
+
 function _prixPourDist(dist) {
-  if (dist <= 4.5) return 100;
-  // toFixed(6) élimine le bruit virgule flottante de Math.ceil
-  var tranches = Math.ceil(+((dist - 4.5) / 0.1).toFixed(6));
-  var prixBrut = 100 + tranches * 2.5;
-  var rem = prixBrut % 5;
-  if (rem === 2.5) return prixBrut - 2.5;
-  if (rem === 0)   return prixBrut;
-  return prixBrut + (5 - rem);
+  var prix;
+  if (dist <= 4.5) {
+    prix = 100;
+  } else {
+    // toFixed(6) élimine le bruit virgule flottante de Math.ceil
+    var tranches = Math.ceil(+((dist - 4.5) / 0.1).toFixed(6));
+    var prixBrut = 100 + tranches * 2.5;
+    var rem = prixBrut % 5;
+    if (rem === 2.5)      prix = prixBrut - 2.5;
+    else if (rem === 0)   prix = prixBrut;
+    else                  prix = prixBrut + (5 - rem);
+  }
+  return prix + _majorationNuit();
 }
 
 function _autoFillPrice(dist) {
