@@ -46,6 +46,7 @@
     "plugins": [
       "expo-secure-store",
       "expo-av",
+      "./plugins/withTwilioVoice",
       "./plugins/withFullScreenIntent",
       [
         "expo-notifications",
