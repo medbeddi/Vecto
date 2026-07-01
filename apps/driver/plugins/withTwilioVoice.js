@@ -30,20 +30,21 @@ module.exports = function withTwilioVoice(config) {
         return config;
       }
 
-      // Ajouter l'import Twilio après le dernier import existant
+      // Ajouter l'import avant la déclaration de classe
       content = content.replace(
-        /(import [^\n]+\n)(?!import)/,
-        '$1import com.twiliovoicereactnative.VoiceApplicationProxy\n'
+        'class MainApplication :',
+        'import com.twiliovoicereactnative.VoiceApplicationProxy\n\nclass MainApplication :'
       );
 
-      // Remplacer Application() par VoiceApplicationProxy() comme superclasse
+      // Initialiser VoiceApplicationProxy(this) dans onCreate() après super.onCreate()
+      // VoiceApplicationProxy n'est pas une superclasse mais un objet qui prend l'Application en paramètre
       content = content.replace(
-        /class MainApplication\s*:\s*Application\(\)/,
-        'class MainApplication : VoiceApplicationProxy()'
+        'super.onCreate()',
+        'super.onCreate()\n    VoiceApplicationProxy(this)'
       );
 
       fs.writeFileSync(mainAppPath, content, 'utf8');
-      console.log('[withTwilioVoice] MainApplication.kt patché — superclasse VoiceApplicationProxy');
+      console.log('[withTwilioVoice] MainApplication.kt patché — VoiceApplicationProxy initialisé dans onCreate()');
       return config;
     },
   ]);
